@@ -1,10 +1,11 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Uuid } from "@/types/core";
 import {
   RenameNodeCommand,
   ReparentNodeCommand,
   SetFlagsCommand,
 } from "@/core/history/commands/scene";
+import { DuplicateSubtreeCommand } from "@/geometry/commands/duplicate";
 import { useDocument, useSliceVersion } from "@/ui/hooks/doc/document";
 import { useSelectionInfo } from "@/ui/hooks/doc/selection";
 import { openContextMenu } from "@/ui/hooks/editor/shell";
@@ -57,10 +58,26 @@ export function ObjectManagerPanel() {
   const [collapsed, setCollapsed] = useState<Set<Uuid>>(new Set());
   const [renaming, setRenaming] = useState<Uuid | null>(null);
   const [dropTarget, setDropTarget] = useState<DropTarget | null>(null);
+  const [altHeld, setAltHeld] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ id: Uuid; startX: number; startY: number; active: boolean } | null>(
     null,
   );
+
+  // Option/Alt drives the copy cursor + option-drag-to-copy
+  useEffect(() => {
+    const down = (e: KeyboardEvent) => e.key === "Alt" && setAltHeld(true);
+    const up = (e: KeyboardEvent) => e.key === "Alt" && setAltHeld(false);
+    const blur = () => setAltHeld(false);
+    window.addEventListener("keydown", down);
+    window.addEventListener("keyup", up);
+    window.addEventListener("blur", blur);
+    return () => {
+      window.removeEventListener("keydown", down);
+      window.removeEventListener("keyup", up);
+      window.removeEventListener("blur", blur);
+    };
+  }, []);
 
   // ---- rows (flattened visible tree) ----
   const rows: Row[] = [];
@@ -134,7 +151,7 @@ export function ObjectManagerPanel() {
     if (d.active) setDropTarget(targetFromEvent(e));
   };
 
-  const onPointerUp = () => {
+  const onPointerUp = (e: React.PointerEvent) => {
     const d = dragRef.current;
     dragRef.current = null;
     if (!d?.active) {
@@ -163,6 +180,21 @@ export function ObjectManagerPanel() {
       const siblings = doc.scene.childrenOf(parent);
       index = siblings.indexOf(targetRow.id) + (target.mode === "after" ? 1 : 0);
     }
+
+    if (e.altKey) {
+      // option-drag = copy: deep-duplicate each dragged subtree at the drop spot
+      const copies: Uuid[] = [];
+      doc.history.transact("Copy Objects", () => {
+        for (const id of ids) {
+          const dup = new DuplicateSubtreeCommand(doc, id, parent, index);
+          doc.history.run(dup);
+          copies.push(dup.newRootId);
+          if (index !== undefined) index++;
+        }
+      });
+      doc.selection.selectObjects(copies);
+      return;
+    }
     doc.history.transact("Move Objects", () => {
       for (const id of ids) {
         doc.history.run(new ReparentNodeCommand(id, parent, index));
@@ -174,7 +206,11 @@ export function ObjectManagerPanel() {
   const onRowContextMenu = (e: React.MouseEvent, id: Uuid) => {
     e.preventDefault();
     if (!doc.selection.has(id)) doc.selection.selectObjects([id]);
-    openContextMenu({ x: e.clientX, y: e.clientY, commandIds: CONTEXT_COMMANDS });
+    openContextMenu({
+      x: e.clientX,
+      y: e.clientY,
+      entries: CONTEXT_COMMANDS.map((commandId) => ({ commandId })),
+    });
   };
 
   // dotted indicator geometry
@@ -190,8 +226,13 @@ export function ObjectManagerPanel() {
   return (
     <div
       ref={containerRef}
-      className="relative h-full overflow-auto bg-base-100 text-xs select-none"
-      onPointerMove={onPointerMove}
+      className={`relative h-full overflow-auto bg-base-100 text-xs select-none ${
+        dragRef.current?.active ? (altHeld ? "cursor-copy" : "cursor-alias") : ""
+      }`}
+      onPointerMove={(e) => {
+        if (e.altKey !== altHeld) setAltHeld(e.altKey);
+        onPointerMove(e);
+      }}
       onPointerUp={onPointerUp}
       onPointerLeave={() => dragRef.current?.active && setDropTarget(null)}
     >
@@ -205,7 +246,9 @@ export function ObjectManagerPanel() {
             key={id}
             className={`flex items-center gap-1 pr-1 ${
               selected ? "bg-primary/25" : "hover:bg-base-200"
-            } ${isInsideTarget ? "outline outline-1 outline-dashed outline-primary" : ""}`}
+            } ${isInsideTarget ? "outline outline-1 outline-dashed outline-primary" : ""} ${
+              altHeld && !dragRef.current?.active ? "cursor-copy" : ""
+            }`}
             style={{ paddingLeft: depth * INDENT + 2, height: ROW_H }}
             onPointerDown={(e) => onRowPointerDown(e, id)}
             onClick={(e) => {

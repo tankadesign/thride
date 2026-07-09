@@ -10,9 +10,13 @@ import {
 import type { BuiltinCamera } from "@/types/editor";
 
 const ORTHO_DIRS: Record<Exclude<BuiltinCamera, "persp">, Vector3> = {
+  ortho: new Vector3(1, 1, 1).normalize(), // 45° parallel (axonometric)
   top: new Vector3(0, 1, 0),
-  front: new Vector3(0, 0, 1),
+  bottom: new Vector3(0, -1, 0),
+  left: new Vector3(-1, 0, 0),
   right: new Vector3(1, 0, 0),
+  front: new Vector3(0, 0, 1),
+  rear: new Vector3(0, 0, -1),
 };
 
 const MIN_PHI = 0.05; // keep away from the poles
@@ -174,6 +178,7 @@ export class CameraRig {
     const dir = ORTHO_DIRS[this.kind as Exclude<BuiltinCamera, "persp">];
     cam.position.copy(this.pivot).addScaledVector(dir, 1000);
     if (this.kind === "top") cam.up.set(0, 0, -1);
+    else if (this.kind === "bottom") cam.up.set(0, 0, 1);
     else cam.up.set(0, 1, 0);
     cam.lookAt(this.pivot);
     cam.updateProjectionMatrix();

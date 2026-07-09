@@ -50,9 +50,14 @@ export function Shell({ doc }: { doc: Document }) {
     };
     const reg = new CommandRegistry();
     reg.register(...buildCommands(doc, shellApi));
-    setRegistry(reg);
     return reg;
   }, [doc]);
+
+  // install into the store from an effect — setting during render trips
+  // React's update-during-render rule via jotai subscribers
+  useEffect(() => {
+    setRegistry(registry);
+  }, [registry]);
 
   // global shortcuts (skip while typing)
   useEffect(() => {

@@ -1,12 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 import type { PaneCamera } from "@/types/editor";
 import { useDocument, useSliceVersion } from "@/ui/hooks/doc/document";
+import { openContextMenu } from "@/ui/hooks/editor/shell";
 import { editorState, useViewportState } from "@/ui/hooks/editor/viewport";
 import {
   type PaneAxes,
   type ViewportStats,
   ViewportSystem,
 } from "@/render/viewport/ViewportSystem";
+import { buildViewportMenu } from "./viewportMenu";
+
+const OBJECT_CONTEXT_COMMANDS = ["edit.group", "edit.convertToMesh", "edit.delete", "edit.deselect"];
 
 /** Matches the gizmo's AXIS_COLORS (x, y, z). */
 const AXIS_COLORS = ["#e0554f", "#69b839", "#3f7fdc"] as const;
@@ -68,6 +72,18 @@ export function ViewportPanel({ onSystem }: Props) {
     vs.onStats = setStats;
     vs.onNavMarker = setNavMarker;
     vs.onAxes = setAxes;
+    vs.onContextMenuRequest = ({ clientX, clientY, pane, nodeId }) => {
+      if (nodeId) {
+        if (!doc.selection.has(nodeId)) doc.selection.selectObjects([nodeId]);
+        openContextMenu({
+          x: clientX,
+          y: clientY,
+          entries: OBJECT_CONTEXT_COMMANDS.map((commandId) => ({ commandId })),
+        });
+      } else {
+        openContextMenu({ x: clientX, y: clientY, entries: buildViewportMenu(doc, vs, pane) });
+      }
+    };
     onSystem(vs);
     return () => {
       onSystem(null);
@@ -77,9 +93,13 @@ export function ViewportPanel({ onSystem }: Props) {
 
   const cameraOptions: { value: string; label: string }[] = [
     { value: "persp", label: "Perspective" },
+    { value: "ortho", label: "Orthogonal" },
     { value: "top", label: "Top" },
-    { value: "front", label: "Front" },
+    { value: "bottom", label: "Bottom" },
+    { value: "left", label: "Left" },
     { value: "right", label: "Right" },
+    { value: "front", label: "Front" },
+    { value: "rear", label: "Rear" },
     ...doc.scene
       .toDTO()
       .filter((n) => n.kind === "camera")

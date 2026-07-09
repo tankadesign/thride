@@ -2,6 +2,7 @@ import { useRef } from "react";
 import type { TransformDTO, Uuid } from "@/types/core";
 import type { PrimitiveDescriptor } from "@/types/geometry/primitives";
 import { paramMeta } from "@/types/geometry/primitives";
+import { LIGHT_LABELS, type LightDataDTO, SHADOW_CAPABLE } from "@/types/core/light";
 import { meshRegistry } from "@/geometry/store/meshRegistry";
 import {
   RenameNodeCommand,
@@ -50,6 +51,7 @@ function NodeAttributes({ id }: { id: Uuid }) {
   const axes = ["X", "Y", "Z"] as const;
   const prim = node.data?.primitive as PrimitiveDescriptor | undefined;
   const meshRef = node.data?.mesh as { id: Uuid } | undefined;
+  const light = node.data?.light as LightDataDTO | undefined;
 
   return (
     <div className="h-full overflow-auto bg-base-100 text-xs">
@@ -107,7 +109,121 @@ function NodeAttributes({ id }: { id: Uuid }) {
 
       {prim ? <PrimitiveParams id={id} prim={prim} /> : null}
       {meshRef ? <MeshInfo meshId={meshRef.id} /> : null}
+      {light ? <LightParams id={id} light={light} /> : null}
+      {node.kind === "light" || node.kind === "camera" ? <TargetSelector id={id} /> : null}
     </div>
+  );
+}
+
+/** Light payload editor: color, intensity, shadows, type-specific params. */
+function LightParams({ id, light }: { id: Uuid; light: LightDataDTO }) {
+  const doc = useDocument();
+  const scrub = useRef<{ before: Record<string, unknown> } | null>(null);
+
+  const setLight = (patch: Partial<LightDataDTO>, committed: boolean) => {
+    const node = doc.scene.mustGet(id);
+    scrub.current ??= { before: structuredClone(node.data!) };
+    const data = structuredClone(node.data!);
+    data.light = { ...(data.light as LightDataDTO), ...patch };
+    if (committed) {
+      const before = scrub.current.before;
+      scrub.current = null;
+      doc.setNodeData(id, data, true);
+      doc.history.pushWithoutExecute(new SetNodeDataCommand(id, data, before, "Edit Light"));
+    } else {
+      doc.setNodeData(id, data, true);
+    }
+  };
+
+  const numeric = (label: string, key: keyof LightDataDTO, step = 0.02, max?: number) => (
+    <div className="grid grid-cols-[64px_1fr] items-center gap-1" key={key}>
+      <span className="opacity-60">{label}</span>
+      <NumberDrag
+        value={(light[key] as number) ?? 0}
+        step={step}
+        min={0}
+        max={max}
+        onChange={(v, committed) => setLight({ [key]: v }, committed)}
+      />
+    </div>
+  );
+
+  return (
+    <fieldset className="fieldset border-b border-base-200 px-2 py-1.5">
+      <legend className="fieldset-legend py-1 text-[10px] uppercase opacity-60">
+        {LIGHT_LABELS[light.type]} Light
+      </legend>
+      <div className="grid grid-cols-[64px_1fr] items-center gap-1">
+        <span className="opacity-60">Color</span>
+        <input
+          type="color"
+          className="h-6 w-12 cursor-pointer rounded border border-base-300 bg-base-100"
+          value={light.color}
+          onChange={(e) => setLight({ color: e.target.value }, true)}
+        />
+      </div>
+      {numeric("Intensity", "intensity", 0.05)}
+      {light.type === "spot" ? numeric("Angle", "angle", 0.005, Math.PI / 2) : null}
+      {light.type === "spot" ? numeric("Penumbra", "penumbra", 0.005, 1) : null}
+      {light.type === "area" ? numeric("Width", "width") : null}
+      {light.type === "area" ? numeric("Height", "height") : null}
+      {light.type === "hemisphere" ? (
+        <div className="grid grid-cols-[64px_1fr] items-center gap-1">
+          <span className="opacity-60">Ground</span>
+          <input
+            type="color"
+            className="h-6 w-12 cursor-pointer rounded border border-base-300 bg-base-100"
+            value={light.groundColor ?? "#443c30"}
+            onChange={(e) => setLight({ groundColor: e.target.value }, true)}
+          />
+        </div>
+      ) : null}
+      {SHADOW_CAPABLE.has(light.type) ? (
+        <div className="grid grid-cols-[64px_1fr] items-center gap-1">
+          <span className="opacity-60">Shadows</span>
+          <input
+            type="checkbox"
+            className="toggle toggle-xs"
+            checked={light.castShadow ?? true}
+            onChange={(e) => setLight({ castShadow: e.target.checked }, true)}
+          />
+        </div>
+      ) : null}
+    </fieldset>
+  );
+}
+
+/** Aim target: any other object controls this node's rotation. */
+function TargetSelector({ id }: { id: Uuid }) {
+  const doc = useDocument();
+  const node = doc.scene.mustGet(id);
+  const target = (node.data?.target as Uuid | undefined) ?? "";
+  const candidates = doc.scene.toDTO().filter((n) => n.id !== id);
+
+  const setTarget = (value: string) => {
+    const before = structuredClone(node.data ?? {});
+    const data = structuredClone(node.data ?? {});
+    if (value) data.target = value;
+    else delete data.target;
+    doc.history.run(new SetNodeDataCommand(id, data, before, "Set Target"));
+  };
+
+  return (
+    <fieldset className="fieldset px-2 py-1.5">
+      <legend className="fieldset-legend py-1 text-[10px] uppercase opacity-60">Target</legend>
+      <select
+        className="select select-xs w-full"
+        value={target as string}
+        onChange={(e) => setTarget(e.target.value)}
+      >
+        <option value="">None</option>
+        {candidates.map((n) => (
+          <option key={n.id} value={n.id}>
+            {n.name}
+          </option>
+        ))}
+      </select>
+    </fieldset>
   );
 }
 

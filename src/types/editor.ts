@@ -1,10 +1,40 @@
 import type { Uuid } from "./core/ids";
 
 /** Built-in editor cameras; a PaneCamera may also be a scene camera node id. */
-export type BuiltinCamera = "persp" | "top" | "front" | "right";
+export type BuiltinCamera =
+  | "persp"
+  | "ortho" // 45° parallel (axonometric)
+  | "top"
+  | "bottom"
+  | "left"
+  | "right"
+  | "front"
+  | "rear";
 export type PaneCamera = BuiltinCamera | Uuid;
 export type ViewportLayout = "single" | "quad";
 export type GizmoSpace = "local" | "world";
+
+export type ShadingMode = "pbr" | "flat" | "wireframe";
+
+/** Per-viewport display settings (viewport background context menu). */
+export interface PaneDisplay {
+  shading: ShadingMode;
+  /** PBR only. */
+  shadows: boolean;
+  /** Render backfaces (double-sided). */
+  backfaces: boolean;
+  /** PBR only. State is plumbed now; the AO pass itself lands with post-FX (C6). */
+  ssao: boolean;
+  grid: boolean;
+}
+
+export const defaultPaneDisplay = (): PaneDisplay => ({
+  shading: "pbr",
+  shadows: true,
+  backfaces: true,
+  ssao: false,
+  grid: true,
+});
 
 /**
  * Contract the render layer uses to read viewport editor state. Implemented
@@ -23,6 +53,9 @@ export interface EditorViewportState {
   /** Gizmo axis orientation: object-local (default) or world-aligned. */
   readonly gizmoSpace: GizmoSpace;
   toggleGizmoSpace(): void;
+  /** Per-pane display settings (shading, shadows, grid…). */
+  paneDisplay(pane: number): PaneDisplay;
+  setPaneDisplay(pane: number, patch: Partial<PaneDisplay>): void;
   paneCamera(pane: number): PaneCamera;
   setActivePane(pane: number): void;
   setPaneCamera(pane: number, camera: PaneCamera): void;

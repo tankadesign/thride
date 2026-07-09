@@ -251,6 +251,13 @@ export class HEMesh {
     };
   }
 
+  /** Construct a fresh mesh from a snapshot (deep copies — used by duplicate). */
+  static fromSnapshot(s: HEMeshSnapshot): HEMesh {
+    const m = new HEMesh();
+    m.restore(s);
+    return m;
+  }
+
   restore(s: HEMeshSnapshot): void {
     this.heNext = s.heNext.slice();
     this.heTwin = s.heTwin.slice();

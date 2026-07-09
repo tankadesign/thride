@@ -1,4 +1,5 @@
 import type { Document } from "@/core";
+import { uniqueSiblingName } from "@/core";
 import {
   CreateNodeCommand,
   RemoveNodeCommand,
@@ -7,11 +8,52 @@ import {
 import { ConvertToMeshCommand } from "@/geometry/commands/convert";
 import type { PrimitiveType } from "@/types/geometry/primitives";
 import { defaultPrimitive, primitiveLabels } from "@/types/geometry/primitives";
+import { defaultLightData, LIGHT_LABELS, type LightType } from "@/types/core/light";
 import type { AppCommand } from "@/ui/commands/CommandRegistry";
 import { openPalette } from "@/ui/hooks/editor/shell";
 import { editorState } from "@/ui/hooks/editor/viewport";
 import type { ViewportSystem } from "@/render/viewport/ViewportSystem";
 import { FORMAT_VERSION, type Uuid } from "@/types/core";
+import {
+  IconAmbientLight,
+  IconAreaLight,
+  IconCamera,
+  IconCone,
+  IconCube,
+  IconCylinder,
+  IconDirectionalLight,
+  IconHemisphereLight,
+  IconIcosphere,
+  IconNull,
+  IconPlane,
+  IconPointLight,
+  IconPyramid,
+  IconSphere,
+  IconSpotlight,
+  IconTorus,
+} from "@/icons";
+
+const PRIMITIVE_ICONS: Partial<Record<PrimitiveType, React.ReactNode>> = {
+  cube: <IconCube size={16} />,
+  sphere: <IconSphere size={16} />,
+  icosphere: <IconIcosphere size={16} />,
+  cylinder: <IconCylinder size={16} />,
+  cone: <IconCone size={16} />,
+  torus: <IconTorus size={16} />,
+  plane: <IconPlane size={16} />,
+  pyramid: <IconPyramid size={16} />,
+};
+
+const LIGHT_ICONS: Record<LightType, React.ReactNode> = {
+  spot: <IconSpotlight size={16} />,
+  point: <IconPointLight size={16} />,
+  directional: <IconDirectionalLight size={16} />,
+  ambient: <IconAmbientLight size={16} />,
+  hemisphere: <IconHemisphereLight size={16} />,
+  area: <IconAreaLight size={16} />,
+};
+
+const LIGHT_TYPES: LightType[] = ["spot", "point", "directional", "ambient", "hemisphere", "area"];
 
 export interface ShellApi {
   getViewport: () => ViewportSystem | null;
@@ -34,8 +76,35 @@ const PRIMITIVES: PrimitiveType[] = [
 
 export function buildCommands(doc: Document, shell: ShellApi): AppCommand[] {
   const createPrimitive = (type: PrimitiveType) => {
-    const cmd = new CreateNodeCommand("mesh", primitiveLabels[type], null, undefined, {
+    const name = uniqueSiblingName(doc, null, primitiveLabels[type]);
+    const cmd = new CreateNodeCommand("mesh", name, null, undefined, {
       primitive: defaultPrimitive(type),
+    });
+    doc.history.run(cmd);
+    doc.selection.selectObjects([cmd.nodeId]);
+  };
+
+  const createLight = (type: LightType) => {
+    const name = uniqueSiblingName(doc, null, LIGHT_LABELS[type]);
+    if (type === "directional") {
+      // an Infinite light gets its aim target created alongside it
+      let lightId: Uuid | null = null;
+      doc.history.transact("Create Infinite Light", () => {
+        const targetName = uniqueSiblingName(doc, null, "Directional Light Target");
+        const target = new CreateNodeCommand("null", targetName);
+        doc.history.run(target);
+        const light = new CreateNodeCommand("light", name, null, undefined, {
+          light: defaultLightData(type),
+          target: target.nodeId,
+        });
+        doc.history.run(light);
+        lightId = light.nodeId;
+      });
+      if (lightId) doc.selection.selectObjects([lightId]);
+      return;
+    }
+    const cmd = new CreateNodeCommand("light", name, null, undefined, {
+      light: defaultLightData(type),
     });
     doc.history.run(cmd);
     doc.selection.selectObjects([cmd.nodeId]);
@@ -106,7 +175,7 @@ export function buildCommands(doc: Document, shell: ShellApi): AppCommand[] {
         if (ids.length === 0) return;
         let groupId: Uuid | null = null;
         doc.history.transact("Group Objects", () => {
-          const create = new CreateNodeCommand("null", "Group");
+          const create = new CreateNodeCommand("null", uniqueSiblingName(doc, null, "Group"));
           doc.history.run(create);
           groupId = create.nodeId;
           for (const id of ids) doc.history.run(new ReparentNodeCommand(id, groupId));
@@ -143,16 +212,28 @@ export function buildCommands(doc: Document, shell: ShellApi): AppCommand[] {
         id: `create.${type}`,
         title: primitiveLabels[type],
         menu: "Create",
+        icon: PRIMITIVE_ICONS[type],
         run: () => createPrimitive(type),
+      }),
+    ),
+    ...LIGHT_TYPES.map(
+      (type): AppCommand => ({
+        id: `create.light.${type}`,
+        title: LIGHT_LABELS[type],
+        menu: "Create",
+        submenu: "Lights",
+        icon: LIGHT_ICONS[type],
+        run: () => createLight(type),
       }),
     ),
     {
       id: "create.null",
       title: "Null",
       menu: "Create",
+      icon: <IconNull size={16} />,
       sep: true,
       run: () => {
-        const cmd = new CreateNodeCommand("null", "Null");
+        const cmd = new CreateNodeCommand("null", uniqueSiblingName(doc, null, "Null"));
         doc.history.run(cmd);
         doc.selection.selectObjects([cmd.nodeId]);
       },
@@ -161,8 +242,9 @@ export function buildCommands(doc: Document, shell: ShellApi): AppCommand[] {
       id: "create.camera",
       title: "Camera",
       menu: "Create",
+      icon: <IconCamera size={16} />,
       run: () => {
-        const cmd = new CreateNodeCommand("camera", "Camera");
+        const cmd = new CreateNodeCommand("camera", uniqueSiblingName(doc, null, "Camera"));
         doc.history.run(cmd);
         doc.selection.selectObjects([cmd.nodeId]);
       },

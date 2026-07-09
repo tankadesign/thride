@@ -1,19 +1,30 @@
 import {
+  AmbientLight,
   BackSide,
   type Camera,
+  Color,
+  DirectionalLight,
   DoubleSide,
+  FrontSide,
   Group,
+  HemisphereLight,
+  Light,
   MathUtils,
   Mesh,
+  MeshBasicMaterial,
   MeshStandardMaterial,
   Object3D,
   OrthographicCamera,
   PerspectiveCamera,
+  PointLight,
+  RectAreaLight,
+  SpotLight,
   Vector3,
 } from "three";
 import { MeshBasicNodeMaterial } from "three/webgpu";
 import { computeBoundsTree, disposeBoundsTree, acceleratedRaycast } from "three-mesh-bvh";
 import type { Uuid } from "@/types/core";
+import { defaultLightData, type LightDataDTO, SHADOW_CAPABLE } from "@/types/core/light";
 import type { Document, SceneNode } from "@/core";
 import type { PrimitiveDescriptor } from "@/types/geometry/primitives";
 import type { HEMesh } from "@/geometry/kernel/HEMesh";
@@ -30,13 +41,16 @@ Mesh.prototype.raycast = acceleratedRaycast;
 // biome-ignore lint/suspicious/noExplicitAny: prototype augmentation
 (Object.getPrototypeOf(new Mesh().geometry) as any).disposeBoundsTree = disposeBoundsTree;
 
-// double-sided by default: open meshes (planes, discs) must be visible from behind
+// default PBR material — double-sided (open meshes visible from behind),
+// cast/receive shadows enabled on every mesh object
 const BASE_MAT = new MeshStandardMaterial({
   color: 0xb8b8c0,
   roughness: 0.65,
   metalness: 0.05,
   side: DoubleSide,
 });
+const FLAT_MAT = new MeshBasicMaterial({ color: 0xb8b8c0, side: DoubleSide });
+const WIRE_MAT = new MeshBasicMaterial({ color: 0x8a93a8, wireframe: true, side: DoubleSide });
 const OUTLINE_PX = 2;
 
 interface OutlineEntry {
@@ -128,13 +142,88 @@ export class SceneSynchronizer {
   private addNode(id: Uuid): void {
     if (this.objects.has(id)) return;
     const node = this.doc.scene.mustGet(id);
-    const obj: Object3D = node.kind === "mesh" ? this.buildMeshObject(node) : new Group();
+    let obj: Object3D;
+    if (node.kind === "mesh") obj = this.buildMeshObject(node);
+    else if (node.kind === "light") obj = this.buildLightObject(node);
+    else obj = new Group();
     obj.name = node.name;
     obj.userData.nodeId = id;
     this.objects.set(id, obj);
     this.applyTransform(node, obj);
     const parent = node.parent ? this.objects.get(node.parent) : undefined;
     (parent ?? this.root).add(obj);
+  }
+
+  private buildLightObject(node: SceneNode): Object3D {
+    const data = (node.data?.light as LightDataDTO | undefined) ?? defaultLightData("point");
+    let light: Light;
+    switch (data.type) {
+      case "spot": {
+        const l = new SpotLight(data.color, data.intensity, 0, data.angle, data.penumbra);
+        light = l;
+        break;
+      }
+      case "point":
+        light = new PointLight(data.color, data.intensity);
+        break;
+      case "directional":
+        light = new DirectionalLight(data.color, data.intensity);
+        break;
+      case "ambient":
+        light = new AmbientLight(data.color, data.intensity);
+        break;
+      case "hemisphere":
+        light = new HemisphereLight(data.color, data.groundColor ?? "#443c30", data.intensity);
+        break;
+      case "area": {
+        const l = new RectAreaLight(data.color, data.intensity, data.width ?? 2, data.height ?? 2);
+        light = l;
+        break;
+      }
+    }
+    if (
+      light instanceof SpotLight ||
+      light instanceof PointLight ||
+      light instanceof DirectionalLight
+    ) {
+      light.castShadow = data.castShadow ?? true;
+      light.shadow.mapSize.set(1024, 1024);
+      light.shadow.bias = -0.0004;
+    }
+    light.userData.lightType = data.type;
+    return light;
+  }
+
+  /** Apply light payload changes (color/intensity/shadow/params) in place. */
+  private updateLightObject(node: SceneNode, obj: Object3D): Object3D {
+    const data = node.data?.light as LightDataDTO | undefined;
+    if (!data || !(obj instanceof Light)) return obj;
+    if (obj.userData.lightType !== data.type) {
+      // type changed: rebuild the light, keep children + hierarchy position
+      const fresh = this.buildLightObject(node);
+      fresh.name = node.name;
+      fresh.userData.nodeId = node.id;
+      for (const child of [...obj.children]) fresh.add(child);
+      obj.parent?.add(fresh);
+      obj.removeFromParent();
+      this.objects.set(node.id, fresh);
+      return fresh;
+    }
+    obj.color = new Color(data.color);
+    obj.intensity = data.intensity;
+    if (SHADOW_CAPABLE.has(data.type)) obj.castShadow = data.castShadow ?? true;
+    if (obj instanceof SpotLight) {
+      obj.angle = data.angle ?? obj.angle;
+      obj.penumbra = data.penumbra ?? obj.penumbra;
+    }
+    if (obj instanceof HemisphereLight && data.groundColor) {
+      obj.groundColor = new Color(data.groundColor);
+    }
+    if (obj instanceof RectAreaLight) {
+      obj.width = data.width ?? obj.width;
+      obj.height = data.height ?? obj.height;
+    }
+    return obj;
   }
 
   private removeNode(id: Uuid): void {
@@ -162,14 +251,45 @@ export class SceneSynchronizer {
   }
 
   private updateNode(id: Uuid): void {
-    const obj = this.objects.get(id);
+    let obj = this.objects.get(id);
     if (!obj) return;
     const node = this.doc.scene.mustGet(id);
+    if (node.kind === "light") obj = this.updateLightObject(node, obj);
     obj.name = node.name;
     obj.visible = node.visible;
     this.applyTransform(node, obj);
     if (node.kind === "mesh" && obj instanceof Mesh) {
       this.syncGeometry(id, node, obj);
+    }
+  }
+
+  /**
+   * Target constraint (lights/cameras/any node with data.target): orient
+   * toward the target's world position every frame — a render-side
+   * constraint; the document transform is untouched.
+   */
+  applyTargets(): void {
+    const pos = new Vector3();
+    for (const [id, obj] of this.objects) {
+      const node = this.doc.scene.get(id);
+      const targetId = node?.data?.target as Uuid | undefined;
+      if (!targetId || targetId === id) continue;
+      const targetObj = this.objects.get(targetId);
+      if (!targetObj) continue;
+      if (obj instanceof SpotLight || obj instanceof DirectionalLight) {
+        obj.target = targetObj; // three's native light targeting
+      } else {
+        obj.lookAt(targetObj.getWorldPosition(pos));
+      }
+    }
+  }
+
+  /** Per-pane shading override (viewport Display menu). */
+  applyShading(mode: "pbr" | "flat" | "wireframe", backfaces: boolean): void {
+    const mat = mode === "flat" ? FLAT_MAT : mode === "wireframe" ? WIRE_MAT : BASE_MAT;
+    mat.side = backfaces ? DoubleSide : FrontSide;
+    for (const obj of this.objects.values()) {
+      if (obj instanceof Mesh && !obj.userData.outline) obj.material = mat;
     }
   }
 

@@ -1,6 +1,7 @@
 import { HugeiconsIcon, type HugeiconsIconProps } from "@hugeicons/react";
 import {
   Axis3DIcon,
+  BulbIcon,
   ChartSplineIcon,
   CircleIcon,
   Cone01Icon,
@@ -12,9 +13,13 @@ import {
   EyeIcon,
   EyeOffIcon,
   Folder01Icon,
+  GridIcon,
   Idea01Icon,
+  LayerMask01Icon,
+  LayerSendBackwardIcon,
   MaterialAndTextureIcon,
   MinusSignSquareIcon,
+  PaintBoardIcon,
   PentagonIcon,
   PlusSignSquareIcon,
   PyramidIcon,
@@ -22,6 +27,12 @@ import {
   Settings02Icon,
   SphereIcon,
   SplinePointerIcon,
+  SpotlightIcon,
+  SunCloud02Icon,
+  SunsetIcon,
+  Target01Icon,
+  ToggleOffIcon,
+  ToggleOnIcon,
   TorusIcon,
   TriangleIcon,
   Video02Icon,
@@ -68,7 +79,20 @@ export const IconSpline = makeIcon(ChartSplineIcon);
 export const IconGenerator = makeIcon(Settings02Icon);
 export const IconGroup = makeIcon(Folder01Icon);
 
+// lights
+export const IconSpotlight = makeIcon(SpotlightIcon);
+export const IconPointLight = makeIcon(BulbIcon);
+export const IconDirectionalLight = makeIcon(SunsetIcon);
+export const IconAmbientLight = makeIcon(SunCloud02Icon);
+export const IconHemisphereLight = makeIcon(LayerMask01Icon);
+export const IconAreaLight = makeIcon(LayerSendBackwardIcon);
+
 // UI
+export const IconToggleOn = makeIcon(ToggleOnIcon);
+export const IconToggleOff = makeIcon(ToggleOffIcon);
+export const IconTarget = makeIcon(Target01Icon);
+export const IconGrid = makeIcon(GridIcon);
+export const IconShading = makeIcon(PaintBoardIcon);
 export const IconEye = makeIcon(EyeIcon);
 export const IconEyeOff = makeIcon(EyeOffIcon);
 export const IconSearch = makeIcon(Search01Icon);

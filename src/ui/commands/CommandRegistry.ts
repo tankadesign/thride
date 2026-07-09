@@ -4,6 +4,10 @@ export interface AppCommand {
   id: string;
   title: string;
   menu?: MenuId;
+  /** Group under a named submenu within its menu (e.g. Create → Lights). */
+  submenu?: string;
+  /** 16px leading icon shown in menus/palette/context menus. */
+  icon?: React.ReactNode;
   /** After a separator within its menu group. */
   sep?: boolean;
   /** e.g. "mod+z", "shift+mod+z", "f", "delete". mod = ⌘ on mac, ctrl elsewhere. */
