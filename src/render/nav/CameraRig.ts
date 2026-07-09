@@ -1,4 +1,12 @@
-import { Box3, MathUtils, OrthographicCamera, PerspectiveCamera, Spherical, Vector3 } from "three";
+import {
+  Box3,
+  MathUtils,
+  OrthographicCamera,
+  PerspectiveCamera,
+  Quaternion,
+  Spherical,
+  Vector3,
+} from "three";
 import type { BuiltinCamera } from "@/types/editor";
 
 const ORTHO_DIRS: Record<Exclude<BuiltinCamera, "persp">, Vector3> = {
@@ -7,16 +15,23 @@ const ORTHO_DIRS: Record<Exclude<BuiltinCamera, "persp">, Vector3> = {
   right: new Vector3(1, 0, 0),
 };
 
+const MIN_PHI = 0.05; // keep away from the poles
+
 /**
- * One pane's camera + navigation state, C4D-style: orbit around an explicit
- * pivot (set from the picked point under the cursor), pan, dolly, frame.
- * Ortho rigs skip orbit and dolly-as-zoom instead.
+ * One pane's camera + navigation state, C4D-style.
+ *
+ * The perspective rig is a FREE camera: orbiting rotates the camera rigidly
+ * around an explicit per-drag pivot WITHOUT re-aiming at it — re-aiming is
+ * what caused the "jump" when option-clicking an object (the view would
+ * recenter on the clicked point). The clicked point stays put on screen.
+ * Ortho rigs keep a center+zoom model and never orbit.
  */
 export class CameraRig {
   readonly kind: BuiltinCamera;
   readonly camera: PerspectiveCamera | OrthographicCamera;
+  /** Ortho view center; persp keeps a focus distance instead. */
   readonly pivot = new Vector3(0, 0, 0);
-  private readonly spherical = new Spherical(10, Math.PI / 3, Math.PI / 4);
+  private focusDistance = 10;
   private orthoZoom = 5; // world units per half-height
   private aspect = 1;
 
@@ -24,10 +39,14 @@ export class CameraRig {
     this.kind = kind;
     if (kind === "persp") {
       this.camera = new PerspectiveCamera(50, 1, 0.05, 5000);
+      const offset = new Vector3().setFromSpherical(new Spherical(10, Math.PI / 3, Math.PI / 4));
+      this.camera.position.copy(offset);
+      this.camera.lookAt(0, 0, 0);
+      this.camera.updateMatrixWorld();
     } else {
       this.camera = new OrthographicCamera(-1, 1, 1, -1, -5000, 5000);
+      this.applyOrtho();
     }
-    this.apply();
   }
 
   get isPerspective(): boolean {
@@ -36,94 +55,122 @@ export class CameraRig {
 
   setAspect(aspect: number): void {
     this.aspect = aspect || 1;
-    this.apply();
-  }
-
-  /** Re-pivot without moving the camera (orbit center = clicked point). */
-  setPivotKeepingView(point: Vector3): void {
-    if (!this.isPerspective) {
-      this.pivot.copy(point);
-      return;
+    if (this.camera instanceof PerspectiveCamera) {
+      this.camera.aspect = this.aspect;
+      this.camera.updateProjectionMatrix();
+    } else {
+      this.applyOrtho();
     }
-    const camPos = this.camera.position.clone();
-    this.pivot.copy(point);
-    const offset = camPos.sub(this.pivot);
-    this.spherical.setFromVector3(offset);
-    this.clampPhi();
-    this.apply();
   }
 
-  orbit(dx: number, dy: number): void {
+  /**
+   * Resolve the orbit pivot for a drag: the picked point if any (also
+   * refocuses), else the point straight ahead at the current focus distance
+   * — the "center of the viewport" — so empty-space orbits stay predictable.
+   */
+  beginOrbitPivot(hit: Vector3 | null): Vector3 {
+    if (hit) {
+      this.focusDistance = Math.max(0.05, this.camera.position.distanceTo(hit));
+      return hit.clone();
+    }
+    const fwd = this.camera.getWorldDirection(new Vector3());
+    return this.camera.position.clone().addScaledVector(fwd, this.focusDistance);
+  }
+
+  /** Rigid turntable rotation around `pivot`: world-Y yaw + camera-right pitch. */
+  orbitAround(pivot: Vector3, dx: number, dy: number): void {
     if (!this.isPerspective) return; // ortho panes do not orbit (C4D behavior)
-    this.spherical.theta -= dx * 0.006;
-    this.spherical.phi -= dy * 0.006;
-    this.clampPhi();
-    this.apply();
-  }
+    const yaw = -dx * 0.006;
+    let pitch = -dy * 0.006;
 
-  /** Pan in view plane; scaled so the point under the cursor tracks it. */
-  pan(dx: number, dy: number, viewportHeightPx: number): void {
-    const perPixel = this.isPerspective
-      ? (2 * this.spherical.radius * Math.tan(MathUtils.degToRad(25))) / viewportHeightPx
-      : (2 * this.orthoZoom) / viewportHeightPx;
-    const right = new Vector3();
-    const up = new Vector3();
+    const right = new Vector3().setFromMatrixColumn(this.camera.matrixWorld, 0);
+    const rotate = (q: Quaternion) => {
+      const offset = this.camera.position.clone().sub(pivot).applyQuaternion(q);
+      this.camera.position.copy(pivot).add(offset);
+      this.camera.quaternion.premultiply(q);
+    };
+
+    // clamp pitch so the view direction never crosses the poles
+    const fwd = this.camera.getWorldDirection(new Vector3());
+    const phi = Math.acos(MathUtils.clamp(fwd.y, -1, 1)); // 0 = looking straight up
+    const phiAfter = phi + pitch;
+    if (phiAfter < MIN_PHI) pitch = MIN_PHI - phi;
+    if (phiAfter > Math.PI - MIN_PHI) pitch = Math.PI - MIN_PHI - phi;
+
+    const q = new Quaternion()
+      .setFromAxisAngle(new Vector3(0, 1, 0), yaw)
+      .multiply(new Quaternion().setFromAxisAngle(right, pitch));
+    rotate(q);
     this.camera.updateMatrixWorld();
-    right.setFromMatrixColumn(this.camera.matrixWorld, 0);
-    up.setFromMatrixColumn(this.camera.matrixWorld, 1);
-    this.pivot.addScaledVector(right, -dx * perPixel).addScaledVector(up, dy * perPixel);
-    this.apply();
   }
 
-  /** Dolly (persp) / zoom (ortho). delta > 0 moves closer. */
+  /** Pan in the view plane; scaled so the point in focus tracks the cursor. */
+  pan(dx: number, dy: number, viewportHeightPx: number): void {
+    this.camera.updateMatrixWorld();
+    const right = new Vector3().setFromMatrixColumn(this.camera.matrixWorld, 0);
+    const up = new Vector3().setFromMatrixColumn(this.camera.matrixWorld, 1);
+    if (this.camera instanceof PerspectiveCamera) {
+      const perPixel =
+        (2 * this.focusDistance * Math.tan(MathUtils.degToRad(this.camera.fov / 2))) /
+        viewportHeightPx;
+      this.camera.position
+        .addScaledVector(right, -dx * perPixel)
+        .addScaledVector(up, dy * perPixel);
+      this.camera.updateMatrixWorld();
+    } else {
+      const perPixel = (2 * this.orthoZoom) / viewportHeightPx;
+      this.pivot.addScaledVector(right, -dx * perPixel).addScaledVector(up, dy * perPixel);
+      this.applyOrtho();
+    }
+  }
+
+  /** Dolly (persp, along view direction) / zoom (ortho). delta > 0 = closer. */
   dolly(delta: number): void {
     const factor = Math.exp(-delta * 0.002);
-    if (this.isPerspective) {
-      this.spherical.radius = MathUtils.clamp(this.spherical.radius * factor, 0.05, 4000);
+    if (this.camera instanceof PerspectiveCamera) {
+      const fwd = this.camera.getWorldDirection(new Vector3());
+      const travel = this.focusDistance * (1 - factor);
+      this.camera.position.addScaledVector(fwd, travel);
+      this.focusDistance = MathUtils.clamp(this.focusDistance * factor, 0.05, 4000);
+      this.camera.updateMatrixWorld();
     } else {
       this.orthoZoom = MathUtils.clamp(this.orthoZoom * factor, 0.01, 4000);
+      this.applyOrtho();
     }
-    this.apply();
   }
 
+  /** Frame a box: intentional recenter (lookAt is expected here, unlike orbit). */
   frame(box: Box3): void {
     if (box.isEmpty()) return;
     const center = box.getCenter(new Vector3());
     const size = box.getSize(new Vector3()).length() || 1;
-    this.pivot.copy(center);
-    if (this.isPerspective) {
-      this.spherical.radius = size * 1.2;
-    } else {
-      this.orthoZoom = size * 0.7;
-    }
-    this.apply();
-  }
-
-  private clampPhi(): void {
-    this.spherical.phi = MathUtils.clamp(this.spherical.phi, 0.01, Math.PI - 0.01);
-    this.spherical.makeSafe();
-  }
-
-  private apply(): void {
     if (this.camera instanceof PerspectiveCamera) {
-      this.camera.aspect = this.aspect;
-      const offset = new Vector3().setFromSpherical(this.spherical);
-      this.camera.position.copy(this.pivot).add(offset);
-      this.camera.lookAt(this.pivot);
+      const fwd = this.camera.getWorldDirection(new Vector3());
+      this.focusDistance = size * 1.2;
+      this.camera.position.copy(center).addScaledVector(fwd, -this.focusDistance);
+      this.camera.lookAt(center);
+      this.camera.updateMatrixWorld();
     } else {
-      const halfH = this.orthoZoom;
-      const halfW = halfH * this.aspect;
-      this.camera.left = -halfW;
-      this.camera.right = halfW;
-      this.camera.top = halfH;
-      this.camera.bottom = -halfH;
-      const dir = ORTHO_DIRS[this.kind as Exclude<BuiltinCamera, "persp">];
-      this.camera.position.copy(this.pivot).addScaledVector(dir, 1000);
-      if (this.kind === "top") this.camera.up.set(0, 0, -1);
-      else this.camera.up.set(0, 1, 0);
-      this.camera.lookAt(this.pivot);
+      this.pivot.copy(center);
+      this.orthoZoom = size * 0.7;
+      this.applyOrtho();
     }
-    this.camera.updateProjectionMatrix();
-    this.camera.updateMatrixWorld();
+  }
+
+  private applyOrtho(): void {
+    const cam = this.camera as OrthographicCamera;
+    const halfH = this.orthoZoom;
+    const halfW = halfH * this.aspect;
+    cam.left = -halfW;
+    cam.right = halfW;
+    cam.top = halfH;
+    cam.bottom = -halfH;
+    const dir = ORTHO_DIRS[this.kind as Exclude<BuiltinCamera, "persp">];
+    cam.position.copy(this.pivot).addScaledVector(dir, 1000);
+    if (this.kind === "top") cam.up.set(0, 0, -1);
+    else cam.up.set(0, 1, 0);
+    cam.lookAt(this.pivot);
+    cam.updateProjectionMatrix();
+    cam.updateMatrixWorld();
   }
 }

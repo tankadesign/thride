@@ -13,6 +13,7 @@ export function ViewportPanel({ onSystem }: Props) {
   const doc = useDocument();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [stats, setStats] = useState<ViewportStats | null>(null);
+  const [navMarker, setNavMarker] = useState<{ x: number; y: number } | null>(null);
   const { layout, maximizedPane, paneCameras, setPaneCamera } = useViewportState();
   useSliceVersion("scene");
 
@@ -21,6 +22,7 @@ export function ViewportPanel({ onSystem }: Props) {
     if (!canvas) return;
     const vs = new ViewportSystem(canvas, doc, editorState);
     vs.onStats = setStats;
+    vs.onNavMarker = setNavMarker;
     onSystem(vs);
     return () => {
       onSystem(null);
@@ -64,6 +66,18 @@ export function ViewportPanel({ onSystem }: Props) {
           ))}
         </select>
       ))}
+      {navMarker ? (
+        <svg
+          className="pointer-events-none absolute text-base-content drop-shadow-[0_0_2px_rgba(0,0,0,0.9)]"
+          style={{ left: navMarker.x - 7, top: navMarker.y - 7 }}
+          width="14"
+          height="14"
+          viewBox="0 0 14 14"
+          aria-hidden="true"
+        >
+          <path d="M7 1v12M1 7h12" stroke="currentColor" strokeWidth="2" />
+        </svg>
+      ) : null}
       {stats ? (
         <div className="badge badge-xs pointer-events-none absolute right-2 bottom-1.5 gap-1 border-0 bg-base-100/60 font-mono opacity-80">
           {stats.backend} · {stats.fps} fps · {stats.nodes} obj

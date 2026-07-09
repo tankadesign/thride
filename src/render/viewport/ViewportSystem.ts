@@ -8,6 +8,7 @@ import {
   Raycaster,
   Scene,
   Vector2,
+  Vector3,
 } from "three";
 import { WebGPURenderer } from "three/webgpu";
 import type { Document } from "@/core";
@@ -52,8 +53,16 @@ export class ViewportSystem {
   private needsRender = true;
   private disposed = false;
   private rendering = false;
-  private nav: { mode: NavMode; pane: number; lastX: number; lastY: number } | null = null;
+  private nav: {
+    mode: NavMode;
+    pane: number;
+    lastX: number;
+    lastY: number;
+    pivot: Vector3 | null;
+  } | null = null;
   private mmbClick: { x: number; y: number; pane: number } | null = null;
+  /** Canvas-relative 2D position of the active nav pivot marker (the "+"). */
+  onNavMarker: ((pos: { x: number; y: number } | null) => void) | null = null;
   private raycaster = new Raycaster();
   private resizeObserver: ResizeObserver;
   private unsubs: (() => void)[] = [];
@@ -217,6 +226,7 @@ export class ViewportSystem {
       const activePane = i === this.editor.activePane && this.editor.layout === "quad";
       this.scene.background = new Color(activePane ? 0x12121a : 0x101014);
       this.gizmo.update(rig.camera);
+      this.sync.updateOutlines(rig.camera, p.h);
       await renderer.renderAsync(this.scene, rig.camera);
     }
     this.frames++;
@@ -308,15 +318,24 @@ export class ViewportSystem {
     if (e.altKey) {
       const mode: NavMode =
         e.button === 0 ? "orbit" : e.button === 1 ? "pan" : e.button === 2 ? "dolly" : null;
+      let pivot: Vector3 | null = null;
+      let marker = { x, y };
       if (mode === "orbit") {
-        // C4D: orbit around the point under the cursor
+        // C4D: orbit around the point under the cursor; empty click orbits
+        // the viewport center (no view jump either way — free-camera rig)
         const rig = this.setRayFromEvent(e, pane);
         if (rig.isPerspective) {
           const hit = this.raycaster.intersectObject(this.sync.root, true)[0];
-          if (hit) rig.setPivotKeepingView(hit.point);
+          pivot = rig.beginOrbitPivot(hit?.point ?? null);
+          if (!hit) {
+            // marker sits where the pivot actually is: the pane center
+            const rect = this.panes[this.logicalPanes().indexOf(pane)] ?? this.panes[0]!;
+            marker = { x: rect.x + rect.w / 2, y: rect.y + rect.h / 2 };
+          }
         }
       }
-      this.nav = { mode, pane, lastX: e.clientX, lastY: e.clientY };
+      this.nav = { mode, pane, lastX: e.clientX, lastY: e.clientY, pivot };
+      this.onNavMarker?.(marker);
       e.preventDefault();
       return;
     }
@@ -352,16 +371,16 @@ export class ViewportSystem {
       this.nav.lastX = e.clientX;
       this.nav.lastY = e.clientY;
       const rig = this.rigFor(this.nav.pane);
-      const pane = this.panes[this.nav.pane]!;
-      if (this.nav.mode === "orbit") rig.orbit(dx, dy);
-      if (this.nav.mode === "pan") rig.pan(dx, dy, pane.h);
+      const rect = this.panes[this.logicalPanes().indexOf(this.nav.pane)] ?? this.panes[0]!;
+      if (this.nav.mode === "orbit" && this.nav.pivot) rig.orbitAround(this.nav.pivot, dx, dy);
+      if (this.nav.mode === "pan") rig.pan(dx, dy, rect.h);
       if (this.nav.mode === "dolly") rig.dolly(dy * 2.5);
       this.invalidate();
       return;
     }
     if (this.gizmo.isDragging) {
       this.setRayFromEvent(e, this.editor.activePane);
-      this.gizmo.pointerMove(this.raycaster);
+      this.gizmo.pointerMove(this.raycaster, e.shiftKey);
       this.invalidate();
       return;
     }
@@ -388,6 +407,7 @@ export class ViewportSystem {
     }
     if (this.nav) {
       this.nav = null;
+      this.onNavMarker?.(null);
       return;
     }
     if (this.gizmo.isDragging) {

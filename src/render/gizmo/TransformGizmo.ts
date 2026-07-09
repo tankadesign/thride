@@ -124,7 +124,7 @@ export class TransformGizmo {
     return true;
   }
 
-  pointerMove(raycaster: Raycaster): void {
+  pointerMove(raycaster: Raycaster, uniformScale = false): void {
     const d = this.drag;
     if (!d) return;
     const point = new Vector3();
@@ -157,13 +157,18 @@ export class TransformGizmo {
         updates.set(id, t);
       }
     } else {
-      // scale along axis: ratio of distances from pivot along axis
+      // scale along axis: ratio of distances from pivot along axis.
+      // Shift = uniform scale on all three axes.
       const a0 = d.startPoint.clone().sub(d.pivot).dot(d.axisWorld);
       const a1 = point.clone().sub(d.pivot).dot(d.axisWorld);
       const ratio = Math.abs(a0) > 1e-6 ? a1 / a0 : 1;
       for (const [id, t0] of d.begin) {
         const t = structuredClone(t0);
-        t.scale[d.handle.axis] = t0.scale[d.handle.axis]! * ratio;
+        if (uniformScale) {
+          t.scale = [t0.scale[0] * ratio, t0.scale[1] * ratio, t0.scale[2] * ratio];
+        } else {
+          t.scale[d.handle.axis] = t0.scale[d.handle.axis]! * ratio;
+        }
         updates.set(id, t);
       }
     }
