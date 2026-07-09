@@ -32,6 +32,14 @@ const ROTATE_SNAP = Math.PI / 36; // 5°
 const SCALE_SNAP = 0.1;
 const snapTo = (v: number, step: number) => Math.round(v / step) * step;
 
+/** Hit areas are ≥2.5× the visual handle footprint. */
+const PICK_SCALE = 2.5;
+/** Thin parts (shafts, rings) also get an absolute minimum pick radius —
+ * 2.5× a hairline is still a hairline (~0.06 gizmo units ≈ 4 screen px). */
+const PICK_MIN_RADIUS = 0.06;
+/** Raycastable but never rendered (material-invisible keeps raycasting intact). */
+const PICKER_MAT = new MeshBasicMaterial({ visible: false, depthTest: false, depthWrite: false });
+
 type HandleKind = "translate" | "rotate" | "scale" | "translate-view";
 type Axis = 0 | 1 | 2;
 
@@ -211,7 +219,8 @@ export class TransformGizmo {
   updateHover(raycaster: Raycaster): void {
     if (this.drag || !this.group.visible) return;
     const hits = raycaster.intersectObject(this.group, true);
-    const mesh = (hits.find((h) => (h.object as Mesh).userData.handle)?.object as Mesh) ?? null;
+    const hitObj = (hits.find((h) => (h.object as Mesh).userData.handle)?.object as Mesh) ?? null;
+    const mesh = hitObj ? ((hitObj.userData.visual as Mesh | undefined) ?? hitObj) : null;
     if (mesh === this.hovered) return;
     if (this.hovered) {
       const m = this.hovered.material as MeshBasicMaterial;
@@ -239,43 +248,59 @@ export class TransformGizmo {
       const dir = AXIS_VECS[axis];
       const quat = new Quaternion().setFromUnitVectors(new Vector3(0, 1, 0), dir);
 
-      const shaft = this.handleMesh(new CylinderGeometry(0.012, 0.012, 0.72, 6), color, {
-        kind: "translate",
-        axis,
-      });
+      const shaft = this.handleMesh(
+        new CylinderGeometry(0.012, 0.012, 0.72, 6),
+        color,
+        { kind: "translate", axis },
+        new CylinderGeometry(PICK_MIN_RADIUS, PICK_MIN_RADIUS, 0.78, 6),
+      );
       shaft.position.copy(dir).multiplyScalar(0.42);
       shaft.quaternion.copy(quat);
 
-      const head = this.handleMesh(new ConeGeometry(0.05, 0.16, 12), color, {
-        kind: "translate",
-        axis,
-      });
+      const head = this.handleMesh(
+        new ConeGeometry(0.05, 0.16, 12),
+        color,
+        { kind: "translate", axis },
+        new ConeGeometry(0.05 * PICK_SCALE, 0.16 * 1.6, 8),
+      );
       head.position.copy(dir).multiplyScalar(0.86);
       head.quaternion.copy(quat);
 
-      const ring = this.handleMesh(new TorusGeometry(1.0, 0.014, 8, 48), color, {
-        kind: "rotate",
-        axis,
-      });
+      const ring = this.handleMesh(
+        new TorusGeometry(1.0, 0.014, 8, 48),
+        color,
+        { kind: "rotate", axis },
+        new TorusGeometry(1.0, PICK_MIN_RADIUS, 6, 32),
+      );
       ring.quaternion.setFromUnitVectors(new Vector3(0, 0, 1), dir);
 
-      const cube = this.handleMesh(new BoxGeometry(0.09, 0.09, 0.09), color, {
-        kind: "scale",
-        axis,
-      });
+      const cube = this.handleMesh(
+        new BoxGeometry(0.09, 0.09, 0.09),
+        color,
+        { kind: "scale", axis },
+        new BoxGeometry(0.09 * PICK_SCALE, 0.09 * PICK_SCALE, 0.09 * PICK_SCALE),
+      );
       cube.position.copy(dir).multiplyScalar(1.18);
     }
-    const center = this.handleMesh(new SphereGeometry(0.07, 16, 12), 0xdddddd, {
-      kind: "translate-view",
-      axis: 0,
-    });
+    const center = this.handleMesh(
+      new SphereGeometry(0.07, 16, 12),
+      0xdddddd,
+      { kind: "translate-view", axis: 0 },
+      new SphereGeometry(0.07 * PICK_SCALE, 8, 6),
+    );
     center.position.set(0, 0, 0);
   }
 
+  /**
+   * Visible handle + an invisible fat "picker" child that carries the same
+   * handle payload — hit areas are PICK_SCALE× the visual footprint (the
+   * same trick three's TransformControls uses).
+   */
   private handleMesh(
     geometry: BoxGeometry | ConeGeometry | CylinderGeometry | SphereGeometry | TorusGeometry,
     color: number,
     handle: Handle,
+    pickerGeometry: BoxGeometry | ConeGeometry | CylinderGeometry | SphereGeometry | TorusGeometry,
   ): Mesh {
     const mat = new MeshBasicMaterial({
       color,
@@ -288,6 +313,12 @@ export class TransformGizmo {
     mesh.userData.handle = handle;
     mesh.userData.baseColor = color;
     mesh.renderOrder = 1000;
+
+    const picker = new Mesh(pickerGeometry, PICKER_MAT);
+    picker.userData.handle = handle;
+    picker.userData.visual = mesh; // hover/hit resolve back to the visible mesh
+    mesh.add(picker);
+
     this.group.add(mesh);
     return mesh;
   }

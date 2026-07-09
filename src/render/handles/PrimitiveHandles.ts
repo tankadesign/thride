@@ -1,5 +1,6 @@
 import {
   Camera,
+  DoubleSide,
   Group,
   Mesh,
   MeshBasicMaterial,
@@ -24,6 +25,9 @@ const HANDLE_HOVER_MAT = new MeshBasicMaterial({
   depthWrite: false,
 });
 const HANDLE_GEO = new PlaneGeometry(1, 1);
+// invisible fat picker: 2.5× hit area, double-sided so glancing rays still hit
+const PICKER_GEO = new PlaneGeometry(2.5, 2.5);
+const PICKER_MAT = new MeshBasicMaterial({ visible: false, side: DoubleSide });
 
 interface DragState {
   nodeId: Uuid;
@@ -76,6 +80,10 @@ export class PrimitiveHandles {
         const m = new Mesh(HANDLE_GEO, HANDLE_MAT);
         m.userData.handleDef = def;
         m.renderOrder = 1500;
+        const picker = new Mesh(PICKER_GEO, PICKER_MAT);
+        picker.userData.handleDef = def;
+        picker.userData.visual = m;
+        m.add(picker); // inherits billboard + screen-constant scale
         this.group.add(m);
       }
       this.activeNode = node.id;
@@ -167,10 +175,11 @@ export class PrimitiveHandles {
 
   updateHover(raycaster: Raycaster): void {
     if (this.drag || !this.group.visible) return;
-    const mesh =
+    const hitObj =
       (raycaster
         .intersectObject(this.group, true)
         .find((h) => (h.object as Mesh).userData.handleDef)?.object as Mesh) ?? null;
+    const mesh = hitObj ? ((hitObj.userData.visual as Mesh | undefined) ?? hitObj) : null;
     if (mesh === this.hovered) return;
     if (this.hovered) this.hovered.material = HANDLE_MAT;
     this.hovered = mesh;
