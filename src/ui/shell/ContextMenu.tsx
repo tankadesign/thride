@@ -32,7 +32,10 @@ export function ContextMenu() {
       onPointerDown={close}
       onContextMenu={(e) => e.preventDefault()}
     >
-      <div style={{ position: "fixed", left: x, top: y }} onPointerDown={(e) => e.stopPropagation()}>
+      <div
+        style={{ position: "fixed", left: x, top: y }}
+        onPointerDown={(e) => e.stopPropagation()}
+      >
         <EntryList entries={menu.entries} close={close} width={width} />
       </div>
     </div>

@@ -10,7 +10,12 @@ import {
 } from "@/render/viewport/ViewportSystem";
 import { buildViewportMenu } from "./viewportMenu";
 
-const OBJECT_CONTEXT_COMMANDS = ["edit.group", "edit.convertToMesh", "edit.delete", "edit.deselect"];
+const OBJECT_CONTEXT_COMMANDS = [
+  "edit.group",
+  "edit.convertToMesh",
+  "edit.delete",
+  "edit.deselect",
+];
 
 /** Matches the gizmo's AXIS_COLORS (x, y, z). */
 const AXIS_COLORS = ["#e0554f", "#69b839", "#3f7fdc"] as const;

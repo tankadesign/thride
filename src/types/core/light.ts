@@ -31,7 +31,14 @@ export const SHADOW_CAPABLE: ReadonlySet<LightType> = new Set(["spot", "point", 
 export function defaultLightData(type: LightType): LightDataDTO {
   switch (type) {
     case "spot":
-      return { type, color: "#ffffff", intensity: 40, castShadow: true, angle: Math.PI / 5, penumbra: 0.25 };
+      return {
+        type,
+        color: "#ffffff",
+        intensity: 40,
+        castShadow: true,
+        angle: Math.PI / 5,
+        penumbra: 0.25,
+      };
     case "point":
       return { type, color: "#ffffff", intensity: 30, castShadow: true };
     case "directional":
