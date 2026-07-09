@@ -11,11 +11,14 @@
     "prepare": "vp config"
   },
   "dependencies": {
+    "@tailwindcss/vite": "^4.3.2",
     "dockview": "^7.0.2",
     "dockview-react": "^7.0.2",
     "earcut": "^3.2.3",
+    "jotai": "^2.20.1",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
+    "tailwindcss": "^4.3.2",
     "three": "^0.185.1",
     "three-mesh-bvh": "^0.9.10"
   },
@@ -28,6 +31,7 @@
     "@types/react-dom": "^19.2.3",
     "@types/three": "^0.185.0",
     "@vitejs/plugin-react": "^6.0.3",
+    "daisyui": "^5.6.15",
     "happy-dom": "^20.10.6",
     "typescript": "~6.0.2",
     "vite": "catalog:",
