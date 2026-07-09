@@ -5,6 +5,7 @@ import {
   CylinderGeometry,
   Euler,
   Group,
+  type Intersection,
   Mesh,
   MeshBasicMaterial,
   Object3D,
@@ -49,6 +50,21 @@ interface Handle {
   kind: HandleKind;
   axis: Axis;
 }
+
+/**
+ * Pick precedence when handles overlap in screen space (higher wins,
+ * independent of camera distance). In an orthographic top/side view the
+ * edge-on rotation rings project onto the move axes and would otherwise
+ * steal their clicks; scale cubes (inside the rings) and move arrows
+ * (outside them) must win so translate/scale stay usable head-on. Ties at
+ * equal priority fall back to nearest-first (raycaster hit order).
+ */
+const HANDLE_PRIORITY: Record<HandleKind, number> = {
+  scale: 3,
+  translate: 2,
+  "translate-view": 2,
+  rotate: 1,
+};
 
 const AXIS_COLORS = [0xe0554f, 0x69b839, 0x3f7fdc] as const; // x y z
 const AXIS_VECS = [new Vector3(1, 0, 0), new Vector3(0, 1, 0), new Vector3(0, 0, 1)] as const;
@@ -116,13 +132,33 @@ export class TransformGizmo {
     this.group.scale.setScalar(scale);
   }
 
+  /**
+   * Resolve overlapping handle hits by precedence (scale > translate >
+   * rotate), then nearest-first for ties. `hits` come back distance-sorted,
+   * so the first hit at the top priority wins.
+   */
+  private pickHandle(hits: Intersection[]): Mesh | null {
+    let best: Mesh | null = null;
+    let bestPriority = -1;
+    for (const h of hits) {
+      const obj = h.object as Mesh;
+      const handle = obj.userData.handle as Handle | undefined;
+      if (!handle) continue;
+      const priority = HANDLE_PRIORITY[handle.kind];
+      if (priority > bestPriority) {
+        best = obj;
+        bestPriority = priority;
+      }
+    }
+    return best;
+  }
+
   /** Try to begin a drag. Returns true when the pointer hit a handle. */
   pointerDown(raycaster: Raycaster): boolean {
     if (!this.group.visible) return false;
-    const hits = raycaster.intersectObject(this.group, true);
-    const hit = hits.find((h) => (h.object as Mesh).userData.handle);
-    if (!hit) return false;
-    const handle = (hit.object as Mesh).userData.handle as Handle;
+    const hitObj = this.pickHandle(raycaster.intersectObject(this.group, true));
+    if (!hitObj) return false;
+    const handle = hitObj.userData.handle as Handle;
 
     const ids = [...this.doc.selection.objectIds];
     const begin = new Map<Uuid, TransformDTO>();
@@ -240,8 +276,7 @@ export class TransformGizmo {
   /** Hover feedback: handle under the pointer turns primary (theme) color. */
   updateHover(raycaster: Raycaster): void {
     if (this.drag || !this.group.visible) return;
-    const hits = raycaster.intersectObject(this.group, true);
-    const hitObj = (hits.find((h) => (h.object as Mesh).userData.handle)?.object as Mesh) ?? null;
+    const hitObj = this.pickHandle(raycaster.intersectObject(this.group, true));
     const mesh = hitObj ? ((hitObj.userData.visual as Mesh | undefined) ?? hitObj) : null;
     if (mesh === this.hovered) return;
     if (this.hovered) {
@@ -265,18 +300,27 @@ export class TransformGizmo {
   }
 
   private build(): void {
+    // Radial layout (gizmo units): scale cubes sit INSIDE the rotation rings,
+    // move arrows OUTSIDE them, so an edge-on ring in an ortho view never
+    // covers the translate/scale handles. See HANDLE_PRIORITY for the
+    // matching hit-test precedence.
+    const RING_R = 1.0;
+    const SCALE_R = 0.5; // inside the ring
+    const SHAFT_LEN = 1.12; // spans ~0.16 → 1.28, threading the scale cube
+    const SHAFT_MID = 0.72;
+    const ARROW_R = 1.4; // arrowhead clear outside the ring
     for (let axis = 0 as Axis; axis < 3; axis = (axis + 1) as Axis) {
       const color = AXIS_COLORS[axis];
       const dir = AXIS_VECS[axis];
       const quat = new Quaternion().setFromUnitVectors(new Vector3(0, 1, 0), dir);
 
       const shaft = this.handleMesh(
-        new CylinderGeometry(0.012, 0.012, 0.72, 6),
+        new CylinderGeometry(0.012, 0.012, SHAFT_LEN, 6),
         color,
         { kind: "translate", axis },
-        new CylinderGeometry(PICK_MIN_RADIUS, PICK_MIN_RADIUS, 0.78, 6),
+        new CylinderGeometry(PICK_MIN_RADIUS, PICK_MIN_RADIUS, SHAFT_LEN + 0.06, 6),
       );
-      shaft.position.copy(dir).multiplyScalar(0.42);
+      shaft.position.copy(dir).multiplyScalar(SHAFT_MID);
       shaft.quaternion.copy(quat);
 
       const head = this.handleMesh(
@@ -285,14 +329,14 @@ export class TransformGizmo {
         { kind: "translate", axis },
         new ConeGeometry(0.05 * PICK_SCALE, 0.16 * 1.6, 8),
       );
-      head.position.copy(dir).multiplyScalar(0.86);
+      head.position.copy(dir).multiplyScalar(ARROW_R);
       head.quaternion.copy(quat);
 
       const ring = this.handleMesh(
-        new TorusGeometry(1.0, 0.014, 8, 48),
+        new TorusGeometry(RING_R, 0.014, 8, 48),
         color,
         { kind: "rotate", axis },
-        new TorusGeometry(1.0, PICK_MIN_RADIUS, 6, 32),
+        new TorusGeometry(RING_R, PICK_MIN_RADIUS, 6, 32),
       );
       ring.quaternion.setFromUnitVectors(new Vector3(0, 0, 1), dir);
 
@@ -302,7 +346,7 @@ export class TransformGizmo {
         { kind: "scale", axis },
         new BoxGeometry(0.09 * PICK_SCALE, 0.09 * PICK_SCALE, 0.09 * PICK_SCALE),
       );
-      cube.position.copy(dir).multiplyScalar(1.18);
+      cube.position.copy(dir).multiplyScalar(SCALE_R);
     }
     const center = this.handleMesh(
       new SphereGeometry(0.07, 16, 12),

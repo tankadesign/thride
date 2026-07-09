@@ -136,6 +136,34 @@ export class SceneSynchronizer {
     return null;
   }
 
+  /**
+   * nodeId of a hit object, but ONLY if that node and every ancestor node is
+   * visible — three's raycaster ignores `Object3D.visible` (and a hidden
+   * ancestor never sets `.visible=false` on its descendants), so picking must
+   * consult the document to match what's actually rendered. Returns null for
+   * a hidden node so click-select / context-menu skip it.
+   */
+  visibleNodeIdOf(obj: Object3D): Uuid | null {
+    const id = this.nodeIdOf(obj);
+    if (!id) return null;
+    let cur: Uuid | null = id;
+    while (cur) {
+      const node = this.doc.scene.get(cur);
+      if (!node) return null;
+      if (!node.visible) return null;
+      cur = node.parent;
+    }
+    return id;
+  }
+
+  /** Current local Euler (XYZ) of a node's live object — used to bake a
+   * target-follow orientation into the document when the target is cleared. */
+  currentLocalRotation(id: Uuid): [number, number, number] | null {
+    const obj = this.objects.get(id);
+    if (!obj) return null;
+    return [obj.rotation.x, obj.rotation.y, obj.rotation.z];
+  }
+
   dispose(): void {
     for (const u of this.unsubs) u();
     for (const { rm } of this.renderMeshes.values()) rm.dispose();

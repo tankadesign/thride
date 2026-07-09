@@ -8,10 +8,12 @@ import {
   RenameNodeCommand,
   SetFlagsCommand,
   SetNodeDataCommand,
+  SetTransformCommand,
 } from "@/core/history/commands/scene";
 import { TransformDragSession } from "@/core/session/TransformDragSession";
-import { useDocument, useSliceVersion } from "@/ui/hooks/doc/document";
+import { appStore, useDocument, useSliceVersion } from "@/ui/hooks/doc/document";
 import { useSelectionInfo } from "@/ui/hooks/doc/selection";
+import { targetRotationBakerAtom } from "@/ui/hooks/editor/viewport";
 import { NumberDrag } from "@/ui/widgets/NumberDrag";
 
 const RAD = Math.PI / 180;
@@ -203,9 +205,27 @@ function TargetSelector({ id }: { id: Uuid }) {
   const setTarget = (value: string) => {
     const before = structuredClone(node.data ?? {});
     const data = structuredClone(node.data ?? {});
-    if (value) data.target = value;
-    else delete data.target;
-    doc.history.run(new SetNodeDataCommand(id, data, before, "Set Target"));
+    if (value) {
+      data.target = value;
+      doc.history.run(new SetNodeDataCommand(id, data, before, "Set Target"));
+      return;
+    }
+    // Clearing a target: bake the orientation the object is CURRENTLY showing
+    // (from following the target) into its transform so it keeps its PSR
+    // instead of snapping back to the pre-target rotation. Position/scale are
+    // untouched — a look-at constraint only ever drove rotation.
+    delete data.target;
+    const baked = appStore.get(targetRotationBakerAtom)?.bake(id) ?? null;
+    if (!baked) {
+      doc.history.run(new SetNodeDataCommand(id, data, before, "Clear Target"));
+      return;
+    }
+    const beforeT = structuredClone(node.transform);
+    const afterT: TransformDTO = { ...structuredClone(node.transform), rotation: baked };
+    doc.history.transact("Clear Target", () => {
+      doc.history.run(new SetTransformCommand(id, afterT, beforeT));
+      doc.history.run(new SetNodeDataCommand(id, data, before, "Clear Target"));
+    });
   };
 
   return (

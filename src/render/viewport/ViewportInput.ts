@@ -1,4 +1,5 @@
-import { Vector3 } from "three";
+import { Raycaster, Vector3 } from "three";
+import type { Uuid } from "@/types/core";
 import type { ViewportSystem } from "./ViewportSystem";
 
 type NavMode = "orbit" | "pan" | "dolly" | null;
@@ -97,9 +98,8 @@ export class ViewportInput {
         vs.invalidate();
         return;
       }
-      // click select
-      const hit = vs.raycaster.intersectObject(vs.sync.root, true)[0];
-      const nodeId = hit ? vs.sync.nodeIdOf(hit.object) : null;
+      // click select — skip hidden objects (raycaster ignores .visible)
+      const nodeId = this.firstVisibleNode(vs.raycaster.intersectObject(vs.sync.root, true));
       if (nodeId) {
         const op = e.shiftKey ? "add" : e.metaKey || e.ctrlKey ? "toggle" : "replace";
         vs.doc.selection.selectObjects([nodeId], op);
@@ -205,10 +205,19 @@ export class ViewportInput {
     const rect = vs.canvas.getBoundingClientRect();
     const pane = vs.paneAt(me.clientX - rect.left, me.clientY - rect.top);
     vs.setRayFromEvent(me, pane);
-    const hit = vs.raycaster.intersectObject(vs.sync.root, true)[0];
-    const nodeId = hit ? vs.sync.nodeIdOf(hit.object) : null;
+    // skip hidden objects — a hidden node shouldn't open its context menu
+    const nodeId = this.firstVisibleNode(vs.raycaster.intersectObject(vs.sync.root, true));
     vs.onContextMenuRequest?.({ clientX: me.clientX, clientY: me.clientY, pane, nodeId });
   };
+
+  /** First raycast hit that resolves to a visible node, or null. */
+  private firstVisibleNode(hits: ReturnType<Raycaster["intersectObject"]>): Uuid | null {
+    for (const h of hits) {
+      const id = this.vs.sync.visibleNodeIdOf(h.object);
+      if (id) return id;
+    }
+    return null;
+  }
 
   private onKeyDown = (e: KeyboardEvent): void => {
     const vs = this.vs;

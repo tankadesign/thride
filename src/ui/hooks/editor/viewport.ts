@@ -1,4 +1,5 @@
 import { atom, useAtom, useAtomValue } from "jotai";
+import type { Uuid, Vec3 } from "@/types/core";
 import type {
   EditorViewportState,
   GizmoSpace,
@@ -10,6 +11,17 @@ import { defaultPaneDisplay } from "@/types/editor";
 import { appStore } from "@/ui/hooks/doc/document";
 import { gridSnapSizeAtom } from "./settings";
 import { paletteOpenAtom } from "./shell";
+
+/**
+ * Narrow render→UI bridge: reads the live local rotation of a node's Object3D
+ * so the UI can bake a target-follow orientation into the document when a
+ * target is cleared (retaining the object's current PSR instead of snapping
+ * back). Set by ViewportPanel; null when no viewport is mounted.
+ *
+ * Wrapped in an object because a bare function value would be interpreted by
+ * jotai's primitive atom as a state-updater and invoked instead of stored.
+ */
+export const targetRotationBakerAtom = atom<{ bake: (id: Uuid) => Vec3 | null } | null>(null);
 
 /**
  * Viewport editor state (ephemeral, non-undoable): layout, pane focus,

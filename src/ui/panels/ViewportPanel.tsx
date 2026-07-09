@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
+import type { Uuid } from "@/types/core";
 import type { PaneCamera } from "@/types/editor";
-import { useDocument, useSliceVersion } from "@/ui/hooks/doc/document";
+import { appStore, useDocument, useSliceVersion } from "@/ui/hooks/doc/document";
 import { openContextMenu } from "@/ui/hooks/editor/shell";
-import { editorState, useViewportState } from "@/ui/hooks/editor/viewport";
+import { editorState, targetRotationBakerAtom, useViewportState } from "@/ui/hooks/editor/viewport";
 import {
   type PaneAxes,
   type ViewportStats,
@@ -90,8 +91,12 @@ export function ViewportPanel({ onSystem }: Props) {
       }
     };
     onSystem(vs);
+    // expose a narrow baker so the Attributes target selector can retain the
+    // followed orientation when a target is cleared (see targetRotationBakerAtom)
+    appStore.set(targetRotationBakerAtom, { bake: (id: Uuid) => vs.sync.currentLocalRotation(id) });
     return () => {
       onSystem(null);
+      appStore.set(targetRotationBakerAtom, null);
       vs.dispose();
     };
   }, [doc, onSystem]);
