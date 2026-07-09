@@ -1,8 +1,9 @@
-import { HugeiconsIcon, type HugeiconsIconProps } from "@hugeicons/react";
+import { iconSizeAtom } from "@/ui/hooks/editor/settings";
 import {
   Axis3DIcon,
   BulbIcon,
   ChartSplineIcon,
+  CheckmarkSquare02Icon,
   CircleIcon,
   Cone01Icon,
   CubeIcon,
@@ -28,17 +29,16 @@ import {
   SphereIcon,
   SplinePointerIcon,
   SpotlightIcon,
+  SquareIcon,
   SunCloud02Icon,
   SunsetIcon,
   Target01Icon,
-  ToggleOffIcon,
-  ToggleOnIcon,
   TorusIcon,
   TriangleIcon,
   Video02Icon,
 } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon, type HugeiconsIconProps } from "@hugeicons/react";
 import { useAtomValue } from "jotai";
-import { iconSizeAtom } from "@/ui/hooks/editor/settings";
 
 /**
  * App icon set on hugeicons. Every icon renders at the GLOBAL icon size
@@ -88,8 +88,8 @@ export const IconHemisphereLight = makeIcon(LayerMask01Icon);
 export const IconAreaLight = makeIcon(LayerSendBackwardIcon);
 
 // UI
-export const IconToggleOn = makeIcon(ToggleOnIcon);
-export const IconToggleOff = makeIcon(ToggleOffIcon);
+export const IconToggleOn = makeIcon(CheckmarkSquare02Icon);
+export const IconToggleOff = makeIcon(SquareIcon);
 export const IconTarget = makeIcon(Target01Icon);
 export const IconGrid = makeIcon(GridIcon);
 export const IconShading = makeIcon(PaintBoardIcon);
