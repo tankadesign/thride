@@ -11,9 +11,9 @@ interface NumberDragProps {
 }
 
 /**
- * C4D-style numeric field: drag horizontally to scrub (streamed with
- * committed=false, one committed=true on release — maps onto interactive
- * sessions), click/double-click to type.
+ * C4D-style numeric field on a daisyUI input: drag horizontally to scrub
+ * (streamed with committed=false, one committed=true on release — maps onto
+ * interactive sessions), click to type. Shift = fine, Alt = coarse.
  */
 export function NumberDrag({
   value,
@@ -68,16 +68,16 @@ export function NumberDrag({
   };
 
   return (
-    <div
-      className="t-num"
-      data-editing={editing}
+    <label
+      className={`input input-xs w-full min-w-0 gap-1 px-1.5 ${editing ? "" : "cursor-scrub select-none"}`}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
     >
-      {label ? <span className="t-num-label">{label}</span> : null}
+      {label ? <span className="label text-[10px] opacity-60">{label}</span> : null}
       <input
         ref={inputRef}
+        className={`text-right ${editing ? "" : "pointer-events-none"}`}
         value={shown}
         readOnly={!editing}
         onChange={(e) => setText(e.target.value)}
@@ -89,7 +89,7 @@ export function NumberDrag({
           e.stopPropagation();
         }}
       />
-    </div>
+    </label>
   );
 }
 

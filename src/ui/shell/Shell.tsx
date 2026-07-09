@@ -1,20 +1,19 @@
 import "dockview-react/dist/styles/dockview.css";
-import "@/ui/widgets/widgets.css";
 import {
   DockviewReact,
   type DockviewApi,
   type DockviewReadyEvent,
   type IDockviewPanelProps,
 } from "dockview-react";
-import { useEffect, useMemo, useRef, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import type { Document } from "@/core";
 import { buildCommands, type ShellApi } from "@/app/commands";
 import { CommandRegistry } from "@/ui/commands/CommandRegistry";
+import { usePalette } from "@/ui/hooks/editor/shell";
 import { AttributesPanel } from "@/ui/panels/AttributesPanel";
 import { GalleryPanel } from "@/ui/panels/GalleryPanel";
 import { ObjectManagerPanel } from "@/ui/panels/ObjectManagerPanel";
 import { ViewportPanel } from "@/ui/panels/ViewportPanel";
-import type { EditorState } from "@/ui/state/EditorState";
 import type { ViewportSystem } from "@/render/viewport/ViewportSystem";
 import { CommandPalette } from "./CommandPalette";
 import { MenuBar } from "./MenuBar";
@@ -22,18 +21,10 @@ import { ToolRail } from "./ToolRail";
 
 const LAYOUT_KEY = "thride.layout.v1";
 
-interface ShellProps {
-  doc: Document;
-  editor: EditorState;
-}
-
-export function Shell({ doc, editor }: ShellProps) {
+export function Shell({ doc }: { doc: Document }) {
   const apiRef = useRef<DockviewApi | null>(null);
   const viewportRef = useRef<ViewportSystem | null>(null);
-  useSyncExternalStore(
-    (cb) => editor.subscribe(cb),
-    () => editor.version,
-  );
+  const palette = usePalette();
 
   const registry = useMemo(() => {
     const shellApi: ShellApi = {
@@ -57,9 +48,9 @@ export function Shell({ doc, editor }: ShellProps) {
       },
     };
     const reg = new CommandRegistry();
-    reg.register(...buildCommands(doc, editor, shellApi));
+    reg.register(...buildCommands(doc, shellApi));
     return reg;
-  }, [doc, editor]);
+  }, [doc]);
 
   // global shortcuts (skip while typing)
   useEffect(() => {
@@ -70,25 +61,26 @@ export function Shell({ doc, editor }: ShellProps) {
         t.tagName === "TEXTAREA" ||
         t.tagName === "SELECT" ||
         t.isContentEditable
-      )
+      ) {
         return;
-      if (editor.paletteOpen) return;
+      }
+      if (palette.open) return;
       registry.handleKey(e);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [registry, editor]);
+  }, [registry, palette.open]);
 
   const components = useMemo(
     () => ({
       viewport: (_p: IDockviewPanelProps) => (
-        <ViewportPanel editor={editor} onSystem={(vs) => (viewportRef.current = vs)} />
+        <ViewportPanel onSystem={(vs) => (viewportRef.current = vs)} />
       ),
       objects: (_p: IDockviewPanelProps) => <ObjectManagerPanel />,
       attributes: (_p: IDockviewPanelProps) => <AttributesPanel />,
       gallery: (_p: IDockviewPanelProps) => <GalleryPanel />,
     }),
-    [editor],
+    [],
   );
 
   const onReady = (e: DockviewReadyEvent) => {
@@ -114,21 +106,19 @@ export function Shell({ doc, editor }: ShellProps) {
   };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+    <div className="flex h-full flex-col bg-base-300 text-base-content">
       <MenuBar registry={registry} />
-      <div style={{ display: "flex", flex: 1, minHeight: 0 }}>
+      <div className="flex min-h-0 flex-1">
         <ToolRail registry={registry} />
-        <div style={{ flex: 1, minWidth: 0 }}>
+        <div className="min-w-0 flex-1">
           <DockviewReact
-            className="dockview-theme-dark"
+            className="dockview-theme-dark dockview-theme-thride"
             components={components}
             onReady={onReady}
           />
         </div>
       </div>
-      {editor.paletteOpen ? (
-        <CommandPalette registry={registry} onClose={() => editor.setPaletteOpen(false)} />
-      ) : null}
+      {palette.open ? <CommandPalette registry={registry} onClose={palette.close} /> : null}
     </div>
   );
 }

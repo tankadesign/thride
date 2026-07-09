@@ -1,11 +1,14 @@
 import { useRef } from "react";
 import type { TransformDTO, Uuid } from "@/types/core";
 import type { PrimitiveDescriptor } from "@/types/geometry/primitives";
-import { SetFlagsCommand, SetNodeDataCommand } from "@/core/history/commands/scene";
+import {
+  RenameNodeCommand,
+  SetFlagsCommand,
+  SetNodeDataCommand,
+} from "@/core/history/commands/scene";
 import { TransformDragSession } from "@/core/session/TransformDragSession";
-import { useDocument } from "@/ui/hooks/DocumentContext";
-import { useDocSlice } from "@/ui/hooks/useDocSlice";
-import { Checkbox } from "@/ui/widgets/Checkbox";
+import { useDocument, useSliceVersion } from "@/ui/hooks/doc/document";
+import { useSelectionInfo } from "@/ui/hooks/doc/selection";
 import { NumberDrag } from "@/ui/widgets/NumberDrag";
 
 const RAD = Math.PI / 180;
@@ -13,13 +16,12 @@ const RAD = Math.PI / 180;
 /** Attributes/inspector for the active selection: name, transform, primitive params. */
 export function AttributesPanel() {
   const doc = useDocument();
-  useDocSlice("scene");
-  useDocSlice("selection");
-  const id = doc.selection.active;
-  if (!id || !doc.scene.has(id)) {
-    return <div style={{ padding: 12, color: "var(--t-fg-dim)" }}>Nothing selected</div>;
+  useSliceVersion("scene");
+  const { active } = useSelectionInfo();
+  if (!active || !doc.scene.has(active)) {
+    return <div className="h-full bg-base-100 p-3 text-xs opacity-50">Nothing selected</div>;
   }
-  return <NodeAttributes key={id} id={id} />;
+  return <NodeAttributes key={active} id={active} />;
 }
 
 function NodeAttributes({ id }: { id: Uuid }) {
@@ -47,27 +49,42 @@ function NodeAttributes({ id }: { id: Uuid }) {
   const prim = node.data?.primitive as PrimitiveDescriptor | undefined;
 
   return (
-    <div style={{ height: "100%", overflow: "auto", background: "var(--t-bg-panel)" }}>
-      <div className="t-section">
-        <div className="t-section-title">Object</div>
-        <div className="t-row">
-          <span className="t-row-label">Name</span>
-          <span style={{ flex: 1 }}>{node.name}</span>
-        </div>
-        <div className="t-row">
-          <span className="t-row-label">Visible</span>
-          <Checkbox
+    <div className="h-full overflow-auto bg-base-100 text-xs">
+      <fieldset className="fieldset border-b border-base-200 px-2 py-1.5">
+        <legend className="fieldset-legend py-1 text-[10px] uppercase opacity-60">Object</legend>
+        <div className="grid grid-cols-[64px_1fr] items-center gap-1">
+          <span className="opacity-60">Name</span>
+          <input
+            key={node.name}
+            className="input input-ghost input-xs w-full"
+            defaultValue={node.name}
+            onBlur={(e) => {
+              if (e.target.value && e.target.value !== node.name) {
+                doc.history.run(new RenameNodeCommand(id, e.target.value));
+              }
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+              e.stopPropagation();
+            }}
+          />
+          <span className="opacity-60">Visible</span>
+          <input
+            type="checkbox"
+            className="toggle toggle-xs"
             checked={node.visible}
-            onChange={(v) => doc.history.run(new SetFlagsCommand(id, { visible: v }))}
+            onChange={(e) =>
+              doc.history.run(new SetFlagsCommand(id, { visible: e.target.checked }))
+            }
           />
         </div>
-      </div>
+      </fieldset>
 
-      <div className="t-section">
-        <div className="t-section-title">Transform</div>
+      <fieldset className="fieldset border-b border-base-200 px-2 py-1.5">
+        <legend className="fieldset-legend py-1 text-[10px] uppercase opacity-60">Transform</legend>
         {(["position", "rotation", "scale"] as const).map((field) => (
-          <div className="t-row" key={field}>
-            <span className="t-row-label">{field[0]!.toUpperCase() + field.slice(1)}</span>
+          <div className="grid grid-cols-[64px_1fr_1fr_1fr] items-center gap-1" key={field}>
+            <span className="capitalize opacity-60">{field}</span>
             {axes.map((axis, i) => (
               <NumberDrag
                 key={axis}
@@ -83,7 +100,7 @@ function NodeAttributes({ id }: { id: Uuid }) {
             ))}
           </div>
         ))}
-      </div>
+      </fieldset>
 
       {prim ? <PrimitiveParams id={id} prim={prim} /> : null}
     </div>
@@ -103,7 +120,7 @@ function PrimitiveParams({ id, prim }: { id: Uuid; prim: PrimitiveDescriptor }) 
     if (committed) {
       const before = scrub.current.before;
       scrub.current = null;
-      doc.setNodeData(id, data, true); // final preview so command sees no-op execute
+      doc.setNodeData(id, data, true); // final preview; command records without re-executing
       doc.history.pushWithoutExecute(new SetNodeDataCommand(id, data, before, `Edit ${prim.type}`));
     } else {
       doc.setNodeData(id, data, true);
@@ -111,27 +128,30 @@ function PrimitiveParams({ id, prim }: { id: Uuid; prim: PrimitiveDescriptor }) 
   };
 
   return (
-    <div className="t-section">
-      <div className="t-section-title">{prim.type} parameters</div>
+    <fieldset className="fieldset px-2 py-1.5">
+      <legend className="fieldset-legend py-1 text-[10px] uppercase opacity-60">
+        {prim.type} parameters
+      </legend>
       {Object.entries(prim.params).map(([key, value]) => (
-        <div className="t-row" key={key}>
-          <span className="t-row-label">{key}</span>
+        <div className="grid grid-cols-[64px_1fr] items-center gap-1" key={key}>
+          <span className="truncate opacity-60">{key}</span>
           {typeof value === "boolean" ? (
-            <Checkbox checked={value} onChange={(v) => setParam(key, v, true)} />
+            <input
+              type="checkbox"
+              className="toggle toggle-xs"
+              checked={value}
+              onChange={(e) => setParam(key, e.target.checked, true)}
+            />
           ) : (
             <NumberDrag
               value={value}
-              step={
-                key.toLowerCase().includes("seg") || key.includes("subdiv") || key.includes("Rings")
-                  ? 0.05
-                  : 0.01
-              }
+              step={/seg|subdiv|[Rr]ings/.test(key) ? 0.05 : 0.01}
               min={0}
               onChange={(v, committed) => setParam(key, v, committed)}
             />
           )}
         </div>
       ))}
-    </div>
+    </fieldset>
   );
 }

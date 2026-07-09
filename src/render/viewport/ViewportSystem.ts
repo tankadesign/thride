@@ -12,7 +12,7 @@ import {
 import { WebGPURenderer } from "three/webgpu";
 import type { Document } from "@/core";
 import type { Uuid } from "@/types/core";
-import type { BuiltinCamera, EditorState } from "@/ui/state/EditorState";
+import type { BuiltinCamera, EditorViewportState } from "@/types/editor";
 import { TransformGizmo } from "@/render/gizmo/TransformGizmo";
 import { CameraRig } from "@/render/nav/CameraRig";
 import { SceneSynchronizer } from "@/render/scene-sync/SceneSynchronizer";
@@ -42,7 +42,7 @@ const BUILTINS: BuiltinCamera[] = ["persp", "top", "front", "right"];
 export class ViewportSystem {
   private readonly canvas: HTMLCanvasElement;
   private readonly doc: Document;
-  private readonly editor: EditorState;
+  private readonly editor: EditorViewportState;
   private renderer: WebGPURenderer | null = null;
   private readonly scene = new Scene();
   private readonly sync: SceneSynchronizer;
@@ -53,6 +53,7 @@ export class ViewportSystem {
   private disposed = false;
   private rendering = false;
   private nav: { mode: NavMode; pane: number; lastX: number; lastY: number } | null = null;
+  private mmbClick: { x: number; y: number; pane: number } | null = null;
   private raycaster = new Raycaster();
   private resizeObserver: ResizeObserver;
   private unsubs: (() => void)[] = [];
@@ -60,7 +61,7 @@ export class ViewportSystem {
   private lastStats = performance.now();
   onStats: ((s: ViewportStats) => void) | null = null;
 
-  constructor(canvas: HTMLCanvasElement, doc: Document, editor: EditorState) {
+  constructor(canvas: HTMLCanvasElement, doc: Document, editor: EditorViewportState) {
     this.canvas = canvas;
     this.doc = doc;
     this.editor = editor;
@@ -157,6 +158,11 @@ export class ViewportSystem {
 
   // ---- rendering ---------------------------------------------------------
 
+  /** Logical pane index shown in each rect (single layout shows the maximized pane). */
+  private logicalPanes(): number[] {
+    return this.editor.layout === "single" ? [this.editor.maximizedPane] : [0, 1, 2, 3];
+  }
+
   private layoutPanes(): void {
     const w = this.canvas.clientWidth;
     const h = this.canvas.clientHeight;
@@ -194,9 +200,11 @@ export class ViewportSystem {
     const renderer = this.renderer;
     if (!renderer) return;
     this.layoutPanes();
+    const logical = this.logicalPanes();
     renderer.setScissorTest(true);
-    for (let i = 0; i < this.panes.length; i++) {
-      const p = this.panes[i]!;
+    for (let r = 0; r < this.panes.length; r++) {
+      const p = this.panes[r]!;
+      const i = logical[r]!;
       if (p.w < 2 || p.h < 2) continue;
       const rig = this.rigFor(i);
       rig.setAspect(p.w / p.h);
@@ -256,20 +264,22 @@ export class ViewportSystem {
 
   // ---- input ---------------------------------------------------------------
 
+  /** Logical pane index under a canvas point. */
   private paneAt(x: number, y: number): number {
     this.layoutPanes();
-    for (let i = 0; i < this.panes.length; i++) {
-      const p = this.panes[i]!;
-      if (x >= p.x && x < p.x + p.w && y >= p.y && y < p.y + p.h) return i;
+    const logical = this.logicalPanes();
+    for (let r = 0; r < this.panes.length; r++) {
+      const p = this.panes[r]!;
+      if (x >= p.x && x < p.x + p.w && y >= p.y && y < p.y + p.h) return logical[r]!;
     }
-    return 0;
+    return logical[0]!;
   }
 
   private setRayFromEvent(e: PointerEvent | MouseEvent, pane: number): CameraRig {
     const rect = this.canvas.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
-    const p = this.panes[pane]!;
+    const p = this.panes[this.logicalPanes().indexOf(pane)] ?? this.panes[0]!;
     const ndc = new Vector2(((x - p.x) / p.w) * 2 - 1, -(((y - p.y) / p.h) * 2 - 1));
     const rig = this.rigFor(pane);
     this.raycaster.setFromCamera(ndc, rig.camera);
@@ -286,6 +296,13 @@ export class ViewportSystem {
       this.canvas.setPointerCapture(e.pointerId);
     } catch {
       // synthetic/test events have no active pointer — capture is best-effort
+    }
+
+    if (!e.altKey && e.button === 1) {
+      // MMB click (no drag): maximize pane / back to 4-up — armed until movement
+      this.mmbClick = { x: e.clientX, y: e.clientY, pane };
+      e.preventDefault();
+      return;
     }
 
     if (e.altKey) {
@@ -325,6 +342,10 @@ export class ViewportSystem {
   };
 
   private onPointerMove = (e: PointerEvent): void => {
+    if (this.mmbClick) {
+      const moved = Math.hypot(e.clientX - this.mmbClick.x, e.clientY - this.mmbClick.y);
+      if (moved > 4) this.mmbClick = null; // became a drag, not a click
+    }
     if (this.nav?.mode) {
       const dx = e.clientX - this.nav.lastX;
       const dy = e.clientY - this.nav.lastY;
@@ -357,6 +378,13 @@ export class ViewportSystem {
       this.canvas.releasePointerCapture(e.pointerId);
     } catch {
       // see setPointerCapture note
+    }
+    if (this.mmbClick && e.button === 1) {
+      const pane = this.mmbClick.pane;
+      this.mmbClick = null;
+      this.editor.toggleMaximize(pane);
+      this.invalidate();
+      return;
     }
     if (this.nav) {
       this.nav = null;

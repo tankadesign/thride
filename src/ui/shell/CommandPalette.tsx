@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CommandRegistry } from "@/ui/commands/CommandRegistry";
 import { shortcutLabel } from "@/ui/commands/CommandRegistry";
+import { IconSearch } from "@/icons";
 
 interface Props {
   registry: CommandRegistry;
   onClose: () => void;
 }
 
+/** ⌘K command palette — daisyUI modal + compact menu list. */
 export function CommandPalette({ registry, onClose }: Props) {
   const [query, setQuery] = useState("");
   const [index, setIndex] = useState(0);
@@ -25,7 +27,6 @@ export function CommandPalette({ registry, onClose }: Props) {
   }, [registry, query]);
 
   useEffect(() => inputRef.current?.focus(), []);
-  useEffect(() => setIndex(0), []);
 
   const runSelected = () => {
     const cmd = matches[index];
@@ -36,51 +37,58 @@ export function CommandPalette({ registry, onClose }: Props) {
   };
 
   return (
-    <div className="t-palette-overlay" onPointerDown={onClose}>
-      <div className="t-palette" onPointerDown={(e) => e.stopPropagation()}>
-        <input
-          ref={inputRef}
-          placeholder="Type a command…"
-          value={query}
-          onChange={(e) => {
-            setQuery(e.target.value);
-            setIndex(0);
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Escape") onClose();
-            if (e.key === "Enter") runSelected();
-            if (e.key === "ArrowDown") setIndex((i) => Math.min(i + 1, matches.length - 1));
-            if (e.key === "ArrowUp") setIndex((i) => Math.max(i - 1, 0));
-            e.stopPropagation();
-          }}
-        />
-        <div className="t-palette-list">
+    <div className="modal modal-open modal-top" onPointerDown={onClose}>
+      <div
+        className="modal-box mx-auto mt-[12vh] w-[30rem] max-w-full p-0"
+        onPointerDown={(e) => e.stopPropagation()}
+      >
+        <label className="input input-sm input-ghost w-full rounded-none border-0 border-b border-base-300">
+          <IconSearch className="opacity-50" />
+          <input
+            ref={inputRef}
+            placeholder="Type a command…"
+            value={query}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setIndex(0);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") onClose();
+              if (e.key === "Enter") runSelected();
+              if (e.key === "ArrowDown") setIndex((i) => Math.min(i + 1, matches.length - 1));
+              if (e.key === "ArrowUp") setIndex((i) => Math.max(i - 1, 0));
+              e.stopPropagation();
+            }}
+          />
+        </label>
+        <ul className="menu menu-xs max-h-[45vh] w-full flex-nowrap overflow-y-auto p-1">
           {matches.map((cmd, i) => (
-            <div
-              key={cmd.id}
-              className="t-palette-item"
-              data-active={i === index}
-              onPointerEnter={() => setIndex(i)}
-              onPointerDown={() => {
-                setIndex(i);
-                runSelected();
-              }}
-            >
-              <span>
-                {cmd.menu ? <span style={{ color: "var(--t-fg-dim)" }}>{cmd.menu} › </span> : null}
-                {cmd.title}
-              </span>
-              {cmd.shortcut ? (
-                <span className="t-menu-shortcut">{shortcutLabel(cmd.shortcut)}</span>
-              ) : null}
-            </div>
+            <li key={cmd.id}>
+              <button
+                type="button"
+                className={`flex justify-between gap-6 ${i === index ? "menu-active" : ""}`}
+                onPointerEnter={() => setIndex(i)}
+                onPointerDown={() => {
+                  setIndex(i);
+                  runSelected();
+                }}
+              >
+                <span>
+                  {cmd.menu ? <span className="opacity-50">{cmd.menu} › </span> : null}
+                  {cmd.title}
+                </span>
+                {cmd.shortcut ? (
+                  <kbd className="kbd kbd-xs opacity-60">{shortcutLabel(cmd.shortcut)}</kbd>
+                ) : null}
+              </button>
+            </li>
           ))}
           {matches.length === 0 ? (
-            <div className="t-palette-item" style={{ color: "var(--t-fg-dim)" }}>
-              No matching commands
-            </div>
+            <li className="menu-disabled">
+              <span>No matching commands</span>
+            </li>
           ) : null}
-        </div>
+        </ul>
       </div>
     </div>
   );

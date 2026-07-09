@@ -34,3 +34,10 @@ Thride is a browser 3D IDE on Three.js WebGPU/TSL — an open-source Spline with
 - All shared types/DTOs live in `src/types` (no logic, no imports from other layers).
 - Import direction: `app → (ui, editors, render) → (generators, materials, animation, io) → geometry → core → types`.
 - Path alias: `@/` → `src/`. All TSL imports go through the `materials/noises` barrel, never scattered.
+
+## UI & state conventions
+
+- 2D UI is **Tailwind CSS 4 + daisyUI 5** (theme: `sunset`). Always reach for a daisyUI component class before a bare HTML element; use the smallest size variants (`btn-xs`, `menu-xs`, `input-xs`, …) to keep the UI compact. No custom CSS unless genuinely impossible with utilities (current exceptions: dockview theme glue, scrub cursor in `src/index.css`).
+- App/UI state is **jotai**. All state logic lives under `src/ui/hooks/` in nested domain dirs (`doc/`, `editor/`, …). Combine related hooks in one file named for the domain (`history.ts`, `viewport.ts`) — never one file per hook, never `use*.ts` filenames.
+- The render layer never imports `src/ui`; it consumes editor state via the `EditorViewportState` contract in `src/types/editor.ts` (implemented over jotai's default store in `ui/hooks/editor/viewport.ts`).
+- Icons are original SVG components in `src/icons` (16px grid, currentColor).

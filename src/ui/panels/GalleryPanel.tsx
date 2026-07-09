@@ -1,57 +1,97 @@
 import { useState } from "react";
-import { Button } from "@/ui/widgets/Button";
-import { Checkbox } from "@/ui/widgets/Checkbox";
+import { IconCube, IconSphere } from "@/icons";
 import { NumberDrag } from "@/ui/widgets/NumberDrag";
-import { Select } from "@/ui/widgets/Select";
 
-/** Design-system gallery (open a "Gallery" panel via View menu). */
+/** Design-system gallery (View → UI Gallery) — daisyUI components at editor sizes. */
 export function GalleryPanel() {
   const [num, setNum] = useState(1.5);
-  const [check, setCheck] = useState(true);
-  const [sel, setSel] = useState<"a" | "b" | "c">("a");
 
   return (
-    <div className="t-gallery">
-      <div>
-        <div className="t-section-title">Buttons</div>
-        <div style={{ display: "flex", gap: 8 }}>
-          <Button>Default</Button>
-          <Button variant="primary">Primary</Button>
-          <Button variant="ghost">Ghost</Button>
-          <Button active>Active</Button>
-          <Button disabled>Disabled</Button>
+    <div className="flex h-full max-w-xl flex-col gap-4 overflow-auto bg-base-100 p-4 text-xs">
+      <section>
+        <h3 className="mb-2 text-[10px] font-semibold uppercase opacity-60">Buttons</h3>
+        <div className="flex flex-wrap items-center gap-2">
+          <button type="button" className="btn btn-xs">
+            Default
+          </button>
+          <button type="button" className="btn btn-xs btn-primary">
+            Primary
+          </button>
+          <button type="button" className="btn btn-xs btn-ghost">
+            Ghost
+          </button>
+          <button type="button" className="btn btn-xs btn-active">
+            Active
+          </button>
+          <button type="button" className="btn btn-xs btn-square">
+            <IconCube />
+          </button>
+          <button type="button" className="btn btn-xs" disabled>
+            Disabled
+          </button>
         </div>
-      </div>
-      <div>
-        <div className="t-section-title">Number drag (scrub / click to type)</div>
-        <div style={{ width: 200 }}>
+      </section>
+      <section>
+        <h3 className="mb-2 text-[10px] font-semibold uppercase opacity-60">
+          Number drag (scrub / click to type)
+        </h3>
+        <div className="w-48">
           <NumberDrag label="X" value={num} onChange={(v) => setNum(v)} />
         </div>
-      </div>
-      <div>
-        <div className="t-section-title">Select / checkbox</div>
-        <div style={{ display: "flex", gap: 12, width: 300 }}>
-          <Select
-            value={sel}
-            onChange={setSel}
-            options={[
-              { value: "a", label: "Option A" },
-              { value: "b", label: "Option B" },
-              { value: "c", label: "Option C" },
-            ]}
-          />
-          <Checkbox checked={check} onChange={setCheck} label="Enabled" />
+      </section>
+      <section>
+        <h3 className="mb-2 text-[10px] font-semibold uppercase opacity-60">Inputs</h3>
+        <div className="flex w-72 flex-col gap-2">
+          <input className="input input-xs" placeholder="Text input" />
+          <select className="select select-xs">
+            <option>Option A</option>
+            <option>Option B</option>
+          </select>
+          <div className="flex items-center gap-3">
+            <input type="checkbox" className="checkbox checkbox-xs" defaultChecked />
+            <input type="checkbox" className="toggle toggle-xs" defaultChecked />
+            <input
+              type="range"
+              className="range range-xs w-32"
+              min={0}
+              max={100}
+              defaultValue={40}
+            />
+          </div>
         </div>
-      </div>
-      <div>
-        <div className="t-section-title">Rows</div>
-        <div className="t-row">
-          <span className="t-row-label">Position</span>
-          <NumberDrag label="X" value={0} onChange={() => {}} />
-          <NumberDrag label="Y" value={0} onChange={() => {}} />
-          <NumberDrag label="Z" value={0} onChange={() => {}} />
+      </section>
+      <section>
+        <h3 className="mb-2 text-[10px] font-semibold uppercase opacity-60">
+          Badges / kbd / tooltip
+        </h3>
+        <div className="flex items-center gap-2">
+          <span className="badge badge-xs">badge</span>
+          <span className="badge badge-xs badge-primary">primary</span>
+          <kbd className="kbd kbd-xs">⌘K</kbd>
+          <div className="tooltip" data-tip="Tooltip">
+            <button type="button" className="btn btn-xs btn-square">
+              <IconSphere />
+            </button>
+          </div>
         </div>
-      </div>
+      </section>
+      <section>
+        <h3 className="mb-2 text-[10px] font-semibold uppercase opacity-60">Menu</h3>
+        <ul className="menu menu-xs w-44 rounded-box bg-base-200">
+          <li className="menu-title">Group</li>
+          <li>
+            <button type="button" className="menu-active">
+              Active item
+            </button>
+          </li>
+          <li>
+            <button type="button">Item</button>
+          </li>
+          <li className="menu-disabled">
+            <button type="button">Disabled</button>
+          </li>
+        </ul>
+      </section>
     </div>
   );
 }

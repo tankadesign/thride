@@ -58,7 +58,7 @@ export class Document {
 
   /**
    * Subscribe to bumps of one slice (React binding surface — see
-   * ui/hooks/useDocSlice). Returns an unsubscribe function.
+   * ui/hooks/doc/document). Returns an unsubscribe function.
    */
   subscribeSlice(slice: SliceId, cb: () => void): () => void {
     let set = this.sliceListeners.get(slice);

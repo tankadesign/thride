@@ -3,30 +3,32 @@ import { describe, expect, it } from "vite-plus/test";
 import { act, render, screen } from "@testing-library/react";
 import { Document } from "@/core";
 import { CreateNodeCommand } from "@/core/history/commands/scene";
-import { useDocSlice } from "./useDocSlice";
+import { setAppDocument, useDocument, useSliceVersion } from "./document";
 
 let sceneRenders = 0;
 let materialRenders = 0;
 
-function ScenePanel({ doc }: { doc: Document }) {
-  useDocSlice("scene", doc);
+function ScenePanel() {
+  const doc = useDocument();
+  useSliceVersion("scene");
   sceneRenders++;
   return <div data-testid="scene">{doc.scene.size}</div>;
 }
 
-function MaterialsPanel({ doc }: { doc: Document }) {
-  useDocSlice("materials", doc);
+function MaterialsPanel() {
+  useSliceVersion("materials");
   materialRenders++;
   return <div data-testid="materials" />;
 }
 
-describe("useDocSlice", () => {
-  it("re-renders only panels subscribed to the bumped slice", () => {
+describe("jotai document hooks", () => {
+  it("re-renders only components subscribed to the bumped slice", () => {
     const doc = new Document();
+    setAppDocument(doc);
     render(
       <>
-        <ScenePanel doc={doc} />
-        <MaterialsPanel doc={doc} />
+        <ScenePanel />
+        <MaterialsPanel />
       </>,
     );
     const sceneBefore = sceneRenders;

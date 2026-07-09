@@ -1,33 +1,61 @@
 @import "tailwindcss";
-@plugin "daisyui";
-
-:root {
-  color-scheme: dark;
-  --t-bg: #101014;
-  --t-bg-panel: #17171c;
-  --t-fg: #d4d4dc;
-  --t-fg-dim: #8a8a94;
-  --t-accent: #4f8cff;
-  --t-hairline: #26262d;
-  font-family:
-    "Inter",
-    system-ui,
-    -apple-system,
-    "Segoe UI",
-    sans-serif;
-  font-size: 12px;
+@plugin "daisyui" {
+  themes: sunset --default;
 }
 
-* {
-  box-sizing: border-box;
-}
-
+/* App chrome: a 3D editor is a fixed, non-scrolling workspace */
 html,
 body,
 #root {
-  margin: 0;
   height: 100%;
+  margin: 0;
   overflow: hidden;
-  background: var(--t-bg);
-  color: var(--t-fg);
+}
+
+:root {
+  font-size: 13px; /* compact editor density */
+}
+
+/* dockview → daisyUI theme glue: map dockview vars onto semantic colors */
+.dockview-theme-thride {
+  --dv-background-color: var(--color-base-300);
+  --dv-paneview-active-outline-color: var(--color-primary);
+  --dv-tabs-and-actions-container-background-color: var(--color-base-300);
+  --dv-activegroup-visiblepanel-tab-background-color: var(--color-base-100);
+  --dv-activegroup-hiddenpanel-tab-background-color: var(--color-base-300);
+  --dv-inactivegroup-visiblepanel-tab-background-color: var(--color-base-200);
+  --dv-inactivegroup-hiddenpanel-tab-background-color: var(--color-base-300);
+  --dv-tab-divider-color: var(--color-base-300);
+  --dv-activegroup-visiblepanel-tab-color: var(--color-base-content);
+  --dv-activegroup-hiddenpanel-tab-color: color-mix(
+    in oklab,
+    var(--color-base-content) 60%,
+    transparent
+  );
+  --dv-inactivegroup-visiblepanel-tab-color: color-mix(
+    in oklab,
+    var(--color-base-content) 75%,
+    transparent
+  );
+  --dv-inactivegroup-hiddenpanel-tab-color: color-mix(
+    in oklab,
+    var(--color-base-content) 50%,
+    transparent
+  );
+  --dv-separator-border: var(--color-base-300);
+  --dv-paneview-header-border-color: var(--color-base-300);
+  --dv-group-view-background-color: var(--color-base-100);
+  --dv-tabs-and-actions-container-height: 28px;
+  --dv-tabs-and-actions-container-font-size: 12px;
+  --dv-drag-over-background-color: color-mix(in oklab, var(--color-primary) 25%, transparent);
+  --dv-drag-over-border-color: var(--color-primary);
+  --dv-tabs-container-scrollbar-color: var(--color-base-content);
+  --dv-icon-hover-background-color: color-mix(in oklab, var(--color-base-content) 15%, transparent);
+  --dv-floating-box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  --dv-active-sash-color: var(--color-primary);
+}
+
+/* number scrub cursor for drag-to-change fields */
+.cursor-scrub {
+  cursor: ew-resize;
 }

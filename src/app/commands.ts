@@ -3,7 +3,8 @@ import { CreateNodeCommand, RemoveNodeCommand } from "@/core/history/commands/sc
 import type { PrimitiveType } from "@/types/geometry/primitives";
 import { defaultPrimitive, primitiveLabels } from "@/types/geometry/primitives";
 import type { AppCommand } from "@/ui/commands/CommandRegistry";
-import type { EditorState } from "@/ui/state/EditorState";
+import { openPalette } from "@/ui/hooks/editor/shell";
+import { editorState } from "@/ui/hooks/editor/viewport";
 import type { ViewportSystem } from "@/render/viewport/ViewportSystem";
 import { FORMAT_VERSION } from "@/types/core";
 
@@ -26,7 +27,7 @@ const PRIMITIVES: PrimitiveType[] = [
   "pyramid",
 ];
 
-export function buildCommands(doc: Document, editor: EditorState, shell: ShellApi): AppCommand[] {
+export function buildCommands(doc: Document, shell: ShellApi): AppCommand[] {
   const createPrimitive = (type: PrimitiveType) => {
     const cmd = new CreateNodeCommand("mesh", primitiveLabels[type], null, undefined, {
       primitive: defaultPrimitive(type),
@@ -134,7 +135,7 @@ export function buildCommands(doc: Document, editor: EditorState, shell: ShellAp
       title: "Toggle 1-up / 4-up",
       menu: "View",
       shortcut: "mod+4",
-      run: () => editor.toggleLayout(),
+      run: () => editorState.toggleLayout(),
     },
     {
       id: "view.frameSelection",
@@ -156,7 +157,7 @@ export function buildCommands(doc: Document, editor: EditorState, shell: ShellAp
       menu: "View",
       sep: true,
       shortcut: "mod+k",
-      run: () => editor.setPaletteOpen(true),
+      run: () => openPalette(),
     },
     {
       id: "view.gallery",

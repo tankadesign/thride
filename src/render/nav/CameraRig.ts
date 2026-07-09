@@ -1,5 +1,5 @@
 import { Box3, MathUtils, OrthographicCamera, PerspectiveCamera, Spherical, Vector3 } from "three";
-import type { BuiltinCamera } from "@/ui/state/EditorState";
+import type { BuiltinCamera } from "@/types/editor";
 
 const ORTHO_DIRS: Record<Exclude<BuiltinCamera, "persp">, Vector3> = {
   top: new Vector3(0, 1, 0),

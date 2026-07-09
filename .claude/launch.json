@@ -4,7 +4,7 @@
     {
       "name": "thride-dev",
       "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["dev", "--port", "5175", "--strictPort"],
+      "runtimeArgs": ["dev", "--port", "5175"],
       "port": 5175,
       "autoPort": false
     }
