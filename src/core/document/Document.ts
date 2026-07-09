@@ -10,6 +10,8 @@ import type {
 import { FORMAT_VERSION } from "@/types/core";
 import { EventBus } from "@/core/events/EventBus";
 import { History } from "@/core/history/History";
+import { Selection } from "@/core/selection/Selection";
+import { SessionRunner } from "@/core/session/InteractiveSession";
 import { SceneNode } from "./SceneNode";
 import { SceneStore } from "./SceneStore";
 
@@ -32,6 +34,11 @@ export class Document {
       canRedo: this.history.canRedo,
     });
   });
+  readonly selection = new Selection(() => {
+    this.bump("selection");
+    this.events.emit("selection:changed", {});
+  });
+  readonly sessions = new SessionRunner(this);
   private versions: Record<SliceId, number> = {
     scene: 0,
     selection: 0,
@@ -42,13 +49,31 @@ export class Document {
     history: 0,
   };
 
+  private sliceListeners = new Map<SliceId, Set<() => void>>();
+
   /** Monotonic per-slice counter; useSyncExternalStore snapshots compare these. */
   version(slice: SliceId): number {
     return this.versions[slice];
   }
 
+  /**
+   * Subscribe to bumps of one slice (React binding surface — see
+   * ui/hooks/useDocSlice). Returns an unsubscribe function.
+   */
+  subscribeSlice(slice: SliceId, cb: () => void): () => void {
+    let set = this.sliceListeners.get(slice);
+    if (!set) {
+      set = new Set();
+      this.sliceListeners.set(slice, set);
+    }
+    set.add(cb);
+    return () => set.delete(cb);
+  }
+
   private bump(slice: SliceId): void {
     this.versions[slice]++;
+    const set = this.sliceListeners.get(slice);
+    if (set) for (const cb of [...set]) cb();
   }
 
   // ---- scene mutations -------------------------------------------------
@@ -73,6 +98,7 @@ export class Document {
   removeNode(id: Uuid): SceneNodeDTO[] {
     const parent = this.scene.mustGet(id).parent;
     const removed = this.scene.removeSubtree(id).map((n) => n.toDTO());
+    for (const dto of removed) this.selection.pruneObject(dto.id);
     this.bump("scene");
     this.events.emit("scene:node-removed", { id, parent });
     return removed;

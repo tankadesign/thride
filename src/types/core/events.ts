@@ -29,4 +29,6 @@ export type DocEventMap = {
   "document:reset": Record<string, never>;
   /** Undo/redo availability changed (push, undo, redo, eviction, clear). */
   "history:changed": { canUndo: boolean; canRedo: boolean };
+  /** Object or component selection, or edit mode, changed. */
+  "selection:changed": Record<string, never>;
 };

@@ -5,3 +5,4 @@ export { identityTransform } from "./scene";
 export type { ThrideDocumentDTO } from "./document";
 export { FORMAT_VERSION } from "./document";
 export type { SliceId, DocEventMap } from "./events";
+export type { EditMode, ComponentMode } from "./selection";
