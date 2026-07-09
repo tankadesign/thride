@@ -78,7 +78,7 @@ export function MenuBar({ registry }: { registry: CommandRegistry }) {
                         <span className="flex-1">{g.submenu}</span>
                         <span className="opacity-50">›</span>
                       </span>
-                      <ul className="invisible absolute top-0 left-full z-10 w-56 rounded-box border border-base-300 bg-base-200 p-1 shadow-lg group-hover/sub:visible">
+                      <ul className="invisible absolute top-0 left-full z-10 ml-0 w-56 rounded-box border border-base-300 bg-base-200 p-1 shadow-lg group-hover/sub:visible">
                         {g.items.map((cmd) => (
                           <MenuItem key={cmd.id} cmd={cmd} />
                         ))}
