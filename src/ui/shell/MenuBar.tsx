@@ -68,7 +68,7 @@ export function MenuBar({ registry }: { registry: CommandRegistry }) {
             <button key={menu} popoverTarget={id} className="after:content-none">
               {menu}
             </button>,
-            <div key={`${menu}-pop`} id={id} popover="auto">
+            <div key={`${menu}-pop`} id={id} popover="auto" className="overflow-visible">
               <ul className="menu menu-xs w-64 p-1">
                 {grouped.map((g) =>
                   g.kind === "group" ? (
