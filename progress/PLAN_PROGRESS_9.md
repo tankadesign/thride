@@ -35,6 +35,10 @@
 - Light/camera viewport gizmos (cones, frustum helpers) still M3/F4 scope.
 - `App.tsx` still installs the doc during render (harmless first-mount; HMR warning only).
 
+## Post-round fix: per-pane Perspective PSR memory
+
+- **Bug (user-reported):** looking through a scene camera and switching back to "Perspective" showed the scene camera's last PSR. Cause: `rigFor` mapped scene-camera bindings onto the pane's `persp` rig (shared key), and `syncSceneCamera` overwrote that rig's transform every frame. Fix: rigs are keyed by the full binding (`pane:cameraId`), so scene-camera panes get their own rig and each pane's Perspective rig keeps its own PSR memory. Verified live: orbit → look through camera → back to Perspective restores position/rotation exactly.
+
 ## Next steps
 
 1. More M0X items from user, then M1 D4.

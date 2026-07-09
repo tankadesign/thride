@@ -248,13 +248,14 @@ export class ViewportSystem {
 
   rigFor(pane: number): CameraRig {
     const cam = this.editor.paneCamera(pane);
-    const builtin: BuiltinCamera = (BUILTINS as string[]).includes(cam)
-      ? (cam as BuiltinCamera)
-      : "persp";
-    const key = `${pane}:${builtin}`;
+    const isBuiltin = (BUILTINS as string[]).includes(cam);
+    // key by the FULL camera binding: a scene-camera pane gets its own rig,
+    // so the pane's Perspective rig keeps its PSR memory instead of being
+    // clobbered by syncSceneCamera while looking through a scene camera
+    const key = `${pane}:${cam}`;
     let rig = this.rigs.get(key);
     if (!rig) {
-      rig = new CameraRig(builtin);
+      rig = new CameraRig(isBuiltin ? (cam as BuiltinCamera) : "persp");
       this.rigs.set(key, rig);
     }
     return rig;
