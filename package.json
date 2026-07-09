@@ -11,6 +11,7 @@
     "prepare": "vp config"
   },
   "dependencies": {
+    "@boxicons/react": "^1.0.3",
     "@tailwindcss/vite": "^4.3.2",
     "dockview": "^7.0.2",
     "dockview-react": "^7.0.2",
