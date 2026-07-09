@@ -200,14 +200,14 @@ Each chunk is a session-sized unit of focused work with explicit deps and a **"d
 - **A5 Icon set** _(A2, parallel with everything)_ — original SVG icons (primitives, tools, modes, panel glyphs). Done when: icon components cover the v1 tool/primitive list.
 - **A6 Settings page** _(A3, B2)_ — preferences panel: nav sensitivity, theme, autosave interval, shortcut remap UI, **undo memory budget slider wired to History**. Done when: settings persist and History respects the budget live.
 
-**B. Document core** (packages: core)
+**B. Document core** (src: core, types)
 
 - **B1 Document model** _(A1)_ — stores, SceneNode, UUIDv7, DTO layer, event bus with per-slice versions. Done when: build/serialize/deserialize a document tree round-trips deep-equal in tests.
 - **B2 History** _(B1)_ — Command, undo/redo stack, `tryMerge`, `transact`, memory budget + worker compression. Done when: property-tested command sequences undo/redo back to identical DTO state.
 - **B3 Interactive sessions + selection** _(B2)_ — preview→commit sessions, cancel/Esc, preview-tagged events; object+component selection model with topologyVersion stamping. Done when: a scripted drag session produces exactly one history entry and cancel restores state.
 - **B4 React bindings** _(B1, A3)_ — `useSyncExternalStore` hooks per slice, zustand for ephemeral UI. Done when: a test panel re-renders only on its slice's version bump.
 
-**C. Viewport & rendering** (packages: render)
+**C. Viewport & rendering** (src: render)
 
 - **C1 Renderer + single viewport** _(B1)_ — WebGPURenderer w/ WebGL2 fallback, SceneSynchronizer (nodes→Object3D), frame scheduler, grid/axes, stats HUD. Done when: document changes appear in-viewport without touching Three directly.
 - **C2 C4D navigation** _(C1)_ — Alt+LMB orbit-around-picked-point, Alt+MMB pan, Alt+RMB dolly, wheel zoom, F/H framing. Done when: feel checklist passes (pivot under cursor stays put while orbiting).
@@ -216,7 +216,7 @@ Each chunk is a session-sized unit of focused work with explicit deps and a **"d
 - **C5 Display modes + color management** _(C1)_ — shaded/wireframe/material modes per pane; linear pipeline with AgX/ACES/neutral toggle. Done when: screenshot goldens per mode match.
 - **C6 Post-FX stack** _(C1, E1)_ — TSL PostProcessing pipeline, ordered per-render-settings stack: bloom, vignette, chromatic aberration, tonemap; **user custom shader effects** (TSL/GLSL snippet + declared uniforms, animatable). Done when: stack edits update live and serialize.
 
-**D. Geometry kernel & modeling** (packages: geometry)
+**D. Geometry kernel & modeling** (src: geometry)
 
 - **D1 HEMesh core** _(—, pure TS)_ — typed-array kernel, build-from-polygons, validation (Euler, twin symmetry), free lists, compact. Done when: invariant property tests pass over randomized builds.
 - **D2 Render sync** _(D1, C1)_ — earcut/fan triangulation, triToFace maps, dirty routing (positions vs topology), BVH refit/rebuild, component overlays. Done when: 60fps position-drag on a 100k-tri mesh in profiling test.
@@ -228,7 +228,7 @@ Each chunk is a session-sized unit of focused work with explicit deps and a **"d
 - **D8 Splines + pen tool** _(B3, C4)_ — SplineNode data, spline primitives, 3D pen tool on work planes, spline point-edit mode. Done when: draw-edit-close-undo flow passes e2e.
 - **D9 SplineExtrude generator** _(D8, F1)_ — depth/bevel/segments/caps sliders, HEMesh output. Done when: extruded+beveled text-like shapes boolean cleanly.
 
-**E. Materials** (packages: materials)
+**E. Materials** (src: materials, workers)
 
 - **E1 Material manager** _(B1, C1)_ — library, thumbnails (offscreen preview scene), assignment, node-material wrappers for all built-in Three types, PBR default. Done when: create/assign/edit/delete/undo materials incl. per-face assignment from booleans.
 - **E2 TSL noise library** _(A1)_ — MaterialX-backed + custom noises behind one `tsl.ts` barrel, each with phase param; visual golden tests. Done when: noise gallery screenshot goldens match on WebGPU and WebGL2.
@@ -237,20 +237,20 @@ Each chunk is a session-sized unit of focused work with explicit deps and a **"d
 - **E5 Environment** _(C1)_ — HDR/EXR load, PMREM, intensity/rotation, background modes. Done when: dome-light panel round-trips through save.
 - **E6 Bake pipeline** _(E3)_ — UV-space render, dilation, async readback, worker WebP encode, quality-slider preview loop, height→normal pass (lossless). Done when: baked set visually matches procedural within tolerance; quality slider re-encodes <100ms.
 
-**F. Generators & scene objects** (packages: geometry, core)
+**F. Generators & scene objects** (src: generators)
 
 - **F1 Generator graph** _(B1, D1)_ — GeneratorNode base, pull-based memoized evaluation, dirty propagation, make-editable. Done when: dependency-graph unit tests incl. chained generators pass.
 - **F2 Cloner** _(F1, C1)_ — linear/radial/grid/object-surface distributions → InstancedMesh descriptor, random effector (position/rotation/scale jitter, seed), animatable params. Done when: 100k instances at 60fps; count animates.
 - **F3 Boolean object** _(F1, D7)_ — live boolean generator with A/B/operation/badging. Done when: editing a child mesh live-updates the boolean result.
 - **F4 Lights & cameras** _(B1, C1)_ — point/spot/directional/area lights and camera objects with gizmos/frustum helpers, "look through selected". Done when: lights render + serialize; any camera bindable to any pane.
 
-**G. Animation** (packages: animation, editors)
+**G. Animation** (src: animation, editors)
 
 - **G1 Track model + evaluator** _(B1)_ — channels, bezier keys w/ handles, extrapolation, evaluator writing via property system + UniformTables, playback clock. Done when: evaluator unit tests match reference curves; playback is undo-invisible.
 - **G2 Timeline/dopesheet** _(G1, A3)_ — canvas editor: transport, per-track keys, drag/scale, autokey, keyframe dots on every animatable field in the attributes panel. Done when: keyframe TRS + a material param + cloner count via UI in one e2e.
 - **G3 Curve editor** _(G2)_ — canvas bezier editing, handle modes, ease presets. Done when: handle drags are single undo steps and match evaluator output.
 
-**H. I/O & storage** (packages: io)
+**H. I/O & storage** (src: io, workers)
 
 - **H1 .thride package** _(B1, D1)_ — zip read/write (fflate), document.json DTOs, .hem chunks, content-addressed assets, manifest + migration chain. Done when: full round-trip deep-equal golden tests incl. a frozen v1 sample file.
 - **H2 OPFS autosave + recovery** _(H1)_ — exploded-dir worker writer, dirty-slice writes, crash-recovery prompt, recent files. Done when: kill-tab-mid-edit restores to last commit.
@@ -259,7 +259,7 @@ Each chunk is a session-sized unit of focused work with explicit deps and a **"d
 - **H5 Cloud storage** _(H1)_ — S3 + GCS clients (user creds, PUT/GET, progress, CORS docs in-app). Done when: save/open round-trip against real buckets (manual) + mocked CI tests.
 - **H6 Asset browser** _(H1, A3)_ — project assets panel, drag-drop import (GLB/HDR/EXR/images). Done when: drop-a-file-onto-viewport imports and undoes.
 
-**I. UV editor** (packages: editors)
+**I. UV editor** (src: editors)
 
 - **I1 UV canvas editor** _(D2, A3)_ — island display, selection synced with 3D, move/rotate/scale UVs, checker backdrop. Done when: UV edits reflect live on the mesh and undo.
 - **I2 Unwrap ops** _(I1)_ — planar/cube/cylindrical/spherical projection-to-UV + xatlas-web auto-unwrap in worker. Done when: unwrap of a hard-surface model produces non-overlapping islands.

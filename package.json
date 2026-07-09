@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vp dev",
+    "dev": "vp dev --port 5656",
     "build": "tsc -b && vp build",
     "lint": "vp lint",
     "preview": "vp preview",
@@ -12,16 +12,19 @@
   },
   "dependencies": {
     "react": "^19.2.7",
-    "react-dom": "^19.2.7"
+    "react-dom": "^19.2.7",
+    "three": "^0.185.1"
   },
   "devDependencies": {
     "@types/node": "^24.13.2",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
+    "@types/three": "^0.185.0",
     "@vitejs/plugin-react": "^6.0.3",
     "typescript": "~6.0.2",
     "vite": "catalog:",
-    "vite-plus": "catalog:"
+    "vite-plus": "catalog:",
+    "vitest": "^4.1.10"
   },
   "devEngines": {
     "packageManager": {
