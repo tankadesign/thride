@@ -65,6 +65,7 @@ export class ViewportSystem {
   private needsRender = true;
   private disposed = false;
   private rendering = false;
+  private renderKick: number | null = null;
   private nav: {
     mode: NavMode;
     pane: number;
@@ -137,25 +138,39 @@ export class ViewportSystem {
     }
     this.renderer = renderer;
     this.resize();
-    const loop = async () => {
+    const loop = () => {
       if (this.disposed) return;
       requestAnimationFrame(loop);
-      if (!this.needsRender || this.rendering || !this.renderer) return;
-      this.needsRender = false;
-      this.rendering = true;
-      try {
-        await this.renderFrame();
-      } finally {
-        this.rendering = false;
-      }
-      this.tickStats();
+      void this.renderIfNeeded();
     };
     requestAnimationFrame(loop);
     this.invalidate();
   }
 
+  private async renderIfNeeded(): Promise<void> {
+    if (!this.needsRender || this.rendering || !this.renderer) return;
+    this.needsRender = false;
+    this.rendering = true;
+    try {
+      await this.renderFrame();
+    } finally {
+      this.rendering = false;
+    }
+    this.tickStats();
+  }
+
   invalidate(): void {
     this.needsRender = true;
+    // rAF is heavily throttled in occluded/unfocused windows (Chrome can
+    // drop it to ~1Hz), which left on-demand renders — e.g. the frame that
+    // repositions primitive handles after an undo — stuck until a refresh.
+    // A timeout watchdog guarantees prompt rendering regardless of rAF.
+    if (this.renderKick === null) {
+      this.renderKick = window.setTimeout(() => {
+        this.renderKick = null;
+        void this.renderIfNeeded();
+      }, 50);
+    }
   }
 
   frameSelection(): void {
@@ -174,6 +189,7 @@ export class ViewportSystem {
 
   dispose(): void {
     this.disposed = true;
+    if (this.renderKick !== null) window.clearTimeout(this.renderKick);
     for (const u of this.unsubs) u();
     this.resizeObserver.disconnect();
     this.canvas.removeEventListener("pointerdown", this.onPointerDown);
@@ -247,10 +263,10 @@ export class ViewportSystem {
       renderer.setScissor(p.x, yGL, p.w, p.h);
       const activePane = i === this.editor.activePane && this.editor.layout === "quad";
       this.scene.background = new Color(activePane ? 0x12121a : 0x101014);
-      this.gizmo.update(rig.camera);
       const activeObj = this.doc.selection.active
         ? (this.sync.object(this.doc.selection.active) ?? null)
         : null;
+      this.gizmo.update(rig.camera, activeObj, this.editor.gizmoSpace);
       this.handles.update(rig.camera, activeObj);
       this.sync.updateOutlines(rig.camera, p.h);
       axesPerSlot.push(this.projectAxes(rig));

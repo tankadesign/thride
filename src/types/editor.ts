@@ -4,6 +4,7 @@ import type { Uuid } from "./core/ids";
 export type BuiltinCamera = "persp" | "top" | "front" | "right";
 export type PaneCamera = BuiltinCamera | Uuid;
 export type ViewportLayout = "single" | "quad";
+export type GizmoSpace = "local" | "world";
 
 /**
  * Contract the render layer uses to read viewport editor state. Implemented
@@ -19,6 +20,9 @@ export interface EditorViewportState {
   readonly paletteOpen: boolean;
   /** Grid snap step in world units for shift-snapping (settings). */
   readonly gridSnapSize: number;
+  /** Gizmo axis orientation: object-local (default) or world-aligned. */
+  readonly gizmoSpace: GizmoSpace;
+  toggleGizmoSpace(): void;
   paneCamera(pane: number): PaneCamera;
   setActivePane(pane: number): void;
   setPaneCamera(pane: number, camera: PaneCamera): void;

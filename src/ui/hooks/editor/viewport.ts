@@ -1,5 +1,5 @@
 import { atom, useAtom, useAtomValue } from "jotai";
-import type { EditorViewportState, PaneCamera, ViewportLayout } from "@/types/editor";
+import type { EditorViewportState, GizmoSpace, PaneCamera, ViewportLayout } from "@/types/editor";
 import { appStore } from "@/ui/hooks/doc/document";
 import { gridSnapSizeAtom } from "./settings";
 import { paletteOpenAtom } from "./shell";
@@ -15,6 +15,8 @@ export const layoutAtom = atom<ViewportLayout>("single");
 export const activePaneAtom = atom(0);
 export const maximizedPaneAtom = atom(0);
 export const paneCamerasAtom = atom<PaneCamera[]>(["persp", "top", "front", "right"]);
+/** Gizmo axes follow the object (local) by default; W toggles world alignment. */
+export const gizmoSpaceAtom = atom<GizmoSpace>("local");
 
 export function useViewportState() {
   const [layout, setLayout] = useAtom(layoutAtom);
@@ -54,6 +56,14 @@ class EditorStateStore implements EditorViewportState {
     return appStore.get(gridSnapSizeAtom);
   }
 
+  get gizmoSpace(): GizmoSpace {
+    return appStore.get(gizmoSpaceAtom);
+  }
+
+  toggleGizmoSpace(): void {
+    appStore.set(gizmoSpaceAtom, this.gizmoSpace === "local" ? "world" : "local");
+  }
+
   paneCamera(pane: number): PaneCamera {
     return appStore.get(paneCamerasAtom)[pane] ?? "persp";
   }
@@ -89,6 +99,7 @@ class EditorStateStore implements EditorViewportState {
       appStore.sub(activePaneAtom, cb),
       appStore.sub(maximizedPaneAtom, cb),
       appStore.sub(paneCamerasAtom, cb),
+      appStore.sub(gizmoSpaceAtom, cb),
     ];
     return () => {
       for (const u of unsubs) u();

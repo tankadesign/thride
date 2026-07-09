@@ -7,6 +7,7 @@ import {
   Group,
   Mesh,
   MeshBasicMaterial,
+  Object3D,
   OrthographicCamera,
   Plane,
   Quaternion,
@@ -16,6 +17,7 @@ import {
   Vector3,
 } from "three";
 import type { TransformDTO, Uuid } from "@/types/core";
+import type { GizmoSpace } from "@/types/editor";
 import type { Document } from "@/core";
 import { TransformDragSession } from "@/core/session/TransformDragSession";
 import { themeColor } from "@/render/scene-sync/themeColor";
@@ -57,6 +59,8 @@ interface DragState {
   begin: Map<Uuid, TransformDTO>;
   pivot: Vector3;
   axisWorld: Vector3;
+  /** Gizmo orientation at drag start (local vs world axes). */
+  basis: Quaternion;
   plane: Plane;
   startPoint: Vector3;
   startAngle: number;
@@ -87,8 +91,8 @@ export class TransformGizmo {
     return this.drag !== null;
   }
 
-  /** Reposition on the active selection; hide when nothing is selected. */
-  update(camera: Camera): void {
+  /** Reposition/orient on the active selection; hide when nothing is selected. */
+  update(camera: Camera, activeObject: Object3D | null, space: GizmoSpace = "local"): void {
     const ids = this.doc.selection.objectIds;
     const active = this.doc.selection.active;
     if (!active || ids.length === 0 || !this.doc.scene.has(active)) {
@@ -97,6 +101,12 @@ export class TransformGizmo {
     }
     const t = this.doc.scene.mustGet(active).transform;
     this.group.position.set(t.position[0], t.position[1], t.position[2]);
+    // local mode: gizmo axes follow the object's world orientation
+    if (space === "local" && activeObject) {
+      activeObject.getWorldQuaternion(this.group.quaternion);
+    } else {
+      this.group.quaternion.identity();
+    }
     this.group.visible = true;
     // screen-constant size: perspective scales by distance, ortho by frustum height
     const ortho = camera as OrthographicCamera;
@@ -119,7 +129,8 @@ export class TransformGizmo {
     for (const id of ids) begin.set(id, structuredClone(this.doc.scene.mustGet(id).transform));
 
     const pivot = this.group.position.clone();
-    const axisWorld = AXIS_VECS[handle.axis].clone();
+    const basis = this.group.quaternion.clone();
+    const axisWorld = AXIS_VECS[handle.axis].clone().applyQuaternion(basis);
     const viewDir = raycaster.ray.direction.clone();
 
     let plane: Plane;
@@ -139,9 +150,19 @@ export class TransformGizmo {
     if (!raycaster.ray.intersectPlane(plane, startPoint)) return false;
 
     const rel = startPoint.clone().sub(pivot);
-    const startAngle = this.angleOnPlane(rel, handle.axis);
+    const startAngle = this.angleOnPlane(rel, handle.axis, basis);
 
-    this.drag = { handle, nodeIds: ids, begin, pivot, axisWorld, plane, startPoint, startAngle };
+    this.drag = {
+      handle,
+      nodeIds: ids,
+      begin,
+      pivot,
+      axisWorld,
+      basis,
+      plane,
+      startPoint,
+      startAngle,
+    };
     this.doc.sessions.start(new TransformDragSession(ids, labelFor(handle.kind)));
     return true;
   }
@@ -171,7 +192,8 @@ export class TransformGizmo {
         updates.set(id, t);
       }
     } else if (d.handle.kind === "rotate") {
-      let angle = this.angleOnPlane(point.clone().sub(d.pivot), d.handle.axis) - d.startAngle;
+      let angle =
+        this.angleOnPlane(point.clone().sub(d.pivot), d.handle.axis, d.basis) - d.startAngle;
       if (mods.snap) angle = snapTo(angle, ROTATE_SNAP);
       const dq = new Quaternion().setFromAxisAngle(d.axisWorld, angle);
       for (const [id, t0] of d.begin) {
@@ -235,10 +257,10 @@ export class TransformGizmo {
     }
   }
 
-  private angleOnPlane(rel: Vector3, axis: Axis): number {
-    // signed angle of rel projected on the plane orthogonal to axis
-    const u = AXIS_VECS[((axis + 1) % 3) as Axis];
-    const v = AXIS_VECS[((axis + 2) % 3) as Axis];
+  private angleOnPlane(rel: Vector3, axis: Axis, basis: Quaternion): number {
+    // signed angle of rel projected on the plane orthogonal to the (oriented) axis
+    const u = AXIS_VECS[((axis + 1) % 3) as Axis].clone().applyQuaternion(basis);
+    const v = AXIS_VECS[((axis + 2) % 3) as Axis].clone().applyQuaternion(basis);
     return Math.atan2(rel.dot(v), rel.dot(u));
   }
 

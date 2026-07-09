@@ -177,6 +177,13 @@ export function buildCommands(doc: Document, shell: ShellApi): AppCommand[] {
       run: () => editorState.toggleLayout(),
     },
     {
+      id: "view.toggleWorldMode",
+      title: "World / Local Gizmo",
+      menu: "View",
+      shortcut: "w",
+      run: () => editorState.toggleGizmoSpace(),
+    },
+    {
       id: "view.frameSelection",
       title: "Frame Selection",
       menu: "View",
