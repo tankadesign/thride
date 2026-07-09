@@ -127,6 +127,14 @@ export class Document {
     this.events.emit("scene:node-changed", { id, preview });
   }
 
+  /** Replace the kind-specific data payload (primitive params etc). */
+  setNodeData(id: Uuid, data: Record<string, unknown> | undefined, preview = false): void {
+    const node = this.scene.mustGet(id);
+    node.data = data ? structuredClone(data) : undefined;
+    this.bump("scene");
+    this.events.emit("scene:node-changed", { id, preview });
+  }
+
   setNodeFlags(id: Uuid, flags: { visible?: boolean; locked?: boolean }): void {
     const node = this.scene.mustGet(id);
     if (flags.visible !== undefined) node.visible = flags.visible;

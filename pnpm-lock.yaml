@@ -219,6 +219,9 @@ importers:
       dockview:
         specifier: ^7.0.2
         version: 7.0.2
+      dockview-react:
+        specifier: ^7.0.2
+        version: 7.0.2(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       earcut:
         specifier: ^3.2.3
         version: 3.2.3
@@ -861,6 +864,12 @@ packages:
 
   dockview-core@7.0.2:
     resolution: {integrity: sha512-i666ndkUdT4U+Bo2Yu3d6KwCJNqe21VJ0oschdgcXucZ5TquzBFX94zcUBEfg4IewTv2BuiPJ7r/2JTGLLv6ig==}
+
+  dockview-react@7.0.2:
+    resolution: {integrity: sha512-tnbRM1C/Ok1n/HXGMF0OWmc6Qlx5pbsSJucxX+3XcuNYkZgKiaNJX3BpdBlSxexjytTI/Xywh0ZNGF3/4Fa9LA==}
+    peerDependencies:
+      react: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
+      react-dom: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
 
   dockview@7.0.2:
     resolution: {integrity: sha512-QhgbJ7RTFsWvrs1lQZKPGCLTGjKU7kI5ZWX5lwU03arM9lIoQlbfv1b/uQ7V5zTkRw7JDndEqjKMgEFw2I8Kow==}
@@ -1572,6 +1581,12 @@ snapshots:
   detect-libc@2.1.2: {}
 
   dockview-core@7.0.2: {}
+
+  dockview-react@7.0.2(react-dom@19.2.7(react@19.2.7))(react@19.2.7):
+    dependencies:
+      dockview: 7.0.2
+      react: 19.2.7
+      react-dom: 19.2.7(react@19.2.7)
 
   dockview@7.0.2:
     dependencies:

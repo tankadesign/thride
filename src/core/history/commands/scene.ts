@@ -18,7 +18,13 @@ export class CreateNodeCommand implements Command {
   private readonly dto: SceneNodeDTO;
   private readonly index: number | undefined;
 
-  constructor(kind: NodeKind, name: string, parent: Uuid | null = null, index?: number) {
+  constructor(
+    kind: NodeKind,
+    name: string,
+    parent: Uuid | null = null,
+    index?: number,
+    data?: Record<string, unknown>,
+  ) {
     this.label = `Create ${name}`;
     this.index = index;
     this.dto = {
@@ -30,6 +36,7 @@ export class CreateNodeCommand implements Command {
       visible: true,
       locked: false,
     };
+    if (data) this.dto.data = structuredClone(data);
     this.nodeId = this.dto.id;
   }
 
@@ -154,6 +161,45 @@ export class SetTransformCommand implements Command {
   /** Consecutive transform tweaks on the same node collapse into one step. */
   tryMerge(next: Command): boolean {
     if (!(next instanceof SetTransformCommand) || next.nodeId !== this.nodeId) return false;
+    this.after = next.after;
+    return true;
+  }
+}
+
+export class SetNodeDataCommand implements Command {
+  readonly type = "scene.setData";
+  readonly label: string;
+  private before: Record<string, unknown> | undefined | null = null;
+  private after: Record<string, unknown> | undefined;
+  private readonly nodeId: Uuid;
+
+  /** Pass `before` explicitly when committing an interactive scrub. */
+  constructor(
+    nodeId: Uuid,
+    after: Record<string, unknown> | undefined,
+    before?: Record<string, unknown>,
+    label = "Edit Parameters",
+  ) {
+    this.nodeId = nodeId;
+    this.after = after ? structuredClone(after) : undefined;
+    if (before !== undefined) this.before = structuredClone(before);
+    this.label = label;
+  }
+
+  execute(doc: Document): void {
+    if (this.before === null) {
+      const cur = doc.scene.mustGet(this.nodeId).data;
+      this.before = cur ? structuredClone(cur) : undefined;
+    }
+    doc.setNodeData(this.nodeId, this.after);
+  }
+
+  undo(doc: Document): void {
+    doc.setNodeData(this.nodeId, this.before ?? undefined);
+  }
+
+  tryMerge(next: Command): boolean {
+    if (!(next instanceof SetNodeDataCommand) || next.nodeId !== this.nodeId) return false;
     this.after = next.after;
     return true;
   }
