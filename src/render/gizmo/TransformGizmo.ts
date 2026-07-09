@@ -22,6 +22,7 @@ import type { GizmoSpace } from "@/types/editor";
 import type { Document } from "@/core";
 import { TransformDragSession } from "@/core/session/TransformDragSession";
 import { themeColor } from "@/render/scene-sync/themeColor";
+import { ComponentDrag, componentContext } from "./componentDrag";
 
 export interface GizmoModifiers {
   /** Uniform scale on scale handles. */
@@ -80,6 +81,8 @@ interface DragState {
   plane: Plane;
   startPoint: Vector3;
   startAngle: number;
+  /** Set in component edit modes: the drag drives vertices, not transforms. */
+  component?: ComponentDrag;
 }
 
 /**
@@ -93,6 +96,7 @@ export class TransformGizmo {
   private readonly doc: Document;
   private drag: DragState | null = null;
   private hovered: Mesh | null = null;
+  private activeObject: Object3D | null = null;
   private readonly hoverColor = themeColor("--color-primary", "#ff865b");
 
   constructor(doc: Document) {
@@ -109,14 +113,28 @@ export class TransformGizmo {
 
   /** Reposition/orient on the active selection; hide when nothing is selected. */
   update(camera: Camera, activeObject: Object3D | null, space: GizmoSpace = "local"): void {
+    this.activeObject = activeObject;
     const ids = this.doc.selection.objectIds;
     const active = this.doc.selection.active;
     if (!active || ids.length === 0 || !this.doc.scene.has(active)) {
       this.group.visible = false;
       return;
     }
-    const t = this.doc.scene.mustGet(active).transform;
-    this.group.position.set(t.position[0], t.position[1], t.position[2]);
+    const mode = this.doc.selection.editMode;
+    if (mode === "point" || mode === "edge" || mode === "polygon") {
+      // component mode: gizmo sits on the component-selection centroid and
+      // hides while nothing is selected (a bare object gizmo would edit the
+      // node transform — confusing inside a component mode)
+      const ctx = componentContext(this.doc, activeObject);
+      if (!ctx) {
+        this.group.visible = false;
+        return;
+      }
+      this.group.position.copy(ctx.centroidWorld);
+    } else {
+      const t = this.doc.scene.mustGet(active).transform;
+      this.group.position.set(t.position[0], t.position[1], t.position[2]);
+    }
     // local mode: gizmo axes follow the object's world orientation
     if (space === "local" && activeObject) {
       activeObject.getWorldQuaternion(this.group.quaternion);
@@ -160,7 +178,9 @@ export class TransformGizmo {
     if (!hitObj) return false;
     const handle = hitObj.userData.handle as Handle;
 
-    const ids = [...this.doc.selection.objectIds];
+    const mode = this.doc.selection.editMode;
+    const componentMode = mode === "point" || mode === "edge" || mode === "polygon";
+    const ids = componentMode ? [] : [...this.doc.selection.objectIds];
     const begin = new Map<Uuid, TransformDTO>();
     for (const id of ids) begin.set(id, structuredClone(this.doc.scene.mustGet(id).transform));
 
@@ -188,6 +208,15 @@ export class TransformGizmo {
     const rel = startPoint.clone().sub(pivot);
     const startAngle = this.angleOnPlane(rel, handle.axis, basis);
 
+    let component: ComponentDrag | undefined;
+    if (componentMode) {
+      const ctx = componentContext(this.doc, this.activeObject);
+      if (!ctx || !this.activeObject) return false;
+      // starts the ComponentTransformSession itself (one undo step per drag)
+      component = new ComponentDrag(this.doc, ctx, this.activeObject, handle.kind);
+    } else {
+      this.doc.sessions.start(new TransformDragSession(ids, labelFor(handle.kind)));
+    }
     this.drag = {
       handle,
       nodeIds: ids,
@@ -198,8 +227,8 @@ export class TransformGizmo {
       plane,
       startPoint,
       startAngle,
+      component,
     };
-    this.doc.sessions.start(new TransformDragSession(ids, labelFor(handle.kind)));
     return true;
   }
 
@@ -220,6 +249,10 @@ export class TransformGizmo {
       } else if (mods.snap) {
         delta.set(snapTo(delta.x, snapSize), snapTo(delta.y, snapSize), snapTo(delta.z, snapSize));
       }
+      if (d.component) {
+        d.component.applyTranslate(delta);
+        return;
+      }
       for (const [id, t0] of d.begin) {
         const t = structuredClone(t0);
         t.position[0] = t0.position[0] + delta.x;
@@ -231,6 +264,10 @@ export class TransformGizmo {
       let angle =
         this.angleOnPlane(point.clone().sub(d.pivot), d.handle.axis, d.basis) - d.startAngle;
       if (mods.snap) angle = snapTo(angle, ROTATE_SNAP);
+      if (d.component) {
+        d.component.applyRotate(d.axisWorld, angle, d.pivot);
+        return;
+      }
       const dq = new Quaternion().setFromAxisAngle(d.axisWorld, angle);
       for (const [id, t0] of d.begin) {
         const t = structuredClone(t0);
@@ -248,6 +285,10 @@ export class TransformGizmo {
       const a1 = point.clone().sub(d.pivot).dot(d.axisWorld);
       let ratio = Math.abs(a0) > 1e-6 ? a1 / a0 : 1;
       if (mods.snap) ratio = Math.max(SCALE_SNAP, snapTo(ratio, SCALE_SNAP));
+      if (d.component) {
+        d.component.applyScale(d.basis, d.handle.axis, ratio, !!mods.uniformScale, d.pivot);
+        return;
+      }
       for (const [id, t0] of d.begin) {
         const t = structuredClone(t0);
         if (mods.uniformScale) {

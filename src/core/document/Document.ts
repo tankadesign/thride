@@ -135,6 +135,17 @@ export class Document {
     this.events.emit("scene:node-changed", { id, preview });
   }
 
+  /**
+   * Notify that a node's EXTERNAL payload changed (registry-backed kernel
+   * mesh edits) without rewriting node data — bumps the scene slice and
+   * emits node-changed so render/UI resync. Preview-tagged during drags.
+   */
+  touchNode(id: Uuid, preview = false): void {
+    this.scene.mustGet(id); // throw on unknown node
+    this.bump("scene");
+    this.events.emit("scene:node-changed", { id, preview });
+  }
+
   setNodeFlags(id: Uuid, flags: { visible?: boolean; locked?: boolean }): void {
     const node = this.scene.mustGet(id);
     if (flags.visible !== undefined) node.visible = flags.visible;

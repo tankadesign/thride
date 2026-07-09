@@ -1,0 +1,62 @@
+# PLAN_PROGRESS_10 — M1 kickoff: D4a component modes, picking, overlays, component TRS
+
+**Date:** 2026-07-09
+**Chunks worked:** D4 (first half — "D4a"); M0 signed off by user this session
+**Milestone context:** M1 in progress. D4 split into D4a (this session: modes/selection/overlays/TRS) and D4b (next: extrude, inset, weld, delete/dissolve + property tests + per-mode toolbar tools).
+
+## Completed
+
+- **Edit modes live** — ToolRail point/edge/polygon buttons enabled (texture stays M2). Entering a component mode with a primitive active **auto-converts it** (Spline-style) via the existing `ConvertToMeshCommand` as one undoable step; `Selection.editMode` drives everything downstream.
+- **Component addressing** (`geometry/kernel/components.ts`) — canonical edge handles (boundary halfedge or the smaller of a twinned pair), `uniqueEdges`, `edgeVerts`, `vertsForSelection` (mode → distinct vert set), `vertexCentroid`. Unit-tested (cube: 12 edges, dedupe, centroid).
+- **Component picking** (`render/picking/componentPicking.ts`) — points/edges by 2D screen distance with pixel tolerances (10px/8px) projected per pane; polygons by BVH raycast mapped through `RenderMesh.triFace`. Click ops: replace / shift-add / ⌘-toggle; empty replace-click clears. Component clicks are locked to the ACTIVE editable mesh (C4D-style).
+- **Component overlays** (`render/overlays/ComponentOverlays.ts`) — wireframe LineSegments (selected edges in primary), billboarded screen-constant vertex handles as TWO InstancedMeshes (selected/unselected — avoids instanceColor backend risk), selected-face highlight rebuilt from the render triangulation. Wire/faces live in mesh-local space under a group mirroring the node's matrixWorld; points are world-space billboards updated per pane. Version-guarded rebuilds (scene + selection slices + topologyVersion).
+- **Component move/rotate/scale via the ONE gizmo** — `render/gizmo/componentDrag.ts` (`componentContext` + `ComponentDrag`); `TransformGizmo` gains a component branch: centroid placement, hidden when no components selected, shared plane/snap math, then per-vertex world-space transform → mesh-local write-back. Uniform-scale (shift) and grid/angle/scale snapping work on components too.
+- **Mesh-edit undo plumbing** (`geometry/commands/meshEdit.ts`) — `SetMeshPositionsCommand` (packed before/after for affected verts, real memoryCost) + `ComponentTransformSession` (preview-tagged updates, ONE step per drag, cancel restores, no-op commits skipped). `Document.touchNode(id, preview)` added in core: external (registry-mesh) payload changed → scene bump + node-changed, no data rewrite.
+- **Render sync for live mesh edits** — `SceneSynchronizer.syncGeometry` now re-syncs registry meshes with dirty flags even when the cache key is unchanged (positions-only path in RenderMesh is cheap); **BVH rebuilds are skipped during preview frames** (`bvhStale`) and run once on the settling non-preview touch. `renderInfoFor(id)` exposes geometry + triFace for picking/overlays.
+
+## Verified in-browser (WebGPU, live drags via synthetic pointer events)
+
+- Point-mode entry auto-converts ("Convert Cube to Mesh"), 8 vertex handles + 12 wire edges appear.
+- Vertex click selects (handle turns primary, gizmo on the vertex); X-arrow drag moved it exactly +0.5 X; ONE "Move Components" step; undo/redo exact; **rendered geometry follows undo** (max X back to 0.5).
+- Edge click selects the canonical halfedge, gizmo at the edge midpoint.
+- Face click maps to the correct kernel face (+Z entry face); scale-cube drag scaled the face ×2 about the selection centroid (Z untouched); one "Scale Components" step; undo exact.
+- Shift-add → {5,6}; ⌘-toggle removes; empty click clears and hides the gizmo.
+- Top ortho view: vertex select + X-arrow move (+0.75, Y/Z zero) — the M0X gizmo layout keeps component drags usable head-on.
+- Object mode regression: click-select, gizmo, overlays hidden — all normal. Gates: `tsc -b` clean, `vp test` 84/84 (9 new).
+
+## Fixed along the way
+
+- **three-mesh-bvh `faceIndex` is in BVH order, not authored order** — `computeBoundsTree` installs a PERMUTED index over the non-indexed corners, so `triFace[hit.faceIndex]` returned the wrong kernel face (raycast hit point was on +Z, mapped face was −X). Fix: map back via `index.getX(faceIndex*3)/3` (authored corner → authored triangle). Face highlight was unaffected (it reads positions + triFace both in authored order).
+- `InstancedMesh` is fixed-capacity — allocating with count 0 yields unusable zero-length buffers; points meshes now allocate `vCount` capacity and recreate on growth.
+
+## Decisions made (and why)
+
+- **D4 split** into D4a/D4b — the full op set with property tests is > one session at our verification standard; D4a is a coherent, independently verified foundation.
+- **Auto-convert on entering component modes** (vs C4D's explicit-only "make editable") — matches the Spline north star's frictionless direct editing; still one clean undo step.
+- **Component clicks locked to the active object** — C4D behavior; Blender-style multi-object editing out of scope.
+- **Two instanced meshes for vertex handles** instead of `instanceColor` — deterministic on both backends after the LineLoop/WebGPU episode.
+- **BVH staleness deferred to drag end** — rebuilding per preview frame would hitch; stale BVH during a drag only affects picking mid-drag, which doesn't happen.
+
+## Files added / changed
+
+- core: `document/Document.ts` (touchNode)
+- geometry: `kernel/components.ts` (+test), `commands/meshEdit.ts` (+test)
+- render: `picking/componentPicking.ts`, `overlays/ComponentOverlays.ts`, `gizmo/componentDrag.ts`, `gizmo/TransformGizmo.ts`, `scene-sync/SceneSynchronizer.ts`, `viewport/ViewportSystem.ts`, `viewport/ViewportInput.ts`
+- ui: `shell/ToolRail.tsx`
+
+## Test status
+
+- `tsc -b`: clean. `vp test`: 84/84. (`vp check` runs via the pre-commit hook; watch the recurring tsgolint hang — `pkill -f tsgolint` if wedged.)
+
+## Known issues
+
+- Point/edge picking is pure 2D-nearest: overlapping projections (e.g. top view where top/bottom cube verts coincide) tie-break by lower index instead of nearest-to-camera. Add a depth tie-break in D4b.
+- No box/lasso component selection yet (Selection-niceties backlog).
+- Component edits live only in the registry — a browser refresh drops converted-mesh geometry (existing H1 limitation, now more visible).
+- Pre-existing HMR-only MenuBar setState warning (PLAN_PROGRESS_9) still around; absent on fresh loads.
+
+## Next steps (exact, resumable cold)
+
+1. **D4b:** topology ops as `(mesh, selection, params) → { newSelection }` in `geometry/ops/`: extrude (faces), inset, weld, delete/dissolve — each one undo step (kernel snapshot command), each property-tested for half-edge invariants (`validate.ts` exists).
+2. Per-mode tools in the ToolRail (extrude/inset/weld buttons appear in component modes) — the M1 "context toolbar".
+3. Depth tie-break for point/edge picking; then D5 bevel, D6 snapping (vertex/edge snap), D7 boolean, D8/D9 splines, F1/F3, C5 to close M1.

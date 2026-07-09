@@ -1,5 +1,6 @@
 import {
   AmbientLight,
+  type BufferGeometry,
   type Camera,
   Color,
   DirectionalLight,
@@ -73,7 +74,7 @@ const LINES_MAT = new MeshBasicMaterial({
 export class SceneSynchronizer {
   readonly root = new Group();
   private objects = new Map<Uuid, Object3D>();
-  private renderMeshes = new Map<Uuid, { key: string; rm: RenderMesh }>();
+  private renderMeshes = new Map<Uuid, { key: string; rm: RenderMesh; bvhStale: boolean }>();
   private readonly selectionOutline = new SelectionOutline();
   private linesOverlays = new Map<Uuid, Mesh>();
   private lightBillboards = new Map<Uuid, Object3D>();
@@ -98,8 +99,8 @@ export class SceneSynchronizer {
         this.removeNode(id);
         this.onDirty();
       }),
-      doc.events.on("scene:node-changed", ({ id }) => {
-        this.updateNode(id);
+      doc.events.on("scene:node-changed", ({ id, preview }) => {
+        this.updateNode(id, preview ?? false);
         this.onDirty();
       }),
       doc.events.on("scene:hierarchy-changed", ({ id }) => {
@@ -361,7 +362,7 @@ export class SceneSynchronizer {
     // sibling order is irrelevant for rendering; object manager reads the doc
   }
 
-  private updateNode(id: Uuid): void {
+  private updateNode(id: Uuid, preview = false): void {
     let obj = this.objects.get(id);
     if (!obj) return;
     const node = this.doc.scene.mustGet(id);
@@ -370,7 +371,7 @@ export class SceneSynchronizer {
     obj.visible = node.visible;
     this.applyTransform(node, obj);
     if (node.kind === "mesh" && obj instanceof Mesh) {
-      this.syncGeometry(id, node, obj);
+      this.syncGeometry(id, node, obj, preview);
     }
   }
 
@@ -449,28 +450,53 @@ export class SceneSynchronizer {
   }
 
   /** Resolve the node's geometry source (editable mesh or primitive) into its Mesh. */
-  private syncGeometry(id: Uuid, node: SceneNode, obj: Mesh): void {
+  private syncGeometry(id: Uuid, node: SceneNode, obj: Mesh, preview = false): void {
     const source = this.geometrySource(node);
     if (!source) return;
-    const entry = this.renderMeshes.get(id);
-    if (entry && entry.key === source.key) return;
+    let entry = this.renderMeshes.get(id);
+    const keyChanged = !entry || entry.key !== source.key;
+    // live registry meshes are edited in place (component drags): same key,
+    // dirty flags set — RenderMesh.sync routes positions-only updates cheaply
+    const meshDirty = (source.live ?? false) && source.mesh.dirty !== 0;
+    if (entry && !keyChanged && !meshDirty) {
+      // drag settled: refresh the BVH skipped during preview frames
+      if (!preview && entry.bvhStale) this.rebuildBvh(entry);
+      return;
+    }
     const rm = entry?.rm ?? new RenderMesh();
     rm.sync(source.mesh);
-    // biome-ignore lint/suspicious/noExplicitAny: bvh extension
-    (rm.geometry as any).computeBoundsTree?.();
-    this.renderMeshes.set(id, { key: source.key, rm });
+    if (!entry) {
+      entry = { key: source.key, rm, bvhStale: false };
+      this.renderMeshes.set(id, entry);
+    }
+    entry.key = source.key;
+    if (preview)
+      entry.bvhStale = true; // rebuilding per drag frame would hitch
+    else this.rebuildBvh(entry);
     obj.geometry = rm.geometry;
     this.selectionOutline.updateGeometry(id, rm.geometry);
     const overlay = this.linesOverlays.get(id);
     if (overlay) overlay.geometry = rm.geometry;
   }
 
-  private geometrySource(node: SceneNode): { key: string; mesh: HEMesh } | null {
+  private rebuildBvh(entry: { rm: RenderMesh; bvhStale: boolean }): void {
+    // biome-ignore lint/suspicious/noExplicitAny: bvh extension
+    (entry.rm.geometry as any).computeBoundsTree?.();
+    entry.bvhStale = false;
+  }
+
+  /** Triangulated render data for a mesh node (face picking, component overlays). */
+  renderInfoFor(id: Uuid): { geometry: BufferGeometry; triFace: Uint32Array } | null {
+    const entry = this.renderMeshes.get(id);
+    return entry ? { geometry: entry.rm.geometry, triFace: entry.rm.triFace } : null;
+  }
+
+  private geometrySource(node: SceneNode): { key: string; mesh: HEMesh; live?: boolean } | null {
     const meshRef = node.data?.mesh as { id: Uuid } | undefined;
     if (meshRef) {
       const mesh = meshRegistry.get(meshRef.id);
       if (!mesh) return null;
-      return { key: `mesh:${meshRef.id}:${mesh.topologyVersion}`, mesh };
+      return { key: `mesh:${meshRef.id}:${mesh.topologyVersion}`, mesh, live: true };
     }
     const desc = node.data?.primitive as PrimitiveDescriptor | undefined;
     if (desc) return { key: JSON.stringify(desc), mesh: buildPrimitive(desc) };
@@ -487,7 +513,7 @@ export class SceneSynchronizer {
       const rm = new RenderMesh();
       rm.sync(buildPrimitive({ type: "cube", params: { width: 1, height: 1, depth: 1 } }));
       mesh.geometry = rm.geometry;
-      this.renderMeshes.set(node.id, { key: "fallback", rm });
+      this.renderMeshes.set(node.id, { key: "fallback", rm, bvhStale: false });
     }
     const overlay = new Mesh(mesh.geometry, LINES_MAT);
     overlay.raycast = () => {}; // never pickable

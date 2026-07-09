@@ -18,6 +18,7 @@ import type { BuiltinCamera, EditorViewportState } from "@/types/editor";
 import { TransformGizmo } from "@/render/gizmo/TransformGizmo";
 import { PrimitiveHandles } from "@/render/handles/PrimitiveHandles";
 import { CameraRig } from "@/render/nav/CameraRig";
+import { ComponentOverlays } from "@/render/overlays/ComponentOverlays";
 import { SceneSynchronizer } from "@/render/scene-sync/SceneSynchronizer";
 import { ViewportInput } from "./ViewportInput";
 
@@ -76,6 +77,7 @@ export class ViewportSystem {
   readonly sync: SceneSynchronizer;
   readonly gizmo: TransformGizmo;
   readonly handles: PrimitiveHandles;
+  readonly overlays: ComponentOverlays;
   readonly raycaster = new Raycaster();
   private renderer: WebGPURenderer | null = null;
   private readonly scene = new Scene();
@@ -128,6 +130,8 @@ export class ViewportSystem {
     this.scene.add(this.gizmo.group);
     this.handles = new PrimitiveHandles(doc);
     this.scene.add(this.handles.group);
+    this.overlays = new ComponentOverlays(doc, this.sync);
+    this.scene.add(this.overlays.group);
 
     this.unsubs.push(editor.subscribe(() => this.invalidate()));
     this.input = new ViewportInput(this);
@@ -381,6 +385,7 @@ export class ViewportSystem {
       const activeObj = this.activeObject();
       this.gizmo.update(rig.camera, activeObj, this.editor.gizmoSpace);
       this.handles.update(rig.camera, activeObj);
+      this.overlays.update(rig.camera, p.h);
       this.sync.updateOutlines(rig.camera, p.h);
       this.sync.updateHelperBillboards(rig.camera, p.h);
       axesPerSlot.push(this.projectAxes(rig));

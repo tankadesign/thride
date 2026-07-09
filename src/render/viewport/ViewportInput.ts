@@ -1,5 +1,8 @@
-import { Raycaster, Vector3 } from "three";
-import type { Uuid } from "@/types/core";
+import { Mesh, Raycaster, Vector3 } from "three";
+import type { ComponentMode, Uuid } from "@/types/core";
+import { Bitset } from "@/core/selection/Bitset";
+import { meshRegistry } from "@/geometry/store/meshRegistry";
+import { pickComponent } from "@/render/picking/componentPicking";
 import type { ViewportSystem } from "./ViewportSystem";
 
 type NavMode = "orbit" | "pan" | "dolly" | null;
@@ -95,6 +98,13 @@ export class ViewportInput {
         return;
       }
       if (vs.gizmo.pointerDown(vs.raycaster)) {
+        vs.invalidate();
+        return;
+      }
+      // component modes lock clicks to the active editable mesh (C4D-style)
+      const mode = vs.doc.selection.editMode;
+      if (mode === "point" || mode === "edge" || mode === "polygon") {
+        this.componentClick(e, pane, mode);
         vs.invalidate();
         return;
       }
@@ -209,6 +219,52 @@ export class ViewportInput {
     const nodeId = this.firstVisibleNode(vs.raycaster.intersectObject(vs.sync.root, true));
     vs.onContextMenuRequest?.({ clientX: me.clientX, clientY: me.clientY, pane, nodeId });
   };
+
+  /** Click-select components of the ACTIVE editable mesh (shift add, mod toggle). */
+  private componentClick(e: PointerEvent, pane: number, mode: ComponentMode): void {
+    const vs = this.vs;
+    const doc = vs.doc;
+    const active = doc.selection.active;
+    if (!active || !doc.scene.has(active)) return;
+    const meshRef = doc.scene.mustGet(active).data?.mesh as { id: Uuid } | undefined;
+    const mesh = meshRef ? meshRegistry.get(meshRef.id) : undefined;
+    const obj = vs.sync.object(active);
+    if (!mesh || !(obj instanceof Mesh)) return; // nothing editable under this mode
+    const rect = vs.canvas.getBoundingClientRect();
+    const hit = pickComponent(mode, {
+      mesh,
+      meshObject: obj,
+      camera: vs.rigFor(pane).camera,
+      pane: vs.paneRect(pane),
+      x: e.clientX - rect.left,
+      y: e.clientY - rect.top,
+      raycaster: vs.raycaster,
+      triFace: vs.sync.renderInfoFor(active)?.triFace ?? null,
+    });
+    const op = e.shiftKey ? "add" : e.metaKey || e.ctrlKey ? "toggle" : "replace";
+    if (hit === null) {
+      if (op === "replace") doc.selection.clearComponents(active);
+      return;
+    }
+    const prev = doc.selection.componentsFor(active);
+    const valid = prev && prev.mode === mode && prev.topologyVersion === mesh.topologyVersion;
+    const bits = valid && op !== "replace" ? prev.bits.clone() : new Bitset();
+    const order = valid && op !== "replace" ? [...prev.order] : [];
+    if (op === "toggle" && bits.has(hit)) {
+      bits.delete(hit);
+      const i = order.indexOf(hit);
+      if (i !== -1) order.splice(i, 1);
+    } else if (!bits.has(hit)) {
+      bits.add(hit);
+      order.push(hit);
+    }
+    doc.selection.setComponents(active, {
+      mode,
+      bits,
+      order,
+      topologyVersion: mesh.topologyVersion,
+    });
+  }
 
   /** First raycast hit that resolves to a visible node, or null. */
   private firstVisibleNode(hits: ReturnType<Raycaster["intersectObject"]>): Uuid | null {
