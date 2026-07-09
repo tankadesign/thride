@@ -13,12 +13,12 @@ import type { LightDataDTO, LightType } from "@/types/core/light";
 import { themeColor } from "@/render/scene-sync/themeColor";
 
 /**
- * Per-type light helpers: a spotlight gets a cone, an area light a rect
- * with corner ticks — both are children of the light's own Object3D so
- * they follow its rotation. Everything else (point/directional/ambient/
- * hemisphere) gets a screen-facing "billboard" circle, tracked/positioned
- * externally by SceneSynchronizer since a billboard can't just inherit the
- * light's rotation.
+ * Per-type light helpers: spot gets a cone, area a rect with corner ticks,
+ * directional (infinite) a single line pointing where it shines — all
+ * children of the light's own Object3D so they follow its rotation.
+ * Point/ambient/hemisphere aren't directional; they get a screen-facing
+ * "billboard" circle, tracked/positioned externally by SceneSynchronizer
+ * since a billboard can't just inherit the light's rotation.
  */
 const HELPER_COLOR = themeColor("--color-secondary", "#c084fc");
 const HELPER_MAT = new LineBasicMaterial({ color: HELPER_COLOR });
@@ -121,17 +121,25 @@ function buildAreaHelper(data: LightDataDTO): Object3D {
   return lines;
 }
 
-// ---- point/directional/ambient/hemisphere: billboarded circle ---------
+// ---- directional (infinite) light: single direction line --------------
+
+const DIRECTIONAL_LINE_LENGTH = 1.5;
+
+function buildDirectionalHelper(): Object3D {
+  const pts = [0, 0, 0, 0, 0, -DIRECTIONAL_LINE_LENGTH];
+  const geo = new BufferGeometry();
+  geo.setAttribute("position", new BufferAttribute(new Float32Array(pts), 3));
+  const line = new LineSegments(geo, HELPER_MAT);
+  noPick(line);
+  return line;
+}
+
+// ---- point/ambient/hemisphere: billboarded circle ----------------------
 
 const CIRCLE_SEGMENTS = 32;
 const CIRCLE_PX_RADIUS = 32; // 64px diameter
 
-const BILLBOARD_TYPES: ReadonlySet<LightType> = new Set([
-  "point",
-  "directional",
-  "ambient",
-  "hemisphere",
-]);
+const BILLBOARD_TYPES: ReadonlySet<LightType> = new Set(["point", "ambient", "hemisphere"]);
 
 export function isBillboardLightType(type: LightType): boolean {
   return BILLBOARD_TYPES.has(type);
@@ -164,9 +172,10 @@ export function updateBillboardHelper(
   obj.scale.setScalar(CIRCLE_PX_RADIUS * worldPerPixel);
 }
 
-/** Cone (spot) / rect (area) helper to attach as a child of the light object; null for billboard types. */
+/** Cone (spot) / rect (area) / line (directional) helper to attach as a child of the light object; null for billboard types. */
 export function buildOrientedLightHelper(data: LightDataDTO): Object3D | null {
   if (data.type === "spot") return buildSpotHelper(data);
   if (data.type === "area") return buildAreaHelper(data);
+  if (data.type === "directional") return buildDirectionalHelper();
   return null;
 }

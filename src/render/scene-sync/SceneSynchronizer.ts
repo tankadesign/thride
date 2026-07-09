@@ -8,11 +8,13 @@ import {
   Group,
   HemisphereLight,
   Light,
+  Matrix4,
   Mesh,
   MeshBasicMaterial,
   MeshStandardMaterial,
   Object3D,
   PointLight,
+  Quaternion,
   RectAreaLight,
   SpotLight,
   Vector3,
@@ -76,6 +78,9 @@ export class SceneSynchronizer {
   private linesOverlays = new Map<Uuid, Mesh>();
   private lightBillboards = new Map<Uuid, Object3D>();
   private lightCount = 0;
+  private readonly lookMatrix = new Matrix4();
+  private readonly lookPos = new Vector3();
+  private readonly lookQuat = new Quaternion();
   private readonly doc: Document;
   private readonly onDirty: () => void;
   private unsubs: (() => void)[] = [];
@@ -168,6 +173,7 @@ export class SceneSynchronizer {
     else obj = new Group();
     obj.name = node.name;
     obj.userData.nodeId = id;
+    obj.visible = node.visible;
     this.objects.set(id, obj);
     this.applyTransform(node, obj);
     const parent = node.parent ? this.objects.get(node.parent) : undefined;
@@ -216,6 +222,17 @@ export class SceneSynchronizer {
       light.castShadow = data.castShadow ?? true;
       light.shadow.mapSize.set(1024, 1024);
       light.shadow.bias = -0.0004;
+    }
+    if (light instanceof SpotLight || light instanceof DirectionalLight) {
+      // three aims spot/directional lights at `.target.position` in world
+      // space and ignores the light's own rotation entirely. Without an
+      // explicit target node, applyTargets() re-points this un-parented
+      // stand-in along the node's own authored rotation each frame, so
+      // rotating an untargeted spot/infinite light actually changes where
+      // it shines.
+      const autoTarget = new Object3D();
+      light.userData.autoTarget = autoTarget;
+      light.target = autoTarget;
     }
     light.userData.lightType = data.type;
     this.attachLightHelper(light, data);
@@ -330,22 +347,64 @@ export class SceneSynchronizer {
   }
 
   /**
+   * Point `obj`'s local -Z at `targetPos`, regardless of object type.
+   * `Object3D.lookAt()` swaps its eye/target order for anything that isn't
+   * a real Camera/Light (`isCamera`/`isLight`) — so calling it on a camera
+   * NODE (a plain Group, not a THREE.Camera) points local +Z at the target
+   * instead, exactly reversing the camera pyramid helper. Every oriented
+   * helper in this app assumes -Z-forward, so target-following always goes
+   * through this instead of the built-in lookAt.
+   */
+  private lookAtForward(obj: Object3D, targetPos: Vector3): void {
+    obj.updateWorldMatrix(true, false);
+    this.lookPos.setFromMatrixPosition(obj.matrixWorld);
+    this.lookMatrix.lookAt(this.lookPos, targetPos, obj.up);
+    obj.quaternion.setFromRotationMatrix(this.lookMatrix);
+    const parent = obj.parent;
+    if (parent) {
+      this.lookMatrix.extractRotation(parent.matrixWorld);
+      this.lookQuat.setFromRotationMatrix(this.lookMatrix);
+      obj.quaternion.premultiply(this.lookQuat.invert());
+    }
+  }
+
+  /**
    * Target constraint (lights/cameras/any node with data.target): orient
    * toward the target's world position every frame — a render-side
    * constraint; the document transform is untouched.
+   *
+   * Spot/directional lights are special: three shines them at
+   * `.target.position` in world space and ignores their own rotation
+   * entirely. With a target node, we ALSO orient the light itself so its
+   * quaternion (and therefore its child helper) visually follows the
+   * target, not just the physical light. Without one, `.target` is
+   * re-pointed along the node's own authored rotation every frame so
+   * rotating the node actually changes where it shines.
    */
   applyTargets(): void {
     const pos = new Vector3();
+    const dir = new Vector3();
     for (const [id, obj] of this.objects) {
       const node = this.doc.scene.get(id);
       const targetId = node?.data?.target as Uuid | undefined;
-      if (!targetId || targetId === id) continue;
-      const targetObj = this.objects.get(targetId);
-      if (!targetObj) continue;
+      const targetObj = targetId && targetId !== id ? this.objects.get(targetId) : undefined;
       if (obj instanceof SpotLight || obj instanceof DirectionalLight) {
-        obj.target = targetObj; // three's native light targeting
-      } else {
-        obj.lookAt(targetObj.getWorldPosition(pos));
+        if (targetObj) {
+          obj.target = targetObj; // three's native light targeting
+          this.lookAtForward(obj, targetObj.getWorldPosition(pos));
+        } else {
+          const autoTarget = obj.userData.autoTarget as Object3D;
+          obj.target = autoTarget;
+          obj.getWorldPosition(pos);
+          // Object3D.getWorldDirection() returns the raw +Z basis (unlike
+          // Camera's override, which negates it) — negate to match the
+          // -Z-forward convention every oriented helper in this app uses.
+          obj.getWorldDirection(dir).negate();
+          autoTarget.position.copy(pos).add(dir);
+          autoTarget.updateMatrixWorld();
+        }
+      } else if (targetObj) {
+        this.lookAtForward(obj, targetObj.getWorldPosition(pos));
       }
     }
   }
