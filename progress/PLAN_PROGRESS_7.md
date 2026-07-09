@@ -28,7 +28,7 @@
 
 ## Bugs found & fixed during verification
 
-- **DnD drop no-op**: `onPointerUp` nulled `dragRef` *before* computing dragged ids from it → always empty. Ids now derived from the captured drag state (`draggedIdsFor(d.id)`).
+- **DnD drop no-op**: `onPointerUp` nulled `dragRef` _before_ computing dragged ids from it → always empty. Ids now derived from the captured drag state (`draggedIdsFor(d.id)`).
 - Test threshold: cube kernel is ~728 B (assertion said >1000).
 
 ## Decisions / notes
