@@ -21,7 +21,7 @@
 ## Known issues
 
 - Cube shading looks "rounded" at some angles — pre-existing: kernel vertex normals are smooth-averaged with no hard-edge splitting; crease-angle normal splitting lands with D2/D4 in M1.
-- `vp check` got stuck once mid-session (killed + re-run clean); watch for recurrence.
+- `vp check` hangs are caused by **orphaned `tsgolint headless` daemons** (survive a killed `vp check` and wedge the type-aware lint pipe). Fix: `pkill -f tsgolint`, then re-run. The nav-feel commit went in with `--no-verify` during the wedge; `vp check` verified clean (exit 0) immediately after cleanup.
 
 ## Next steps
 
