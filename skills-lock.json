@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "hugeicons": {
+      "source": "hugeicons/hugeicons",
+      "sourceType": "github",
+      "skillPath": "skills/hugeicons/SKILL.md",
+      "computedHash": "81fd5454243447d5e35d344b596bdf1f1d5d90bb076410dd9633debc571eeba5"
+    }
+  }
+}
