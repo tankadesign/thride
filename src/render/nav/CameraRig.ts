@@ -77,30 +77,36 @@ export class CameraRig {
     return this.camera.position.clone().addScaledVector(fwd, this.focusDistance);
   }
 
-  /** Rigid turntable rotation around `pivot`: world-Y yaw + camera-right pitch. */
+  /** Rigid turntable rotation around `pivot`: world-Y yaw + horizontal-right pitch. */
   orbitAround(pivot: Vector3, dx: number, dy: number): void {
     if (!this.isPerspective) return; // ortho panes do not orbit (C4D behavior)
     const yaw = -dx * 0.006;
     let pitch = -dy * 0.006;
 
+    // pitch axis = camera right FLATTENED to the horizon: pitching around a
+    // horizontal axis can never introduce roll, so the camera cannot drift
+    // into an inverted orientation over many drags
     const right = new Vector3().setFromMatrixColumn(this.camera.matrixWorld, 0);
-    const rotate = (q: Quaternion) => {
-      const offset = this.camera.position.clone().sub(pivot).applyQuaternion(q);
-      this.camera.position.copy(pivot).add(offset);
-      this.camera.quaternion.premultiply(q);
-    };
+    right.y = 0;
+    if (right.lengthSq() < 1e-10) right.set(1, 0, 0); // degenerate (rolled at a pole)
+    right.normalize();
 
-    // clamp pitch so the view direction never crosses the poles
+    // clamp pitch so the view direction never crosses the poles. Rotating
+    // around `right` by +pitch tilts the view UP, i.e. DECREASES phi
+    // (the sign here was inverted before — the clamp let the camera flip
+    // over the pole and then trapped it upside down).
     const fwd = this.camera.getWorldDirection(new Vector3());
     const phi = Math.acos(MathUtils.clamp(fwd.y, -1, 1)); // 0 = looking straight up
-    const phiAfter = phi + pitch;
-    if (phiAfter < MIN_PHI) pitch = MIN_PHI - phi;
-    if (phiAfter > Math.PI - MIN_PHI) pitch = Math.PI - MIN_PHI - phi;
+    const phiAfter = phi - pitch;
+    if (phiAfter < MIN_PHI) pitch = phi - MIN_PHI;
+    else if (phiAfter > Math.PI - MIN_PHI) pitch = phi - (Math.PI - MIN_PHI);
 
     const q = new Quaternion()
       .setFromAxisAngle(new Vector3(0, 1, 0), yaw)
       .multiply(new Quaternion().setFromAxisAngle(right, pitch));
-    rotate(q);
+    const offset = this.camera.position.clone().sub(pivot).applyQuaternion(q);
+    this.camera.position.copy(pivot).add(offset);
+    this.camera.quaternion.premultiply(q);
     this.camera.updateMatrixWorld();
   }
 

@@ -37,6 +37,11 @@
 - `vp check`'s lint stage intermittently no-ops/hangs (tsgolint daemons) — gates run as tsc + vp lint + vp test until Vite+ fix; `pkill -f tsgolint` clears wedges.
 - Preview harness window randomly collapses to ~200px; functional evals are the source of truth.
 
+## Post-round fix: orbit inversion bug
+
+- **Bug (user-reported):** perspective orbit could flip the camera over a pole and trap it inverted. Root cause: the pitch clamp in `CameraRig.orbitAround` had an inverted sign — rotating around camera-right by +pitch DECREASES the forward-vs-Y angle (φ' = φ − pitch), but the clamp assumed φ' = φ + pitch, so it let drags cross the pole and then blocked the way back.
+- **Fix:** corrected clamp sign; pitch axis is now camera-right **flattened to the horizon** (pitching around a horizontal axis can never introduce roll → no drift toward inverted orientations). Regression tests in `render/nav/CameraRig.test.ts` (pole storms never invert, clamp releases immediately, zero roll accumulation); verified live — camera pins at exactly φ = 0.05 at either pole (up.y stays +) and recovers on the next drag.
+
 ## Next steps
 
 1. Await further M0X items from user review ("I'll think of more things").
