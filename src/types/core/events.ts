@@ -5,7 +5,14 @@ import type { Uuid } from "./ids";
  * per-slice via useSyncExternalStore; a bump re-renders only that slice's
  * subscribers.
  */
-export type SliceId = "scene" | "selection" | "meshes" | "materials" | "animation" | "settings";
+export type SliceId =
+  | "scene"
+  | "selection"
+  | "meshes"
+  | "materials"
+  | "animation"
+  | "settings"
+  | "history";
 
 /**
  * Fine-grained document events. `preview: true` marks transient
@@ -20,4 +27,6 @@ export type DocEventMap = {
   /** Reparent or sibling reorder. */
   "scene:hierarchy-changed": { id: Uuid };
   "document:reset": Record<string, never>;
+  /** Undo/redo availability changed (push, undo, redo, eviction, clear). */
+  "history:changed": { canUndo: boolean; canRedo: boolean };
 };

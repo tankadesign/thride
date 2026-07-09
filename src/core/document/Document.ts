@@ -9,6 +9,7 @@ import type {
 } from "@/types/core";
 import { FORMAT_VERSION } from "@/types/core";
 import { EventBus } from "@/core/events/EventBus";
+import { History } from "@/core/history/History";
 import { SceneNode } from "./SceneNode";
 import { SceneStore } from "./SceneStore";
 
@@ -17,11 +18,20 @@ import { SceneStore } from "./SceneStore";
  * (Three scene) or displayed (React panels) is a projection of this.
  *
  * All mutations MUST go through Document methods so events fire and slice
- * versions bump; History (chunk B2) will wrap these methods in Commands.
+ * versions bump. User-visible mutations additionally flow through
+ * this.history (run/transact) so they are undoable; Document methods stay
+ * event-emitting primitives that Commands call.
  */
 export class Document {
   scene = new SceneStore();
   readonly events = new EventBus<DocEventMap>();
+  readonly history = new History(this, () => {
+    this.bump("history");
+    this.events.emit("history:changed", {
+      canUndo: this.history.canUndo,
+      canRedo: this.history.canRedo,
+    });
+  });
   private versions: Record<SliceId, number> = {
     scene: 0,
     selection: 0,
@@ -29,6 +39,7 @@ export class Document {
     materials: 0,
     animation: 0,
     settings: 0,
+    history: 0,
   };
 
   /** Monotonic per-slice counter; useSyncExternalStore snapshots compare these. */
@@ -107,9 +118,10 @@ export class Document {
     };
   }
 
-  /** Replace all content from a DTO (open file). Emits document:reset. */
+  /** Replace all content from a DTO (open file). Clears undo history, emits document:reset. */
   loadDTO(dto: ThrideDocumentDTO): void {
     this.scene = SceneStore.fromDTO(dto.nodes);
+    this.history.clear();
     this.bump("scene");
     this.bump("selection");
     this.events.emit("document:reset", {});
