@@ -80,6 +80,9 @@ export class ViewportSystem {
   private renderer: WebGPURenderer | null = null;
   private readonly scene = new Scene();
   private readonly grid: GridHelper;
+  private readonly defaultAmbient: AmbientLight;
+  private readonly defaultKey: DirectionalLight;
+  private readonly defaultFill: DirectionalLight;
   private readonly input: ViewportInput;
   private rigs = new Map<string, CameraRig>(); // key: `${pane}:${camera}`
   private panes: PaneRect[] = [];
@@ -108,13 +111,16 @@ export class ViewportSystem {
     this.grid = new GridHelper(40, 40, 0x333340, 0x22222a);
     this.grid.position.y = -0.001;
     this.scene.add(this.grid);
-    this.scene.add(new AmbientLight(0xffffff, 0.35));
-    const key = new DirectionalLight(0xffffff, 2.2);
-    key.position.set(5, 8, 4);
-    this.scene.add(key);
-    const fill = new DirectionalLight(0x8899bb, 0.6);
-    fill.position.set(-6, 3, -5);
-    this.scene.add(fill);
+    // fallback lighting rig — disabled once the document supplies its own
+    // lights (or, later, an environment), so scenes aren't double-lit.
+    this.defaultAmbient = new AmbientLight(0xffffff, 0.35);
+    this.scene.add(this.defaultAmbient);
+    this.defaultKey = new DirectionalLight(0xffffff, 2.2);
+    this.defaultKey.position.set(5, 8, 4);
+    this.scene.add(this.defaultKey);
+    this.defaultFill = new DirectionalLight(0x8899bb, 0.6);
+    this.defaultFill.position.set(-6, 3, -5);
+    this.scene.add(this.defaultFill);
 
     this.sync = new SceneSynchronizer(doc, () => this.invalidate());
     this.scene.add(this.sync.root);
@@ -347,6 +353,11 @@ export class ViewportSystem {
     const logical = this.logicalPanes();
     const axesPerSlot: PaneAxes[] = [];
     this.sync.applyTargets();
+    // the document's own lights (or, later, an environment) replace the fallback rig
+    const showDefaultLights = !this.sync.hasLights;
+    this.defaultAmbient.visible = showDefaultLights;
+    this.defaultKey.visible = showDefaultLights;
+    this.defaultFill.visible = showDefaultLights;
     renderer.setScissorTest(true);
     for (let r = 0; r < this.panes.length; r++) {
       const p = this.panes[r]!;
@@ -371,6 +382,7 @@ export class ViewportSystem {
       this.gizmo.update(rig.camera, activeObj, this.editor.gizmoSpace);
       this.handles.update(rig.camera, activeObj);
       this.sync.updateOutlines(rig.camera, p.h);
+      this.sync.updateHelperBillboards(rig.camera, p.h);
       axesPerSlot.push(this.projectAxes(rig));
       await renderer.renderAsync(this.scene, rig.camera);
     }

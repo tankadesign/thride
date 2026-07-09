@@ -1,6 +1,5 @@
 import {
   AmbientLight,
-  BackSide,
   type Camera,
   Color,
   DirectionalLight,
@@ -9,19 +8,15 @@ import {
   Group,
   HemisphereLight,
   Light,
-  MathUtils,
   Mesh,
   MeshBasicMaterial,
   MeshStandardMaterial,
   Object3D,
-  OrthographicCamera,
-  PerspectiveCamera,
   PointLight,
   RectAreaLight,
   SpotLight,
   Vector3,
 } from "three";
-import { MeshBasicNodeMaterial } from "three/webgpu";
 import { computeBoundsTree, disposeBoundsTree, acceleratedRaycast } from "three-mesh-bvh";
 import type { Uuid } from "@/types/core";
 import { defaultLightData, type LightDataDTO, SHADOW_CAPABLE } from "@/types/core/light";
@@ -31,8 +26,14 @@ import type { HEMesh } from "@/geometry/kernel/HEMesh";
 import { buildPrimitive } from "@/geometry/primitives";
 import { meshRegistry } from "@/geometry/store/meshRegistry";
 import { RenderMesh } from "@/geometry/sync/RenderMesh";
-import { normalLocal, positionLocal, uniform } from "@/materials/tsl";
-import { themeColor } from "./themeColor";
+import { buildCameraHelper } from "@/render/helpers/CameraHelper";
+import {
+  buildBillboardCircle,
+  buildOrientedLightHelper,
+  isBillboardLightType,
+  updateBillboardHelper,
+} from "@/render/helpers/LightHelpers";
+import { SelectionOutline } from "./SelectionOutline";
 
 // three-mesh-bvh accelerated raycast, wired once for the whole app
 Mesh.prototype.raycast = acceleratedRaycast;
@@ -62,13 +63,6 @@ const LINES_MAT = new MeshBasicMaterial({
   polygonOffsetFactor: -1,
   polygonOffsetUnits: -1,
 });
-const OUTLINE_PX = 2;
-
-interface OutlineEntry {
-  mesh: Mesh;
-  offset: { value: number }; // uniform node driving the normal expansion
-}
-
 /**
  * Projects the Document into a Three scene graph. The Document is the
  * truth; this class only reacts to events. Mesh nodes carry
@@ -78,9 +72,10 @@ export class SceneSynchronizer {
   readonly root = new Group();
   private objects = new Map<Uuid, Object3D>();
   private renderMeshes = new Map<Uuid, { key: string; rm: RenderMesh }>();
-  private outlines = new Map<Uuid, OutlineEntry>();
+  private readonly selectionOutline = new SelectionOutline();
   private linesOverlays = new Map<Uuid, Mesh>();
-  private readonly outlineColor = themeColor("--color-primary", "#ff865b");
+  private lightBillboards = new Map<Uuid, Object3D>();
+  private lightCount = 0;
   private readonly doc: Document;
   private readonly onDirty: () => void;
   private unsubs: (() => void)[] = [];
@@ -107,7 +102,7 @@ export class SceneSynchronizer {
         this.onDirty();
       }),
       doc.events.on("selection:changed", () => {
-        this.updateSelectionOutlines();
+        this.selectionOutline.sync(this.doc, this.objects);
         this.onDirty();
       }),
       doc.events.on("document:reset", () => {
@@ -120,6 +115,11 @@ export class SceneSynchronizer {
 
   object(id: Uuid): Object3D | undefined {
     return this.objects.get(id);
+  }
+
+  /** True once at least one light node exists — the viewport disables its default lighting rig. */
+  get hasLights(): boolean {
+    return this.lightCount > 0;
   }
 
   nodeIdOf(obj: Object3D): Uuid | null {
@@ -143,21 +143,28 @@ export class SceneSynchronizer {
     this.root.clear();
     this.objects.clear();
     this.linesOverlays.clear(); // repopulated by buildMeshObject during the walk below
+    this.lightBillboards.clear(); // root.clear() already detached them; drop the stale refs
+    this.lightCount = 0;
     const walk = (id: Uuid) => {
       this.addNode(id);
       for (const c of this.doc.scene.childrenOf(id)) walk(c);
     };
     for (const r of this.doc.scene.rootIds()) walk(r);
-    this.outlines.clear(); // objects were rebuilt; stale outline children are gone with them
-    this.updateSelectionOutlines();
+    this.selectionOutline.clear(); // objects were rebuilt; stale outline children are gone with them
+    this.selectionOutline.sync(this.doc, this.objects);
   }
 
   private addNode(id: Uuid): void {
     if (this.objects.has(id)) return;
     const node = this.doc.scene.mustGet(id);
     let obj: Object3D;
+    let lightData: LightDataDTO | null = null;
     if (node.kind === "mesh") obj = this.buildMeshObject(node);
-    else if (node.kind === "light") obj = this.buildLightObject(node);
+    else if (node.kind === "light") {
+      lightData = (node.data?.light as LightDataDTO | undefined) ?? defaultLightData("point");
+      obj = this.buildLightObject(node);
+      this.lightCount++;
+    } else if (node.kind === "camera") obj = this.buildCameraObject();
     else obj = new Group();
     obj.name = node.name;
     obj.userData.nodeId = id;
@@ -165,6 +172,13 @@ export class SceneSynchronizer {
     this.applyTransform(node, obj);
     const parent = node.parent ? this.objects.get(node.parent) : undefined;
     (parent ?? this.root).add(obj);
+    if (lightData) this.refreshLightBillboard(id, lightData);
+  }
+
+  private buildCameraObject(): Object3D {
+    const group = new Group();
+    group.add(buildCameraHelper());
+    return group;
   }
 
   private buildLightObject(node: SceneNode): Object3D {
@@ -204,7 +218,33 @@ export class SceneSynchronizer {
       light.shadow.bias = -0.0004;
     }
     light.userData.lightType = data.type;
+    this.attachLightHelper(light, data);
     return light;
+  }
+
+  /** Cone (spot) / rect (area) visualizer as a child, so it follows the light's rotation. */
+  private attachLightHelper(light: Light, data: LightDataDTO): void {
+    const existing = light.children.find((c) => c.userData.orientedHelper);
+    if (existing) light.remove(existing);
+    const helper = buildOrientedLightHelper(data);
+    if (helper) {
+      helper.userData.orientedHelper = true;
+      light.add(helper);
+    }
+  }
+
+  /** Billboarded circle visualizer for non-oriented light types; tracked outside the light's own transform. */
+  private refreshLightBillboard(id: Uuid, data: LightDataDTO): void {
+    const existing = this.lightBillboards.get(id);
+    if (existing) {
+      existing.removeFromParent();
+      this.lightBillboards.delete(id);
+    }
+    if (isBillboardLightType(data.type)) {
+      const circle = buildBillboardCircle();
+      this.root.add(circle);
+      this.lightBillboards.set(id, circle);
+    }
   }
 
   /** Apply light payload changes (color/intensity/shadow/params) in place. */
@@ -212,14 +252,18 @@ export class SceneSynchronizer {
     const data = node.data?.light as LightDataDTO | undefined;
     if (!data || !(obj instanceof Light)) return obj;
     if (obj.userData.lightType !== data.type) {
-      // type changed: rebuild the light, keep children + hierarchy position
+      // type changed: rebuild the light, keep real children + hierarchy position
+      // (the stale oriented helper is dropped — buildLightObject attaches a fresh one)
       const fresh = this.buildLightObject(node);
       fresh.name = node.name;
       fresh.userData.nodeId = node.id;
-      for (const child of [...obj.children]) fresh.add(child);
+      for (const child of [...obj.children]) {
+        if (!child.userData.orientedHelper) fresh.add(child);
+      }
       obj.parent?.add(fresh);
       obj.removeFromParent();
       this.objects.set(node.id, fresh);
+      this.refreshLightBillboard(node.id, data);
       return fresh;
     }
     obj.color = new Color(data.color);
@@ -236,6 +280,8 @@ export class SceneSynchronizer {
       obj.width = data.width ?? obj.width;
       obj.height = data.height ?? obj.height;
     }
+    this.attachLightHelper(obj, data);
+    this.refreshLightBillboard(node.id, data);
     return obj;
   }
 
@@ -251,6 +297,12 @@ export class SceneSynchronizer {
         this.objects.delete(nid);
         this.dropRenderMesh(nid);
         this.linesOverlays.delete(nid);
+        if (o instanceof Light) this.lightCount--;
+        const billboard = this.lightBillboards.get(nid);
+        if (billboard) {
+          billboard.removeFromParent();
+          this.lightBillboards.delete(nid);
+        }
       }
     });
   }
@@ -321,8 +373,7 @@ export class SceneSynchronizer {
     (rm.geometry as any).computeBoundsTree?.();
     this.renderMeshes.set(id, { key: source.key, rm });
     obj.geometry = rm.geometry;
-    const outline = this.outlines.get(id);
-    if (outline) outline.mesh.geometry = rm.geometry;
+    this.selectionOutline.updateGeometry(id, rm.geometry);
     const overlay = this.linesOverlays.get(id);
     if (overlay) overlay.geometry = rm.geometry;
   }
@@ -376,61 +427,24 @@ export class SceneSynchronizer {
     obj.scale.set(t.scale[0], t.scale[1], t.scale[2]);
   }
 
-  /** 2px primary-color silhouette: backface hull expanded along normals. */
-  private updateSelectionOutlines(): void {
-    // drop outlines for deselected/removed nodes
-    for (const [id, entry] of [...this.outlines]) {
-      if (!this.doc.selection.has(id) || !this.objects.has(id)) {
-        entry.mesh.removeFromParent();
-        (entry.mesh.material as MeshBasicNodeMaterial).dispose();
-        this.outlines.delete(id);
-      }
-    }
-    // add outlines for newly selected mesh nodes
-    for (const id of this.doc.selection.objectIds) {
-      if (this.outlines.has(id)) continue;
-      const obj = this.objects.get(id);
-      if (!(obj instanceof Mesh)) continue;
-      const offset = uniform(0.01);
-      const mat = new MeshBasicNodeMaterial();
-      mat.color.copy(this.outlineColor);
-      mat.side = BackSide;
-      mat.positionNode = positionLocal.add(normalLocal.mul(offset));
-      const outline = new Mesh(obj.geometry, mat);
-      outline.raycast = () => {}; // never pickable
-      outline.userData.outline = true;
-      outline.renderOrder = -1; // hull first, real surface wins the depth test
-      obj.add(outline);
-      this.outlines.set(id, { mesh: outline, offset });
-    }
-  }
-
   /**
-   * Keep outlines exactly OUTLINE_PX thick for this pane's camera. Called
-   * per pane before rendering (world units per pixel depend on the camera).
+   * Keep selection outlines a constant pixel width for this pane's camera.
+   * Called per pane before rendering (world units per pixel depend on the camera).
    */
   updateOutlines(camera: Camera, viewportHeightPx: number): void {
-    if (this.outlines.size === 0 || viewportHeightPx <= 0) return;
-    const objPos = new Vector3();
-    const objScale = new Vector3();
-    for (const [id, entry] of this.outlines) {
-      const obj = this.objects.get(id);
-      if (!obj) continue;
-      obj.getWorldPosition(objPos);
-      obj.getWorldScale(objScale);
-      let worldPerPixel: number;
-      if (camera instanceof PerspectiveCamera) {
-        const dist = camera.position.distanceTo(objPos);
-        worldPerPixel =
-          (2 * dist * Math.tan(MathUtils.degToRad(camera.fov / 2))) / viewportHeightPx;
-      } else {
-        const ortho = camera as OrthographicCamera;
-        worldPerPixel = (ortho.top - ortho.bottom) / viewportHeightPx;
-      }
-      // compensate the object's world scale (positionNode offsets in local space)
-      const avgScale =
-        (Math.abs(objScale.x) + Math.abs(objScale.y) + Math.abs(objScale.z)) / 3 || 1;
-      entry.offset.value = (OUTLINE_PX * worldPerPixel) / avgScale;
+    this.selectionOutline.updateSizes(camera, viewportHeightPx, this.objects);
+  }
+
+  /** Face + resize the billboarded light circles for this pane's camera. Call once per pane, before render. */
+  updateHelperBillboards(camera: Camera, viewportHeightPx: number): void {
+    if (this.lightBillboards.size === 0 || viewportHeightPx <= 0) return;
+    const pos = new Vector3();
+    for (const [id, billboard] of this.lightBillboards) {
+      const light = this.objects.get(id);
+      if (!light) continue;
+      light.getWorldPosition(pos);
+      billboard.position.copy(pos);
+      updateBillboardHelper(billboard, camera, viewportHeightPx);
     }
   }
 }
