@@ -1,6 +1,8 @@
 import { useRef } from "react";
 import type { TransformDTO, Uuid } from "@/types/core";
 import type { PrimitiveDescriptor } from "@/types/geometry/primitives";
+import { paramMeta } from "@/types/geometry/primitives";
+import { meshRegistry } from "@/geometry/store/meshRegistry";
 import {
   RenameNodeCommand,
   SetFlagsCommand,
@@ -47,6 +49,7 @@ function NodeAttributes({ id }: { id: Uuid }) {
   const t = node.transform;
   const axes = ["X", "Y", "Z"] as const;
   const prim = node.data?.primitive as PrimitiveDescriptor | undefined;
+  const meshRef = node.data?.mesh as { id: Uuid } | undefined;
 
   return (
     <div className="h-full overflow-auto bg-base-100 text-xs">
@@ -103,7 +106,29 @@ function NodeAttributes({ id }: { id: Uuid }) {
       </fieldset>
 
       {prim ? <PrimitiveParams id={id} prim={prim} /> : null}
+      {meshRef ? <MeshInfo meshId={meshRef.id} /> : null}
     </div>
+  );
+}
+
+function MeshInfo({ meshId }: { meshId: Uuid }) {
+  const mesh = meshRegistry.get(meshId);
+  return (
+    <fieldset className="fieldset px-2 py-1.5">
+      <legend className="fieldset-legend py-1 text-[10px] uppercase opacity-60">
+        Editable Mesh
+      </legend>
+      {mesh ? (
+        <div className="flex gap-2">
+          <span className="badge badge-xs badge-ghost">{mesh.vCount} pts</span>
+          <span className="badge badge-xs badge-ghost">{mesh.edgeCount} edges</span>
+          <span className="badge badge-xs badge-ghost">{mesh.fCount} polys</span>
+        </div>
+      ) : (
+        <span className="text-error">mesh data missing</span>
+      )}
+      <p className="pt-1 opacity-50">Point/edge/polygon editing arrives with M1.</p>
+    </fieldset>
   );
 }
 
@@ -132,26 +157,35 @@ function PrimitiveParams({ id, prim }: { id: Uuid; prim: PrimitiveDescriptor }) 
       <legend className="fieldset-legend py-1 text-[10px] uppercase opacity-60">
         {prim.type} parameters
       </legend>
-      {Object.entries(prim.params).map(([key, value]) => (
-        <div className="grid grid-cols-[64px_1fr] items-center gap-1" key={key}>
-          <span className="truncate opacity-60">{key}</span>
-          {typeof value === "boolean" ? (
-            <input
-              type="checkbox"
-              className="toggle toggle-xs"
-              checked={value}
-              onChange={(e) => setParam(key, e.target.checked, true)}
-            />
-          ) : (
+      {Object.entries(prim.params).map(([key, value]) => {
+        if (typeof value === "boolean") {
+          return (
+            <div className="grid grid-cols-[64px_1fr] items-center gap-1" key={key}>
+              <span className="truncate opacity-60">{key}</span>
+              <input
+                type="checkbox"
+                className="toggle toggle-xs"
+                checked={value}
+                onChange={(e) => setParam(key, e.target.checked, true)}
+              />
+            </div>
+          );
+        }
+        const meta = paramMeta(key);
+        return (
+          <div className="grid grid-cols-[64px_1fr] items-center gap-1" key={key}>
+            <span className="truncate opacity-60">{key}</span>
             <NumberDrag
               value={value}
-              step={/seg|subdiv|[Rr]ings/.test(key) ? 0.05 : 0.01}
-              min={0}
+              step={meta.int ? 0.08 : 0.01}
+              integer={meta.int}
+              min={meta.min}
+              max={meta.max}
               onChange={(v, committed) => setParam(key, v, committed)}
             />
-          )}
-        </div>
-      ))}
+          </div>
+        );
+      })}
     </fieldset>
   );
 }

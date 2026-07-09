@@ -36,7 +36,7 @@ export function ToolRail({ registry }: { registry: CommandRegistry }) {
   const doc = useDocument();
   const { editMode } = useSelectionInfo();
   return (
-    <ul className="menu menu-xs w-11 flex-none gap-0.5 border-r border-base-100 bg-base-300 p-1">
+    <ul className="menu menu-xs w-13 flex-none gap-0.5 border-r border-base-100 bg-base-300 p-1">
       {MODES.map((m) => (
         <li key={m.mode} className={m.enabled ? "" : "menu-disabled"}>
           <button

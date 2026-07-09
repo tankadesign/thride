@@ -15,6 +15,7 @@ import type { Document } from "@/core";
 import type { Uuid } from "@/types/core";
 import type { BuiltinCamera, EditorViewportState } from "@/types/editor";
 import { TransformGizmo } from "@/render/gizmo/TransformGizmo";
+import { PrimitiveHandles } from "@/render/handles/PrimitiveHandles";
 import { CameraRig } from "@/render/nav/CameraRig";
 import { SceneSynchronizer } from "@/render/scene-sync/SceneSynchronizer";
 
@@ -33,6 +34,16 @@ export interface ViewportStats {
   backend: string;
 }
 
+/** One world axis projected into a pane's view plane, for the axis indicator. */
+export interface AxisProjection {
+  dx: number; // screen-right component (-1..1)
+  dy: number; // screen-down component (-1..1)
+  front: boolean; // pointing toward the viewer (draw label emphasized)
+}
+
+/** Per visible pane slot: X/Y/Z projections. */
+export type PaneAxes = [AxisProjection, AxisProjection, AxisProjection];
+
 const BUILTINS: BuiltinCamera[] = ["persp", "top", "front", "right"];
 
 /**
@@ -48,6 +59,7 @@ export class ViewportSystem {
   private readonly scene = new Scene();
   private readonly sync: SceneSynchronizer;
   private readonly gizmo: TransformGizmo;
+  private readonly handles: PrimitiveHandles;
   private rigs = new Map<string, CameraRig>(); // key: `${pane}:${camera}`
   private panes: PaneRect[] = [];
   private needsRender = true;
@@ -63,6 +75,8 @@ export class ViewportSystem {
   private mmbClick: { x: number; y: number; pane: number } | null = null;
   /** Canvas-relative 2D position of the active nav pivot marker (the "+"). */
   onNavMarker: ((pos: { x: number; y: number } | null) => void) | null = null;
+  /** Axis-indicator data per visible pane slot, published every rendered frame. */
+  onAxes: ((axes: PaneAxes[]) => void) | null = null;
   private raycaster = new Raycaster();
   private resizeObserver: ResizeObserver;
   private unsubs: (() => void)[] = [];
@@ -91,6 +105,8 @@ export class ViewportSystem {
     this.scene.add(this.sync.root);
     this.gizmo = new TransformGizmo(doc);
     this.scene.add(this.gizmo.group);
+    this.handles = new PrimitiveHandles(doc);
+    this.scene.add(this.handles.group);
 
     this.unsubs.push(editor.subscribe(() => this.invalidate()));
 
@@ -103,6 +119,11 @@ export class ViewportSystem {
 
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(canvas.parentElement ?? canvas);
+
+    if (import.meta.env.DEV) {
+      // dev-only escape hatch for e2e/debug tooling
+      (window as unknown as Record<string, unknown>).__viewport = this;
+    }
 
     void this.init();
   }
@@ -210,6 +231,7 @@ export class ViewportSystem {
     if (!renderer) return;
     this.layoutPanes();
     const logical = this.logicalPanes();
+    const axesPerSlot: PaneAxes[] = [];
     renderer.setScissorTest(true);
     for (let r = 0; r < this.panes.length; r++) {
       const p = this.panes[r]!;
@@ -226,10 +248,26 @@ export class ViewportSystem {
       const activePane = i === this.editor.activePane && this.editor.layout === "quad";
       this.scene.background = new Color(activePane ? 0x12121a : 0x101014);
       this.gizmo.update(rig.camera);
+      const activeObj = this.doc.selection.active
+        ? (this.sync.object(this.doc.selection.active) ?? null)
+        : null;
+      this.handles.update(rig.camera, activeObj);
       this.sync.updateOutlines(rig.camera, p.h);
+      axesPerSlot.push(this.projectAxes(rig));
       await renderer.renderAsync(this.scene, rig.camera);
     }
+    this.onAxes?.(axesPerSlot);
     this.frames++;
+  }
+
+  /** World X/Y/Z in this pane's view space (for the corner axis indicator). */
+  private projectAxes(rig: CameraRig): PaneAxes {
+    const invQuat = rig.camera.quaternion.clone().invert();
+    const project = (x: number, y: number, z: number): AxisProjection => {
+      const v = new Vector3(x, y, z).applyQuaternion(invQuat);
+      return { dx: v.x, dy: -v.y, front: v.z >= 0 };
+    };
+    return [project(1, 0, 0), project(0, 1, 0), project(0, 0, 1)];
   }
 
   /** Pane bound to a scene camera node: follow the node's transform. */
@@ -341,8 +379,15 @@ export class ViewportSystem {
     }
 
     if (e.button === 0) {
-      const rig = this.setRayFromEvent(e, pane);
-      void rig;
+      this.setRayFromEvent(e, pane);
+      // primitive adjustment handles take priority over the gizmo
+      const activeObj = this.doc.selection.active
+        ? (this.sync.object(this.doc.selection.active) ?? null)
+        : null;
+      if (this.handles.pointerDown(this.raycaster, activeObj)) {
+        this.invalidate();
+        return;
+      }
       if (this.gizmo.pointerDown(this.raycaster)) {
         this.invalidate();
         return;
@@ -378,16 +423,27 @@ export class ViewportSystem {
       this.invalidate();
       return;
     }
-    if (this.gizmo.isDragging) {
+    if (this.handles.isDragging) {
       this.setRayFromEvent(e, this.editor.activePane);
-      this.gizmo.pointerMove(this.raycaster, e.shiftKey);
+      this.handles.pointerMove(this.raycaster);
       this.invalidate();
       return;
     }
-    // hover feedback on gizmo handles
+    if (this.gizmo.isDragging) {
+      this.setRayFromEvent(e, this.editor.activePane);
+      this.gizmo.pointerMove(this.raycaster, {
+        uniformScale: e.shiftKey,
+        snap: e.shiftKey,
+        snapSize: this.editor.gridSnapSize,
+      });
+      this.invalidate();
+      return;
+    }
+    // hover feedback: handles win over gizmo (matching pick priority)
     const rect = this.canvas.getBoundingClientRect();
     const pane = this.paneAt(e.clientX - rect.left, e.clientY - rect.top);
     this.setRayFromEvent(e, pane);
+    this.handles.updateHover(this.raycaster);
     this.gizmo.updateHover(this.raycaster);
     this.invalidate();
   };
@@ -410,6 +466,11 @@ export class ViewportSystem {
       this.onNavMarker?.(null);
       return;
     }
+    if (this.handles.isDragging) {
+      this.handles.pointerUp();
+      this.invalidate();
+      return;
+    }
     if (this.gizmo.isDragging) {
       this.gizmo.pointerUp();
       this.invalidate();
@@ -429,7 +490,11 @@ export class ViewportSystem {
   };
 
   private onKeyDown = (e: KeyboardEvent): void => {
-    if (e.key === "Escape" && this.gizmo.isDragging) {
+    if (e.key !== "Escape") return;
+    if (this.handles.isDragging) {
+      this.handles.cancelDrag();
+      this.invalidate();
+    } else if (this.gizmo.isDragging) {
       this.gizmo.cancelDrag();
       this.invalidate();
     }

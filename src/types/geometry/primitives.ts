@@ -104,3 +104,24 @@ export const primitiveLabels: Record<PrimitiveType, string> = {
 export function defaultPrimitive(type: PrimitiveType): PrimitiveDescriptor {
   return { type, params: structuredClone(primitiveDefaults[type]) } as PrimitiveDescriptor;
 }
+
+export interface ParamMeta {
+  int?: boolean;
+  min?: number;
+  max?: number;
+}
+
+/** Editing metadata per parameter name (int-stepped inputs, ranges). */
+export const primitiveParamMeta: Record<string, ParamMeta> = {
+  segments: { int: true, min: 3, max: 1000 },
+  tubeSegments: { int: true, min: 3, max: 1000 },
+  rings: { int: true, min: 3, max: 1000 },
+  segmentsX: { int: true, min: 1, max: 1000 },
+  segmentsZ: { int: true, min: 1, max: 1000 },
+  subdivisions: { int: true, min: 0, max: 5 },
+  capRings: { int: true, min: 2, max: 128 },
+};
+
+export function paramMeta(key: string): ParamMeta {
+  return primitiveParamMeta[key] ?? { min: 0.001 };
+}

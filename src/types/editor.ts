@@ -17,6 +17,8 @@ export interface EditorViewportState {
   /** Which logical pane the single (maximized) layout shows. */
   readonly maximizedPane: number;
   readonly paletteOpen: boolean;
+  /** Grid snap step in world units for shift-snapping (settings). */
+  readonly gridSnapSize: number;
   paneCamera(pane: number): PaneCamera;
   setActivePane(pane: number): void;
   setPaneCamera(pane: number, camera: PaneCamera): void;

@@ -271,6 +271,7 @@ Each chunk is a session-sized unit of focused work with explicit deps and a **"d
 ## Milestones
 
 - **M0 – Foundation** _(A1–A4, B1–B4, C1–C4, D1–D3):_ app boots, dark shell with docking, viewport renders WebGPU scene, C4D nav, primitives creatable, click-select + unified gizmo, object manager tree, attributes panel, undo/redo, 4-up with per-view cameras.
+- **M0X – Expanded foundation (user-directed, in progress):** per-viewport axis indicator, gizmo polish (50% size, primary hover, shift local-snap w/ configurable grid), MMB pane maximize, hugeicons @ global 20px setting, primitive **adjustment handles** (C4D yellow squares, priority over gizmo), **Convert to Mesh** (registry-backed editable kernel meshes), int-stepped params, double-sided default, object **nesting + DnD** with drop indicator, right-click context menu, ⌘G group-under-null, deep collapse/expand. More items expected before M1 starts.
 - **M1 – Modeling & splines** _(D4–D9, F1, F3, C5):_ component modes + context toolbar, extrude/inset/bevel/weld, snapping, boolean generator, make-editable, **pen tool + spline extrude with sliders**.
 - **M2 – Materials & look** _(E1–E6 minus bake, C6, A5):_ material manager, PBR + built-ins, procedural layer stacks with blend modes, projections, environment dome light, post-FX stack incl. custom shaders, color management.
 - **M3 – Motion & scatter** _(F2, F4, G1–G3):_ cloner + effector, lights/cameras as first-class objects, animation model + timeline + curve editor, animatable material/generator params.

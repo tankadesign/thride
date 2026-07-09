@@ -1,6 +1,7 @@
 import { atom, useAtom, useAtomValue } from "jotai";
 import type { EditorViewportState, PaneCamera, ViewportLayout } from "@/types/editor";
 import { appStore } from "@/ui/hooks/doc/document";
+import { gridSnapSizeAtom } from "./settings";
 import { paletteOpenAtom } from "./shell";
 
 /**
@@ -47,6 +48,10 @@ class EditorStateStore implements EditorViewportState {
 
   get paletteOpen(): boolean {
     return appStore.get(paletteOpenAtom);
+  }
+
+  get gridSnapSize(): number {
+    return appStore.get(gridSnapSizeAtom);
   }
 
   paneCamera(pane: number): PaneCamera {

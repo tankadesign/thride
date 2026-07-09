@@ -1,12 +1,17 @@
 import type { Document } from "@/core";
-import { CreateNodeCommand, RemoveNodeCommand } from "@/core/history/commands/scene";
+import {
+  CreateNodeCommand,
+  RemoveNodeCommand,
+  ReparentNodeCommand,
+} from "@/core/history/commands/scene";
+import { ConvertToMeshCommand } from "@/geometry/commands/convert";
 import type { PrimitiveType } from "@/types/geometry/primitives";
 import { defaultPrimitive, primitiveLabels } from "@/types/geometry/primitives";
 import type { AppCommand } from "@/ui/commands/CommandRegistry";
 import { openPalette } from "@/ui/hooks/editor/shell";
 import { editorState } from "@/ui/hooks/editor/viewport";
 import type { ViewportSystem } from "@/render/viewport/ViewportSystem";
-import { FORMAT_VERSION } from "@/types/core";
+import { FORMAT_VERSION, type Uuid } from "@/types/core";
 
 export interface ShellApi {
   getViewport: () => ViewportSystem | null;
@@ -37,7 +42,7 @@ export function buildCommands(doc: Document, shell: ShellApi): AppCommand[] {
   };
 
   /** top-most selected nodes only (skip ones whose ancestor is also selected) */
-  const deletableSelection = () =>
+  const topmostSelection = () =>
     doc.selection.objectIds.filter(
       (id) =>
         doc.scene.has(id) &&
@@ -83,10 +88,44 @@ export function buildCommands(doc: Document, shell: ShellApi): AppCommand[] {
       shortcut: "delete",
       enabled: () => doc.selection.objectIds.length > 0,
       run: () => {
-        const ids = deletableSelection();
+        const ids = topmostSelection();
         if (ids.length === 0) return;
         doc.history.transact("Delete", () => {
           for (const id of ids) doc.history.run(new RemoveNodeCommand(id));
+        });
+      },
+    },
+    {
+      id: "edit.group",
+      title: "Group Objects",
+      menu: "Edit",
+      shortcut: "mod+g",
+      enabled: () => doc.selection.objectIds.length > 0,
+      run: () => {
+        const ids = topmostSelection();
+        if (ids.length === 0) return;
+        let groupId: Uuid | null = null;
+        doc.history.transact("Group Objects", () => {
+          const create = new CreateNodeCommand("null", "Group");
+          doc.history.run(create);
+          groupId = create.nodeId;
+          for (const id of ids) doc.history.run(new ReparentNodeCommand(id, groupId));
+        });
+        if (groupId) doc.selection.selectObjects([groupId]);
+      },
+    },
+    {
+      id: "edit.convertToMesh",
+      title: "Convert to Mesh",
+      menu: "Edit",
+      shortcut: "c",
+      enabled: () => doc.selection.objectIds.some((id) => ConvertToMeshCommand.eligible(doc, id)),
+      run: () => {
+        // convert every selected primitive; already-converted/ineligible nodes are skipped
+        const ids = doc.selection.objectIds.filter((id) => ConvertToMeshCommand.eligible(doc, id));
+        if (ids.length === 0) return;
+        doc.history.transact("Convert to Mesh", () => {
+          for (const id of ids) doc.history.run(new ConvertToMeshCommand(doc, id));
         });
       },
     },

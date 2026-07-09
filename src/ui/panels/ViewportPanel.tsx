@@ -2,7 +2,50 @@ import { useEffect, useRef, useState } from "react";
 import type { PaneCamera } from "@/types/editor";
 import { useDocument, useSliceVersion } from "@/ui/hooks/doc/document";
 import { editorState, useViewportState } from "@/ui/hooks/editor/viewport";
-import { type ViewportStats, ViewportSystem } from "@/render/viewport/ViewportSystem";
+import {
+  type PaneAxes,
+  type ViewportStats,
+  ViewportSystem,
+} from "@/render/viewport/ViewportSystem";
+
+/** Matches the gizmo's AXIS_COLORS (x, y, z). */
+const AXIS_COLORS = ["#e0554f", "#69b839", "#3f7fdc"] as const;
+const AXIS_LABELS = ["X", "Y", "Z"] as const;
+
+/** C4D-style orientation indicator: world axes projected into the pane. */
+function AxisIndicator({ axes }: { axes: PaneAxes }) {
+  const R = 22;
+  const C = 30;
+  // draw back-facing axes first so front ones overlap them
+  const order = [...axes.keys()].sort((a, b) => Number(axes[a]!.front) - Number(axes[b]!.front));
+  return (
+    <svg width={C * 2} height={C * 2} className="pointer-events-none" aria-hidden="true">
+      {order.map((i) => {
+        const a = axes[i]!;
+        const x = C + a.dx * R;
+        const y = C + a.dy * R;
+        return (
+          <g key={i} opacity={a.front ? 1 : 0.35}>
+            <line x1={C} y1={C} x2={x} y2={y} stroke={AXIS_COLORS[i]} strokeWidth="1.5" />
+            <circle cx={x} cy={y} r={a.front ? 7 : 4} fill={AXIS_COLORS[i]} />
+            {a.front ? (
+              <text
+                x={x}
+                y={y + 3}
+                textAnchor="middle"
+                fontSize="8"
+                fontWeight="700"
+                fill="#101014"
+              >
+                {AXIS_LABELS[i]}
+              </text>
+            ) : null}
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
 
 interface Props {
   /** The shell exposes the live system so commands (F/H, layout) can reach it. */
@@ -14,6 +57,7 @@ export function ViewportPanel({ onSystem }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [stats, setStats] = useState<ViewportStats | null>(null);
   const [navMarker, setNavMarker] = useState<{ x: number; y: number } | null>(null);
+  const [axes, setAxes] = useState<PaneAxes[]>([]);
   const { layout, maximizedPane, paneCameras, setPaneCamera } = useViewportState();
   useSliceVersion("scene");
 
@@ -23,6 +67,7 @@ export function ViewportPanel({ onSystem }: Props) {
     const vs = new ViewportSystem(canvas, doc, editorState);
     vs.onStats = setStats;
     vs.onNavMarker = setNavMarker;
+    vs.onAxes = setAxes;
     onSystem(vs);
     return () => {
       onSystem(null);
@@ -47,6 +92,10 @@ export function ViewportPanel({ onSystem }: Props) {
     layout === "quad"
       ? { left: slot % 2 === 0 ? 4 : "calc(50% + 5px)", top: slot < 2 ? 4 : "calc(50% + 5px)" }
       : { left: 4, top: 4 };
+  const axesStyle = (slot: number): React.CSSProperties =>
+    layout === "quad"
+      ? { right: slot % 2 === 0 ? "calc(50% + 3px)" : 2, top: slot < 2 ? 2 : "calc(50% + 3px)" }
+      : { right: 2, top: 2 };
 
   return (
     <div className="relative h-full w-full overflow-hidden">
@@ -66,6 +115,13 @@ export function ViewportPanel({ onSystem }: Props) {
           ))}
         </select>
       ))}
+      {slots.map((pane, slot) =>
+        axes[slot] ? (
+          <div key={`axes-${pane}`} className="absolute" style={axesStyle(slot)}>
+            <AxisIndicator axes={axes[slot]!} />
+          </div>
+        ) : null,
+      )}
       {navMarker ? (
         <svg
           className="pointer-events-none absolute text-base-content drop-shadow-[0_0_2px_rgba(0,0,0,0.9)]"

@@ -8,6 +8,8 @@ interface NumberDragProps {
   min?: number;
   max?: number;
   precision?: number;
+  /** Stepped integer input: values round to whole numbers. */
+  integer?: boolean;
 }
 
 /**
@@ -23,14 +25,18 @@ export function NumberDrag({
   min,
   max,
   precision = 3,
+  integer = false,
 }: NumberDragProps) {
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const drag = useRef<{ startX: number; startValue: number; moved: boolean } | null>(null);
 
-  const clamp = (v: number) => Math.min(max ?? Infinity, Math.max(min ?? -Infinity, v));
-  const shown = editing ? text : format(value, precision);
+  const clamp = (v: number) => {
+    const c = Math.min(max ?? Infinity, Math.max(min ?? -Infinity, v));
+    return integer ? Math.round(c) : c;
+  };
+  const shown = editing ? text : format(value, integer ? 0 : precision);
 
   useEffect(() => {
     if (editing) inputRef.current?.select();
@@ -56,7 +62,7 @@ export function NumberDrag({
     drag.current = null;
     if (wasDrag) onChange(clamp(value), true);
     else {
-      setText(format(value, precision));
+      setText(format(value, integer ? 0 : precision));
       setEditing(true);
     }
   };

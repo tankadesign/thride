@@ -9,13 +9,14 @@ import { useEffect, useMemo, useRef } from "react";
 import type { Document } from "@/core";
 import { buildCommands, type ShellApi } from "@/app/commands";
 import { CommandRegistry } from "@/ui/commands/CommandRegistry";
-import { usePalette } from "@/ui/hooks/editor/shell";
+import { setRegistry, usePalette } from "@/ui/hooks/editor/shell";
 import { AttributesPanel } from "@/ui/panels/AttributesPanel";
 import { GalleryPanel } from "@/ui/panels/GalleryPanel";
 import { ObjectManagerPanel } from "@/ui/panels/ObjectManagerPanel";
 import { ViewportPanel } from "@/ui/panels/ViewportPanel";
 import type { ViewportSystem } from "@/render/viewport/ViewportSystem";
 import { CommandPalette } from "./CommandPalette";
+import { ContextMenu } from "./ContextMenu";
 import { MenuBar } from "./MenuBar";
 import { ToolRail } from "./ToolRail";
 
@@ -49,6 +50,7 @@ export function Shell({ doc }: { doc: Document }) {
     };
     const reg = new CommandRegistry();
     reg.register(...buildCommands(doc, shellApi));
+    setRegistry(reg);
     return reg;
   }, [doc]);
 
@@ -119,6 +121,7 @@ export function Shell({ doc }: { doc: Document }) {
         </div>
       </div>
       {palette.open ? <CommandPalette registry={registry} onClose={palette.close} /> : null}
+      <ContextMenu />
     </div>
   );
 }

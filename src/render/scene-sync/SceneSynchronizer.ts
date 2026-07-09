@@ -1,6 +1,7 @@
 import {
   BackSide,
   type Camera,
+  DoubleSide,
   Group,
   MathUtils,
   Mesh,
@@ -15,7 +16,9 @@ import { computeBoundsTree, disposeBoundsTree, acceleratedRaycast } from "three-
 import type { Uuid } from "@/types/core";
 import type { Document, SceneNode } from "@/core";
 import type { PrimitiveDescriptor } from "@/types/geometry/primitives";
+import type { HEMesh } from "@/geometry/kernel/HEMesh";
 import { buildPrimitive } from "@/geometry/primitives";
+import { meshRegistry } from "@/geometry/store/meshRegistry";
 import { RenderMesh } from "@/geometry/sync/RenderMesh";
 import { normalLocal, positionLocal, uniform } from "@/materials/tsl";
 import { themeColor } from "./themeColor";
@@ -27,7 +30,13 @@ Mesh.prototype.raycast = acceleratedRaycast;
 // biome-ignore lint/suspicious/noExplicitAny: prototype augmentation
 (Object.getPrototypeOf(new Mesh().geometry) as any).disposeBoundsTree = disposeBoundsTree;
 
-const BASE_MAT = new MeshStandardMaterial({ color: 0xb8b8c0, roughness: 0.65, metalness: 0.05 });
+// double-sided by default: open meshes (planes, discs) must be visible from behind
+const BASE_MAT = new MeshStandardMaterial({
+  color: 0xb8b8c0,
+  roughness: 0.65,
+  metalness: 0.05,
+  side: DoubleSide,
+});
 const OUTLINE_PX = 2;
 
 interface OutlineEntry {
@@ -160,37 +169,50 @@ export class SceneSynchronizer {
     obj.visible = node.visible;
     this.applyTransform(node, obj);
     if (node.kind === "mesh" && obj instanceof Mesh) {
-      const desc = node.data?.primitive as PrimitiveDescriptor | undefined;
-      if (desc) {
-        const key = JSON.stringify(desc);
-        const entry = this.renderMeshes.get(id);
-        if (!entry || entry.key !== key) {
-          const rm = entry?.rm ?? new RenderMesh();
-          rm.sync(buildPrimitive(desc));
-          // biome-ignore lint/suspicious/noExplicitAny: bvh extension
-          (rm.geometry as any).computeBoundsTree?.();
-          this.renderMeshes.set(id, { key, rm });
-          obj.geometry = rm.geometry;
-          const outline = this.outlines.get(id);
-          if (outline) outline.mesh.geometry = rm.geometry;
-        }
-      }
+      this.syncGeometry(id, node, obj);
     }
   }
 
-  private buildMeshObject(node: SceneNode): Mesh {
-    const desc = (node.data?.primitive as PrimitiveDescriptor | undefined) ?? {
-      type: "cube",
-      params: { width: 1, height: 1, depth: 1 },
-    };
-    const rm = new RenderMesh();
-    rm.sync(buildPrimitive(desc as PrimitiveDescriptor));
+  /** Resolve the node's geometry source (editable mesh or primitive) into its Mesh. */
+  private syncGeometry(id: Uuid, node: SceneNode, obj: Mesh): void {
+    const source = this.geometrySource(node);
+    if (!source) return;
+    const entry = this.renderMeshes.get(id);
+    if (entry && entry.key === source.key) return;
+    const rm = entry?.rm ?? new RenderMesh();
+    rm.sync(source.mesh);
     // biome-ignore lint/suspicious/noExplicitAny: bvh extension
     (rm.geometry as any).computeBoundsTree?.();
-    this.renderMeshes.set(node.id, { key: JSON.stringify(desc), rm });
-    const mesh = new Mesh(rm.geometry, BASE_MAT);
+    this.renderMeshes.set(id, { key: source.key, rm });
+    obj.geometry = rm.geometry;
+    const outline = this.outlines.get(id);
+    if (outline) outline.mesh.geometry = rm.geometry;
+  }
+
+  private geometrySource(node: SceneNode): { key: string; mesh: HEMesh } | null {
+    const meshRef = node.data?.mesh as { id: Uuid } | undefined;
+    if (meshRef) {
+      const mesh = meshRegistry.get(meshRef.id);
+      if (!mesh) return null;
+      return { key: `mesh:${meshRef.id}:${mesh.topologyVersion}`, mesh };
+    }
+    const desc = node.data?.primitive as PrimitiveDescriptor | undefined;
+    if (desc) return { key: JSON.stringify(desc), mesh: buildPrimitive(desc) };
+    return null;
+  }
+
+  private buildMeshObject(node: SceneNode): Mesh {
+    const mesh = new Mesh(undefined, BASE_MAT);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
+    this.syncGeometry(node.id, node, mesh);
+    if (!mesh.geometry.getAttribute("position")) {
+      // node without geometry data: fall back to a unit cube
+      const rm = new RenderMesh();
+      rm.sync(buildPrimitive({ type: "cube", params: { width: 1, height: 1, depth: 1 } }));
+      mesh.geometry = rm.geometry;
+      this.renderMeshes.set(node.id, { key: "fallback", rm });
+    }
     return mesh;
   }
 

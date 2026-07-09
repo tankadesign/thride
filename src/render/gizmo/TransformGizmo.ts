@@ -18,6 +18,19 @@ import {
 import type { TransformDTO, Uuid } from "@/types/core";
 import type { Document } from "@/core";
 import { TransformDragSession } from "@/core/session/TransformDragSession";
+import { themeColor } from "@/render/scene-sync/themeColor";
+
+export interface GizmoModifiers {
+  /** Uniform scale on scale handles. */
+  uniformScale?: boolean;
+  /** Snap deltas to snapSize steps — LOCAL, relative to drag start. */
+  snap?: boolean;
+  snapSize?: number;
+}
+
+const ROTATE_SNAP = Math.PI / 36; // 5°
+const SCALE_SNAP = 0.1;
+const snapTo = (v: number, step: number) => Math.round(v / step) * step;
 
 type HandleKind = "translate" | "rotate" | "scale" | "translate-view";
 type Axis = 0 | 1 | 2;
@@ -52,6 +65,7 @@ export class TransformGizmo {
   private readonly doc: Document;
   private drag: DragState | null = null;
   private hovered: Mesh | null = null;
+  private readonly hoverColor = themeColor("--color-primary", "#ff865b");
 
   constructor(doc: Document) {
     this.doc = doc;
@@ -79,8 +93,8 @@ export class TransformGizmo {
     // screen-constant size: perspective scales by distance, ortho by frustum height
     const ortho = camera as OrthographicCamera;
     const scale = ortho.isOrthographicCamera
-      ? Math.max(0.0001, (ortho.top - ortho.bottom) * 0.16)
-      : Math.max(0.0001, camera.position.distanceTo(this.group.position) * 0.14);
+      ? Math.max(0.0001, (ortho.top - ortho.bottom) * 0.08)
+      : Math.max(0.0001, camera.position.distanceTo(this.group.position) * 0.07);
     this.group.scale.setScalar(scale);
   }
 
@@ -124,18 +138,22 @@ export class TransformGizmo {
     return true;
   }
 
-  pointerMove(raycaster: Raycaster, uniformScale = false): void {
+  pointerMove(raycaster: Raycaster, mods: GizmoModifiers = {}): void {
     const d = this.drag;
     if (!d) return;
     const point = new Vector3();
     if (!raycaster.ray.intersectPlane(d.plane, point)) return;
+    const snapSize = mods.snapSize ?? 0.1;
 
     const updates = new Map<Uuid, TransformDTO>();
     if (d.handle.kind === "translate" || d.handle.kind === "translate-view") {
       const delta = point.clone().sub(d.startPoint);
       if (d.handle.kind === "translate") {
-        const along = delta.dot(d.axisWorld);
+        let along = delta.dot(d.axisWorld);
+        if (mods.snap) along = snapTo(along, snapSize);
         delta.copy(d.axisWorld).multiplyScalar(along);
+      } else if (mods.snap) {
+        delta.set(snapTo(delta.x, snapSize), snapTo(delta.y, snapSize), snapTo(delta.z, snapSize));
       }
       for (const [id, t0] of d.begin) {
         const t = structuredClone(t0);
@@ -145,7 +163,8 @@ export class TransformGizmo {
         updates.set(id, t);
       }
     } else if (d.handle.kind === "rotate") {
-      const angle = this.angleOnPlane(point.clone().sub(d.pivot), d.handle.axis) - d.startAngle;
+      let angle = this.angleOnPlane(point.clone().sub(d.pivot), d.handle.axis) - d.startAngle;
+      if (mods.snap) angle = snapTo(angle, ROTATE_SNAP);
       const dq = new Quaternion().setFromAxisAngle(d.axisWorld, angle);
       for (const [id, t0] of d.begin) {
         const t = structuredClone(t0);
@@ -161,10 +180,11 @@ export class TransformGizmo {
       // Shift = uniform scale on all three axes.
       const a0 = d.startPoint.clone().sub(d.pivot).dot(d.axisWorld);
       const a1 = point.clone().sub(d.pivot).dot(d.axisWorld);
-      const ratio = Math.abs(a0) > 1e-6 ? a1 / a0 : 1;
+      let ratio = Math.abs(a0) > 1e-6 ? a1 / a0 : 1;
+      if (mods.snap) ratio = Math.max(SCALE_SNAP, snapTo(ratio, SCALE_SNAP));
       for (const [id, t0] of d.begin) {
         const t = structuredClone(t0);
-        if (uniformScale) {
+        if (mods.uniformScale) {
           t.scale = [t0.scale[0] * ratio, t0.scale[1] * ratio, t0.scale[2] * ratio];
         } else {
           t.scale[d.handle.axis] = t0.scale[d.handle.axis]! * ratio;
@@ -187,15 +207,23 @@ export class TransformGizmo {
     this.doc.sessions.cancel();
   }
 
-  /** Hover feedback: brighten the handle under the pointer. */
+  /** Hover feedback: handle under the pointer turns primary (theme) color. */
   updateHover(raycaster: Raycaster): void {
     if (this.drag || !this.group.visible) return;
     const hits = raycaster.intersectObject(this.group, true);
     const mesh = (hits.find((h) => (h.object as Mesh).userData.handle)?.object as Mesh) ?? null;
     if (mesh === this.hovered) return;
-    if (this.hovered) (this.hovered.material as MeshBasicMaterial).opacity = BASE_OPACITY;
+    if (this.hovered) {
+      const m = this.hovered.material as MeshBasicMaterial;
+      m.opacity = BASE_OPACITY;
+      m.color.setHex(this.hovered.userData.baseColor as number);
+    }
     this.hovered = mesh;
-    if (mesh) (mesh.material as MeshBasicMaterial).opacity = 1;
+    if (mesh) {
+      const m = mesh.material as MeshBasicMaterial;
+      m.opacity = 1;
+      m.color.copy(this.hoverColor);
+    }
   }
 
   private angleOnPlane(rel: Vector3, axis: Axis): number {
@@ -258,6 +286,7 @@ export class TransformGizmo {
     });
     const mesh = new Mesh(geometry, mat);
     mesh.userData.handle = handle;
+    mesh.userData.baseColor = color;
     mesh.renderOrder = 1000;
     this.group.add(mesh);
     return mesh;
