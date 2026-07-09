@@ -80,6 +80,7 @@ export class ViewportInput {
         }
       }
       this.nav = { mode, pane, lastX: e.clientX, lastY: e.clientY, pivot };
+      vs.beginCameraNav(pane);
       vs.onNavMarker?.(marker);
       e.preventDefault();
       return;
@@ -125,6 +126,7 @@ export class ViewportInput {
       if (this.nav.mode === "orbit" && this.nav.pivot) rig.orbitAround(this.nav.pivot, dx, dy);
       if (this.nav.mode === "pan") rig.pan(dx, dy, rect.h);
       if (this.nav.mode === "dolly") rig.dolly(dy * 2.5);
+      vs.updateCameraNav(this.nav.pane, rig);
       vs.invalidate();
       return;
     }
@@ -169,6 +171,7 @@ export class ViewportInput {
     }
     if (this.nav) {
       this.nav = null;
+      vs.commitCameraNav();
       vs.onNavMarker?.(null);
       return;
     }
@@ -188,7 +191,9 @@ export class ViewportInput {
     const vs = this.vs;
     const rect = vs.canvas.getBoundingClientRect();
     const pane = vs.paneAt(e.clientX - rect.left, e.clientY - rect.top);
-    vs.rigFor(pane).dolly(e.deltaY * 1.2);
+    const rig = vs.rigFor(pane);
+    rig.dolly(e.deltaY * 1.2);
+    vs.applyCameraNavTick(pane, rig);
     vs.invalidate();
   };
 

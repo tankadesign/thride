@@ -11,8 +11,9 @@ import {
   Vector3,
 } from "three";
 import { WebGPURenderer } from "three/webgpu";
-import type { Document } from "@/core";
-import type { Uuid } from "@/types/core";
+import { type Document, SetTransformCommand } from "@/core";
+import { TransformDragSession } from "@/core/session/TransformDragSession";
+import type { TransformDTO, Uuid } from "@/types/core";
 import type { BuiltinCamera, EditorViewportState } from "@/types/editor";
 import { TransformGizmo } from "@/render/gizmo/TransformGizmo";
 import { PrimitiveHandles } from "@/render/handles/PrimitiveHandles";
@@ -269,6 +270,55 @@ export class ViewportSystem {
     this.invalidate();
   }
 
+  // ---- active-camera nav writeback ------------------------------------------
+  // When a pane looks through a scene camera node, nav (orbit/pan/dolly/wheel)
+  // should move that actual camera object, not just the pane's local rig —
+  // otherwise syncSceneCamera() stomps the rig back to the node's stale
+  // transform on the very next frame. Drags use the same preview→commit
+  // session the gizmo uses (one undo step per drag); wheel ticks push a
+  // SetTransformCommand per tick, coalesced by History's tryMerge window.
+
+  /** Uuid of the scene camera node a pane is bound to, or null if it's a builtin. */
+  sceneCameraNode(pane: number): Uuid | null {
+    const cam = this.editor.paneCamera(pane);
+    if ((BUILTINS as string[]).includes(cam)) return null;
+    return this.doc.scene.get(cam as Uuid) ? (cam as Uuid) : null;
+  }
+
+  private cameraTransform(id: Uuid, rig: CameraRig): TransformDTO {
+    const scale = this.doc.scene.mustGet(id).transform.scale;
+    return {
+      position: [rig.camera.position.x, rig.camera.position.y, rig.camera.position.z],
+      rotation: [rig.camera.rotation.x, rig.camera.rotation.y, rig.camera.rotation.z],
+      scale: [...scale],
+    };
+  }
+
+  beginCameraNav(pane: number): void {
+    const id = this.sceneCameraNode(pane);
+    if (id) this.doc.sessions.start(new TransformDragSession([id], "Move Camera"));
+  }
+
+  updateCameraNav(pane: number, rig: CameraRig): void {
+    const id = this.sceneCameraNode(pane);
+    if (id && this.doc.sessions.isActive) {
+      this.doc.sessions.update(new Map([[id, this.cameraTransform(id, rig)]]));
+    }
+  }
+
+  commitCameraNav(): void {
+    if (this.doc.sessions.isActive) this.doc.sessions.commit();
+  }
+
+  /** One-shot nudge (wheel dolly) — merges into the active undo step via tryMerge. */
+  applyCameraNavTick(pane: number, rig: CameraRig): void {
+    const id = this.sceneCameraNode(pane);
+    if (!id) return;
+    const before = this.doc.scene.mustGet(id).transform;
+    const after = this.cameraTransform(id, rig);
+    this.doc.history.run(new SetTransformCommand(id, after, before));
+  }
+
   private layoutPanes(): void {
     const w = this.canvas.clientWidth;
     const h = this.canvas.clientHeight;
@@ -309,7 +359,7 @@ export class ViewportSystem {
       const disp = this.editor.paneDisplay(i);
       this.grid.visible = disp.grid;
       renderer.shadowMap.enabled = disp.shading === "pbr" && disp.shadows;
-      this.sync.applyShading(disp.shading, disp.backfaces);
+      this.sync.applyShading(disp.shading, disp.backfaces, disp.lines);
       // logical pixels: the renderer multiplies by pixelRatio internally.
       // WebGPU's viewport origin is top-left; WebGL's is bottom-left.
       const yGL = this.backendName === "WebGPU" ? p.y : this.canvas.clientHeight - p.y - p.h;

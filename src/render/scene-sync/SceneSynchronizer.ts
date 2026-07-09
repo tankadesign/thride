@@ -51,6 +51,17 @@ const BASE_MAT = new MeshStandardMaterial({
 });
 const FLAT_MAT = new MeshBasicMaterial({ color: 0xb8b8c0, side: DoubleSide });
 const WIRE_MAT = new MeshBasicMaterial({ color: 0x8a93a8, wireframe: true, side: DoubleSide });
+// wireframe OVERLAY on top of a solid fill (Display > Lines) — polygon offset
+// keeps the lines from z-fighting the filled surface underneath.
+const LINES_MAT = new MeshBasicMaterial({
+  color: 0x14151a,
+  wireframe: true,
+  transparent: true,
+  opacity: 0.5,
+  polygonOffset: true,
+  polygonOffsetFactor: -1,
+  polygonOffsetUnits: -1,
+});
 const OUTLINE_PX = 2;
 
 interface OutlineEntry {
@@ -68,6 +79,7 @@ export class SceneSynchronizer {
   private objects = new Map<Uuid, Object3D>();
   private renderMeshes = new Map<Uuid, { key: string; rm: RenderMesh }>();
   private outlines = new Map<Uuid, OutlineEntry>();
+  private linesOverlays = new Map<Uuid, Mesh>();
   private readonly outlineColor = themeColor("--color-primary", "#ff865b");
   private readonly doc: Document;
   private readonly onDirty: () => void;
@@ -130,6 +142,7 @@ export class SceneSynchronizer {
   private rebuildAll(): void {
     this.root.clear();
     this.objects.clear();
+    this.linesOverlays.clear(); // repopulated by buildMeshObject during the walk below
     const walk = (id: Uuid) => {
       this.addNode(id);
       for (const c of this.doc.scene.childrenOf(id)) walk(c);
@@ -237,6 +250,7 @@ export class SceneSynchronizer {
       if (nid) {
         this.objects.delete(nid);
         this.dropRenderMesh(nid);
+        this.linesOverlays.delete(nid);
       }
     });
   }
@@ -285,12 +299,14 @@ export class SceneSynchronizer {
   }
 
   /** Per-pane shading override (viewport Display menu). */
-  applyShading(mode: "pbr" | "flat" | "wireframe", backfaces: boolean): void {
+  applyShading(mode: "pbr" | "flat" | "wireframe", backfaces: boolean, lines: boolean): void {
     const mat = mode === "flat" ? FLAT_MAT : mode === "wireframe" ? WIRE_MAT : BASE_MAT;
     mat.side = backfaces ? DoubleSide : FrontSide;
     for (const obj of this.objects.values()) {
       if (obj instanceof Mesh && !obj.userData.outline) obj.material = mat;
     }
+    const showLines = lines && mode !== "wireframe";
+    for (const overlay of this.linesOverlays.values()) overlay.visible = showLines;
   }
 
   /** Resolve the node's geometry source (editable mesh or primitive) into its Mesh. */
@@ -307,6 +323,8 @@ export class SceneSynchronizer {
     obj.geometry = rm.geometry;
     const outline = this.outlines.get(id);
     if (outline) outline.mesh.geometry = rm.geometry;
+    const overlay = this.linesOverlays.get(id);
+    if (overlay) overlay.geometry = rm.geometry;
   }
 
   private geometrySource(node: SceneNode): { key: string; mesh: HEMesh } | null {
@@ -333,6 +351,13 @@ export class SceneSynchronizer {
       mesh.geometry = rm.geometry;
       this.renderMeshes.set(node.id, { key: "fallback", rm });
     }
+    const overlay = new Mesh(mesh.geometry, LINES_MAT);
+    overlay.raycast = () => {}; // never pickable
+    overlay.userData.linesOverlay = true;
+    overlay.visible = false;
+    overlay.renderOrder = 1; // after the filled surface, so the offset lines win the depth test
+    mesh.add(overlay);
+    this.linesOverlays.set(node.id, overlay);
     return mesh;
   }
 

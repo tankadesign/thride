@@ -26,6 +26,8 @@ export interface PaneDisplay {
   /** PBR only. State is plumbed now; the AO pass itself lands with post-FX (C6). */
   ssao: boolean;
   grid: boolean;
+  /** Wireframe overlay on top of PBR/Flat. No effect in Wireframe mode (already all lines). */
+  lines: boolean;
 }
 
 export const defaultPaneDisplay = (): PaneDisplay => ({
@@ -34,6 +36,7 @@ export const defaultPaneDisplay = (): PaneDisplay => ({
   backfaces: true,
   ssao: false,
   grid: true,
+  lines: false,
 });
 
 /**

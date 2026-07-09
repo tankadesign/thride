@@ -32,11 +32,11 @@ export function buildViewportMenu(doc: Document, vs: ViewportSystem, pane: numbe
     label: string,
     key: keyof PaneDisplay,
     value: boolean,
-    pbrOnly = false,
+    disabled = false,
   ): MenuEntry => ({
     label,
     icon: value ? <IconToggleOn size={16} /> : <IconToggleOff size={16} />,
-    disabled: pbrOnly && disp.shading !== "pbr",
+    disabled,
     run: () => editorState.setPaneDisplay(pane, { [key]: !value }),
   });
 
@@ -84,10 +84,11 @@ export function buildViewportMenu(doc: Document, vs: ViewportSystem, pane: numbe
             }),
           ),
         },
-        toggle("Shadows", "shadows", disp.shadows, true),
+        toggle("Shadows", "shadows", disp.shadows, disp.shading !== "pbr"),
         toggle("Backfaces", "backfaces", disp.backfaces),
-        toggle("SSOA", "ssao", disp.ssao, true),
+        toggle("SSOA", "ssao", disp.ssao, disp.shading !== "pbr"),
         toggle("Grid", "grid", disp.grid),
+        toggle("Lines", "lines", disp.lines, disp.shading === "wireframe"),
       ],
     },
   ];
