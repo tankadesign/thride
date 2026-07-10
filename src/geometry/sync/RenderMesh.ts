@@ -12,7 +12,13 @@ import { type Triangulation, triangulate } from "./triangulate";
  * geometry/ (the no-Three rule bans scene objects, not buffers).
  */
 export class RenderMesh {
-  readonly geometry = new BufferGeometry();
+  /**
+   * REPLACED (fresh object) on every topology rebuild: swapping
+   * different-sized attributes on one BufferGeometry leaves three's WebGPU
+   * backend drawing its cached buffers — consumers must re-read `geometry`
+   * after sync() (SceneSynchronizer reassigns it to the Mesh each pass).
+   */
+  geometry = new BufferGeometry();
   private tri: Triangulation | null = null;
   private topologyVersion = -1;
 
@@ -39,6 +45,8 @@ export class RenderMesh {
     const positions = new Float32Array(triCount * 9);
     const normals = new Float32Array(triCount * 9);
     const uvs = new Float32Array(triCount * 6);
+    this.geometry.dispose();
+    this.geometry = new BufferGeometry();
     this.geometry.setAttribute("position", new BufferAttribute(positions, 3));
     this.geometry.setAttribute("normal", new BufferAttribute(normals, 3));
     this.geometry.setAttribute("uv", new BufferAttribute(uvs, 2));

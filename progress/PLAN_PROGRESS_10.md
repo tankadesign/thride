@@ -99,6 +99,14 @@ Four user requests after the D4a review:
 - **Fix:** both displays now draw the real half-edge kernel edges — a per-mesh-node `LineSegments` (`edgeWires`) built from `uniqueEdges` in local space, rebuilt inside `syncGeometry` whenever the render mesh resyncs (component drags included). Display > Lines shows them subtle/dark over the shading; Wireframe mode shows light-gray edges over a HIDDEN surface (`visible:false` material — the mesh still raycasts, so click-select works in wireframe). depthTest off on the lines: no z-fighting, matching the component-wire style; quads render as quads everywhere (cube = exactly 12 lines, disc = rings + spokes).
 - **500-line rule:** the wire plumbing pushed SceneSynchronizer to 595 → extracted the light-node projection (builders, in-place updates/type-rebuild, oriented helpers, billboards, auto-target creation, light counting) into `render/scene-sync/LightSync.ts` (452 + 196). Regression-verified live: hasLights toggles the default rig both ways, spot cone helper present, point→area type change rebuilds with the new helper, billboards track.
 
+## Post-round: the REAL disc bugs (user repro) — stale GPU buffers + stale pick BVH on param edits
+
+The kernel-edge wire made the truth visible and the user pinned the repro: with Lines on, editing segments/rings after creation updated the WIRE but the shaded faces stayed at creation-time count; and after growing radius, only the ORIGINAL radius was clickable.
+
+- **Stale faces:** `RenderMesh.rebuild()` swapped different-sized attributes onto the SAME `BufferGeometry` — the CPU-side data was correct (verified: 32→48 tris in the buffers) but three's WebGPU backend kept drawing its cached buffers. Rebuilds now dispose and REPLACE `rm.geometry` with a fresh object; every consumer already re-reads it after sync (mesh, selection outline, edge wire, renderInfoFor). Regression test: rebuild replaces the geometry object, positions-only sync keeps it.
+- **Stale picking:** the D4a `bvhStale` deferral keyed on `preview` alone — but Attributes param scrubs commit with preview-tagged events (`pushWithoutExecute` pattern), so the BVH never refreshed after a param edit. Deferral now applies only to positions-only previews (`preview && !keyChanged`, i.e. component drags); key changes rebuild the BVH immediately (they retriangulate anyway).
+- Verified via the exact user repros, through the real panel inputs: segments 12→32 + rings 1→3 with Lines on updates faces AND wire together (160 tris, drawn-geometry identity current); radius 1→2 then a real click at r≈1.85 (outside the old radius) selects the disc. 93/93 tests.
+
 ## Next steps (exact, resumable cold)
 
 1. **D4b:** topology ops as `(mesh, selection, params) → { newSelection }` in `geometry/ops/`: extrude (faces), inset, weld, delete/dissolve — each one undo step (kernel snapshot command), each property-tested for half-edge invariants (`validate.ts` exists).

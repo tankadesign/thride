@@ -345,8 +345,11 @@ export class SceneSynchronizer {
       this.renderMeshes.set(id, entry);
     }
     entry.key = source.key;
-    if (preview)
-      entry.bvhStale = true; // rebuilding per drag frame would hitch
+    // defer the BVH only for positions-only previews (component drags —
+    // per-frame rebuilds would hitch). Key changes rebuild the geometry
+    // anyway AND arrive preview-tagged from param scrubs, so deferring
+    // there would leave picking stuck on the old shape.
+    if (preview && !keyChanged) entry.bvhStale = true;
     else this.rebuildBvh(entry);
     obj.geometry = rm.geometry;
     this.selectionOutline.updateGeometry(id, rm.geometry);

@@ -81,4 +81,29 @@ describe("RenderMesh sync", () => {
     rm.sync(mesh);
     expect(rm.triFace).not.toBe(before);
   });
+
+  it("rebuild REPLACES the geometry object; positions-only keeps it", () => {
+    // swapping different-sized attributes on one BufferGeometry leaves
+    // three's WebGPU backend drawing stale cached buffers — rebuilds must
+    // hand consumers a FRESH geometry (the primitive-param stale-face bug)
+    const mesh = buildPrimitive(defaultPrimitive("cube"));
+    const rm = new RenderMesh();
+    rm.sync(mesh);
+    const g0 = rm.geometry;
+    mesh.setPosition(0, 1, 2, 3);
+    rm.sync(mesh);
+    expect(rm.geometry).toBe(g0); // in-place path: same buffers, updated
+    mesh.restore(mesh.snapshot()); // topology rebuild
+    rm.sync(mesh);
+    expect(rm.geometry).not.toBe(g0);
+    // a fresh primitive mesh (same topologyVersion, DIRTY_ALL) also rebuilds fresh
+    const g1 = rm.geometry;
+    const bigger = buildPrimitive({
+      type: "disc",
+      params: { radius: 1, segments: 48, rings: 3 },
+    });
+    rm.sync(bigger);
+    expect(rm.geometry).not.toBe(g1);
+    expect(rm.geometry.getAttribute("position").count).toBe(rm.triFace.length * 3);
+  });
 });
