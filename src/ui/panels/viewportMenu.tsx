@@ -89,6 +89,12 @@ export function buildViewportMenu(doc: Document, vs: ViewportSystem, pane: numbe
         toggle("SSAO", "ssao", disp.ssao, disp.shading !== "pbr"),
         toggle("Grid", "grid", disp.grid),
         toggle("Lines", "lines", disp.lines, disp.shading === "wireframe"),
+        toggle(
+          "Hidden Lines",
+          "hiddenLines",
+          disp.hiddenLines,
+          disp.shading === "wireframe" || !disp.lines,
+        ),
       ],
     },
   ];

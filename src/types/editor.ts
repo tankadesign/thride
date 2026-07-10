@@ -48,6 +48,8 @@ export interface PaneDisplay {
   grid: boolean;
   /** Wireframe overlay on top of PBR/Flat. No effect in Wireframe mode (already all lines). */
   lines: boolean;
+  /** Show edges occluded by surfaces (behind polygons). Requires `lines`. */
+  hiddenLines: boolean;
 }
 
 export const defaultPaneDisplay = (): PaneDisplay => ({
@@ -57,6 +59,7 @@ export const defaultPaneDisplay = (): PaneDisplay => ({
   ssao: false,
   grid: true,
   lines: false,
+  hiddenLines: false,
 });
 
 /**

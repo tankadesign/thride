@@ -310,7 +310,12 @@ export class SceneSynchronizer {
   }
 
   /** Per-pane shading override (viewport Display menu). */
-  applyShading(mode: "pbr" | "flat" | "wireframe", backfaces: boolean, lines: boolean): void {
+  applyShading(
+    mode: "pbr" | "flat" | "wireframe",
+    backfaces: boolean,
+    lines: boolean,
+    hiddenLines: boolean,
+  ): void {
     // wireframe mode: hidden surface (still raycastable for picking) + edges
     const mat = mode === "flat" ? FLAT_MAT : mode === "wireframe" ? HIDDEN_MAT : BASE_MAT;
     mat.side = backfaces ? DoubleSide : FrontSide;
@@ -318,6 +323,9 @@ export class SceneSynchronizer {
       if (obj instanceof Mesh && !obj.userData.outline) obj.material = mat;
     }
     const wireMode = mode === "wireframe";
+    // depthTest off makes edges behind the surface show through. For the Lines
+    // overlay that's opt-in (Hidden Lines); wireframe mode always shows all edges.
+    LINES_EDGE_MAT.depthTest = !hiddenLines;
     for (const wire of this.edgeWires.values()) {
       wire.visible = wireMode || lines;
       wire.material = wireMode ? WIRE_EDGE_MAT : LINES_EDGE_MAT;

@@ -402,7 +402,7 @@ export class ViewportSystem {
       const disp = this.editor.paneDisplay(i);
       this.grid.visible = disp.grid;
       renderer.shadowMap.enabled = disp.shading === "pbr" && disp.shadows;
-      this.sync.applyShading(disp.shading, disp.backfaces, disp.lines);
+      this.sync.applyShading(disp.shading, disp.backfaces, disp.lines, disp.hiddenLines);
       // logical pixels: the renderer multiplies by pixelRatio internally.
       // WebGPU's viewport origin is top-left; WebGL's is bottom-left.
       const yGL = this.backendName === "WebGPU" ? p.y : this.canvas.clientHeight - p.y - p.h;
