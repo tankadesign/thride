@@ -10,6 +10,7 @@ import {
   ViewportSystem,
 } from "@/render/viewport/ViewportSystem";
 import { buildViewportMenu } from "./viewportMenu";
+import { IconPivotPoint } from "@/icons";
 
 const OBJECT_CONTEXT_COMMANDS = [
   "edit.group",
@@ -153,16 +154,12 @@ export function ViewportPanel({ onSystem }: Props) {
         ) : null,
       )}
       {navMarker ? (
-        <svg
-          className="pointer-events-none absolute text-primary drop-shadow-[0_0_1px_rgba(0,0,0,0.6)]"
+        <div
+          className="pointer-events-none absolute text-primary drop-shadow-[0_0_3px_rgba(0,0,0,0.5)]"
           style={{ left: navMarker.x - 7, top: navMarker.y - 7 }}
-          width="14"
-          height="14"
-          viewBox="0 0 14 14"
-          aria-hidden="true"
         >
-          <path d="M7 1v12M1 7h12" stroke="currentColor" strokeWidth="2" />
-        </svg>
+          <IconPivotPoint size={16} />
+        </div>
       ) : null}
       {stats ? (
         <div className="badge badge-xs pointer-events-none absolute right-2 bottom-1.5 gap-1 border-0 bg-base-100/60 font-mono opacity-80">

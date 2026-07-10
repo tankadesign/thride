@@ -38,6 +38,7 @@ import {
   TorusIcon,
   TriangleIcon,
   Video02Icon,
+  CenterFocusIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon, type HugeiconsIconProps } from "@hugeicons/react";
 import { useAtomValue } from "jotai";
@@ -98,6 +99,7 @@ export const IconExpand = makeIcon(PlusSignSquareIcon);
 export const IconEye = makeIcon(EyeIcon);
 export const IconEyeOff = makeIcon(EyeClosedIcon);
 export const IconGrid = makeIcon(GridIcon);
+export const IconPivotPoint = makeIcon(CenterFocusIcon);
 export const IconSearch = makeIcon(Search01Icon);
 export const IconShading = makeIcon(PaintBoardIcon);
 export const IconTarget = makeIcon(Target01Icon);
