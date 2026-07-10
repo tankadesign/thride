@@ -55,6 +55,21 @@ export function vertsForSelection(mesh: HEMesh, mode: ComponentMode, bits: Bitse
   return [...verts];
 }
 
+/** Axis-aligned bounding-box extents (w/h/d) of a vertex set, mesh-local. */
+export function vertexExtents(mesh: HEMesh, verts: readonly number[]): [number, number, number] {
+  if (verts.length === 0) return [0, 0, 0];
+  const min = [Infinity, Infinity, Infinity];
+  const max = [-Infinity, -Infinity, -Infinity];
+  for (const v of verts) {
+    for (let a = 0; a < 3; a++) {
+      const p = mesh.vPos[v * 3 + a]!;
+      if (p < min[a]!) min[a] = p;
+      if (p > max[a]!) max[a] = p;
+    }
+  }
+  return [max[0]! - min[0]!, max[1]! - min[1]!, max[2]! - min[2]!];
+}
+
 /** Centroid of a vertex set in mesh-local space ([0,0,0] for empty). */
 export function vertexCentroid(mesh: HEMesh, verts: readonly number[]): [number, number, number] {
   const c: [number, number, number] = [0, 0, 0];

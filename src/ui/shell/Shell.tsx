@@ -84,7 +84,8 @@ export function Shell({ doc }: { doc: Document }) {
         <ViewportPanel onSystem={(vs) => (viewportRef.current = vs)} />
       ),
       objects: (_p: IDockviewPanelProps) => <ObjectManagerPanel />,
-      attributes: (_p: IDockviewPanelProps) => <AttributesPanel />,
+      // panel api lets the inspector retitle its tab per edit mode
+      attributes: (p: IDockviewPanelProps) => <AttributesPanel panelApi={p.api} />,
       gallery: (_p: IDockviewPanelProps) => <GalleryPanel />,
     }),
     [],

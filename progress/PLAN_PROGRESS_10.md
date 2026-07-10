@@ -65,6 +65,11 @@ Four user requests after the D4a review:
 - **Attributes component section** — in point/edge/polygon mode the panel shows `Points/Edges/Polygons (n)` with X/Y/Z NumberDrags (object-space): one point edits its exact position; multiple components act as ONE — fields show the selection **centroid** and edits translate the whole selection rigidly (typed 0.5→1.5 → both verts +1.0, one "Move Components" step, undo restores mesh and panel). Streams through `ComponentTransformSession` like the transform fields.
 - Also: `NumberDrag.setPointerCapture` wrapped best-effort (same convention as ViewportInput) — synthetic/test pointers used to throw before the drag ref was set, killing click-to-edit under e2e drivers; real mice were unaffected.
 
+## Post-round: selection bounding box (W/H/D + flatten) and mode-locked Attributes
+
+- **Selection bounding box in Attributes** — a Size row (W/H/D, object-space AABB via new `vertexExtents`) sits under Centroid whenever the selection spans >1 vertex. Edits scale the selection about its centroid so the extent hits the typed value; **typing 0 flattens** the selection onto the centroid plane for that axis (verified: H→0 collapsed all 8 cube verts to Y=0 in one "Scale Components" step; undo restored both mesh and fields). All field math runs off a scrub-start snapshot (`ComponentScrub`), so repeated keystrokes are exact and a flattened (degenerate) axis can't NaN — expanding a 0-extent axis is a documented no-op (no direction to recover).
+- **Mode-locked Attributes panel** — in point/edge/polygon mode the panel shows ONLY the component section and the dock tab retitles to Points/Edges/Polygons (via dockview's `panel.api.setTitle`, passed structurally from Shell); object settings (name/visible/transform/params/light/target) render only in object mode. The section legend is now `n Selected` (the tab already names the mode). Verified live through the real tabs: Attributes ↔ Points/Edges retitle both ways, object legends return in object mode.
+
 ## Next steps (exact, resumable cold)
 
 1. **D4b:** topology ops as `(mesh, selection, params) → { newSelection }` in `geometry/ops/`: extrude (faces), inset, weld, delete/dissolve — each one undo step (kernel snapshot command), each property-tested for half-edge invariants (`validate.ts` exists).

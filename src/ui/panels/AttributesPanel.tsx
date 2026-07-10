@@ -1,10 +1,10 @@
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 import type { ComponentMode, TransformDTO, Uuid } from "@/types/core";
 import type { PrimitiveDescriptor } from "@/types/geometry/primitives";
 import { paramMeta } from "@/types/geometry/primitives";
 import { LIGHT_LABELS, type LightDataDTO, SHADOW_CAPABLE } from "@/types/core/light";
 import { ComponentTransformSession } from "@/geometry/commands/meshEdit";
-import { vertexCentroid, vertsForSelection } from "@/geometry/kernel/components";
+import { vertexCentroid, vertexExtents, vertsForSelection } from "@/geometry/kernel/components";
 import { meshRegistry } from "@/geometry/store/meshRegistry";
 import {
   RenameNodeCommand,
@@ -20,11 +20,45 @@ import { NumberDrag } from "@/ui/widgets/NumberDrag";
 
 const RAD = Math.PI / 180;
 
-/** Attributes/inspector for the active selection: name, transform, primitive params. */
-export function AttributesPanel() {
+const MODE_TITLE: Record<ComponentMode, string> = {
+  point: "Points",
+  edge: "Edges",
+  polygon: "Polygons",
+};
+
+/**
+ * Attributes/inspector. Object mode shows the node's settings; component
+ * modes lock the panel to that mode's selection (XYZ/WHD only) and retitle
+ * the dock tab to Points / Edges / Polygons.
+ */
+export function AttributesPanel({ panelApi }: { panelApi?: { setTitle(title: string): void } }) {
   const doc = useDocument();
   useSliceVersion("scene");
-  const { active } = useSelectionInfo();
+  const { active, editMode } = useSelectionInfo();
+  const componentMode =
+    editMode === "point" || editMode === "edge" || editMode === "polygon" ? editMode : null;
+  const title = componentMode ? MODE_TITLE[componentMode] : "Attributes";
+  useEffect(() => {
+    panelApi?.setTitle(title);
+  }, [panelApi, title]);
+
+  if (componentMode) {
+    const meshRef =
+      active && doc.scene.has(active)
+        ? (doc.scene.mustGet(active).data?.mesh as { id: Uuid } | undefined)
+        : undefined;
+    if (!active || !meshRef) {
+      return (
+        <div className="h-full bg-base-100 p-3 text-xs opacity-50">No editable mesh selected</div>
+      );
+    }
+    return (
+      <div className="h-full overflow-auto bg-base-100 text-xs">
+        <ComponentSection id={active} meshId={meshRef.id} mode={componentMode} />
+      </div>
+    );
+  }
+
   if (!active || !doc.scene.has(active)) {
     return <div className="h-full bg-base-100 p-3 text-xs opacity-50">Nothing selected</div>;
   }
@@ -33,7 +67,6 @@ export function AttributesPanel() {
 
 function NodeAttributes({ id }: { id: Uuid }) {
   const doc = useDocument();
-  const { editMode } = useSelectionInfo();
   const node = doc.scene.mustGet(id);
   const scrubbing = useRef(false);
 
@@ -113,9 +146,6 @@ function NodeAttributes({ id }: { id: Uuid }) {
       </fieldset>
 
       {prim ? <PrimitiveParams id={id} prim={prim} /> : null}
-      {meshRef && (editMode === "point" || editMode === "edge" || editMode === "polygon") ? (
-        <ComponentSection id={id} meshId={meshRef.id} mode={editMode} />
-      ) : null}
       {meshRef ? <MeshInfo meshId={meshRef.id} /> : null}
       {light ? <LightParams id={id} light={light} /> : null}
       {node.kind === "light" || node.kind === "camera" ? <TargetSelector id={id} /> : null}
@@ -123,21 +153,25 @@ function NodeAttributes({ id }: { id: Uuid }) {
   );
 }
 
-const MODE_LABEL: Record<ComponentMode, string> = {
-  point: "Points",
-  edge: "Edges",
-  polygon: "Polygons",
-};
+interface ComponentScrub {
+  indices: number[];
+  begin: Float32Array; // packed xyz at scrub start
+  centroid: [number, number, number];
+  extent: [number, number, number];
+}
 
 /**
  * Numeric editing for the current component selection (object-space coords).
- * One point shows its exact position; multiple components act as ONE — the
- * fields show the selection centroid and edits translate everything rigidly
- * so the centroid lands on the typed value. One undo step per edit/scrub.
+ * The selection acts as ONE: XYZ shows a single point's exact position or
+ * the selection centroid (edits translate rigidly); W/H/D shows the
+ * selection's bounding box (edits scale about the centroid — typing 0
+ * flattens the selection onto that axis). One undo step per edit/scrub;
+ * all math runs off a scrub-start snapshot so repeated keystrokes and
+ * degenerate extents stay exact.
  */
 function ComponentSection({ id, meshId, mode }: { id: Uuid; meshId: Uuid; mode: ComponentMode }) {
   const doc = useDocument();
-  const scrub = useRef<{ indices: number[] } | null>(null);
+  const scrub = useRef<ComponentScrub | null>(null);
   const mesh = meshRegistry.get(meshId);
   const sel = mesh ? doc.selection.componentsFor(id, mode) : undefined;
   const valid = mesh && sel && sel.topologyVersion === mesh.topologyVersion ? sel : null;
@@ -145,49 +179,97 @@ function ComponentSection({ id, meshId, mode }: { id: Uuid; meshId: Uuid; mode: 
   if (!mesh) return null;
   const verts = valid ? vertsForSelection(mesh, mode, valid.bits) : [];
   const centroid = vertexCentroid(mesh, verts);
+  const extent = vertexExtents(mesh, verts);
 
-  const setAxis = (axis: 0 | 1 | 2, v: number, committed: boolean) => {
-    if (verts.length === 0) return;
-    if (!scrub.current) {
-      scrub.current = { indices: verts };
-      doc.sessions.start(new ComponentTransformSession(id, meshId, verts, "Move Components"));
+  const beginScrub = (label: string): ComponentScrub => {
+    if (scrub.current) return scrub.current;
+    const begin = new Float32Array(verts.length * 3);
+    for (let i = 0; i < verts.length; i++) {
+      for (let a = 0; a < 3; a++) begin[i * 3 + a] = mesh.vPos[verts[i]! * 3 + a]!;
     }
-    const indices = scrub.current.indices;
-    const cur = vertexCentroid(mesh, indices);
-    const delta = v - cur[axis];
-    const out = new Float32Array(indices.length * 3);
-    for (let i = 0; i < indices.length; i++) {
-      for (let a = 0; a < 3; a++) {
-        out[i * 3 + a] = mesh.vPos[indices[i]! * 3 + a]! + (a === axis ? delta : 0);
-      }
-    }
-    doc.sessions.update(out);
+    scrub.current = { indices: verts, begin, centroid, extent };
+    doc.sessions.start(new ComponentTransformSession(id, meshId, verts, label));
+    return scrub.current;
+  };
+
+  const finish = (committed: boolean) => {
     if (committed) {
       doc.sessions.commit();
       scrub.current = null;
     }
   };
 
+  /** Translate rigidly so the centroid's `axis` lands on the typed value. */
+  const setAxis = (axis: 0 | 1 | 2, v: number, committed: boolean) => {
+    if (verts.length === 0) return;
+    const s = beginScrub("Move Components");
+    const delta = v - s.centroid[axis];
+    const out = new Float32Array(s.begin.length);
+    for (let i = 0; i < s.indices.length; i++) {
+      for (let a = 0; a < 3; a++) {
+        out[i * 3 + a] = s.begin[i * 3 + a]! + (a === axis ? delta : 0);
+      }
+    }
+    doc.sessions.update(out);
+    finish(committed);
+  };
+
+  /** Scale about the centroid so the bbox `axis` extent hits the typed value. */
+  const setSize = (axis: 0 | 1 | 2, v: number, committed: boolean) => {
+    if (verts.length === 0) return;
+    const s = beginScrub("Scale Components");
+    const base = s.extent[axis];
+    // a degenerate (flat) axis has no direction to expand along — no-op;
+    // 0 / base flattens the selection onto the centroid plane exactly
+    const ratio = base < 1e-9 ? 1 : Math.max(0, v) / base;
+    const out = new Float32Array(s.begin.length);
+    for (let i = 0; i < s.indices.length; i++) {
+      for (let a = 0; a < 3; a++) {
+        const p = s.begin[i * 3 + a]!;
+        out[i * 3 + a] = a === axis ? s.centroid[a]! + (p - s.centroid[a]!) * ratio : p;
+      }
+    }
+    doc.sessions.update(out);
+    finish(committed);
+  };
+
   return (
     <fieldset className="fieldset border-b border-base-200 px-2 py-1.5">
       <legend className="fieldset-legend py-1 text-[10px] uppercase opacity-60">
-        {MODE_LABEL[mode]} ({count})
+        {count} Selected
       </legend>
       {count === 0 ? (
         <p className="opacity-50">Nothing selected — click components in the viewport.</p>
       ) : (
-        <div className="grid grid-cols-[64px_1fr_1fr_1fr] items-center gap-1">
-          <span className="opacity-60">{count > 1 ? "Centroid" : "Position"}</span>
-          {([0, 1, 2] as const).map((axis) => (
-            <NumberDrag
-              key={axis}
-              label={"XYZ"[axis]}
-              step={0.01}
-              value={centroid[axis]}
-              onChange={(v, committed) => setAxis(axis, v, committed)}
-            />
-          ))}
-        </div>
+        <>
+          <div className="grid grid-cols-[64px_1fr_1fr_1fr] items-center gap-1">
+            <span className="opacity-60">{verts.length > 1 ? "Centroid" : "Position"}</span>
+            {([0, 1, 2] as const).map((axis) => (
+              <NumberDrag
+                key={axis}
+                label={"XYZ"[axis]}
+                step={0.01}
+                value={centroid[axis]}
+                onChange={(v, committed) => setAxis(axis, v, committed)}
+              />
+            ))}
+          </div>
+          {verts.length > 1 ? (
+            <div className="grid grid-cols-[64px_1fr_1fr_1fr] items-center gap-1">
+              <span className="opacity-60">Size</span>
+              {([0, 1, 2] as const).map((axis) => (
+                <NumberDrag
+                  key={axis}
+                  label={"WHD"[axis]}
+                  step={0.01}
+                  min={0}
+                  value={extent[axis]}
+                  onChange={(v, committed) => setSize(axis, v, committed)}
+                />
+              ))}
+            </div>
+          ) : null}
+        </>
       )}
     </fieldset>
   );
