@@ -56,6 +56,12 @@ const CUSTOM_SPECS = {
   pointColor: 0xd8dce8,
   /** Gizmo view-plane center handle. */
   gizmoCenterColor: 0xdddddd,
+  /** Gizmo view-plane X axis handle. */
+  gizmoXColor: 0xee4a55,
+  /** Gizmo view-plane Y axis handle. */
+  gizmoYColor: 0x45db45,
+  /** Gizmo view-plane Z axis handle. */
+  gizmoZColor: 0x3253f7,
   /** Primitive drag handles. */
   handleColor: 0xffd60a,
   /** Primitive drag handle while hovered. */
@@ -95,9 +101,9 @@ export const viewportTheme: ViewportTheme = {
   ...semantic,
   ...custom,
   gizmo: {
-    x: semantic.error,
-    y: semantic.success,
-    z: semantic.info,
+    x: custom.gizmoXColor,
+    y: custom.gizmoYColor,
+    z: custom.gizmoZColor,
     center: custom.gizmoCenterColor,
   },
 };
