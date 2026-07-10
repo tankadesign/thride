@@ -347,13 +347,23 @@ export function buildCommands(doc: Document, shell: ShellApi): AppCommand[] {
       }),
     ),
     {
+      // Bevel dispatches by mode: point → vertex truncation, edge → chamfer
       id: "mesh.bevel",
       title: "Bevel",
       menu: "Mesh",
       icon: <IconBevel size={16} />,
       shortcut: "b",
-      enabled: () => doc.selection.editMode === "point" && componentTarget("point") !== null,
-      run: () => shell.getViewport()?.beginAmountTool("bevel"),
+      enabled: () => {
+        const m = doc.selection.editMode;
+        if (m === "point") return componentTarget("point") !== null;
+        if (m === "edge") return componentTarget("edge") !== null;
+        return false;
+      },
+      run: () => {
+        const vp = shell.getViewport();
+        if (doc.selection.editMode === "edge") vp?.beginAmountTool("bevelEdge");
+        else vp?.beginAmountTool("bevel");
+      },
     },
     {
       id: "mesh.weldTool",

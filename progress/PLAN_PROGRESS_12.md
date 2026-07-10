@@ -1,12 +1,12 @@
-# PLAN_PROGRESS_12 — D5 vertex bevel (edge bevel deferred)
+# PLAN_PROGRESS_12 — D5 bevel (vertex + edge)
 
 **Date:** 2026-07-10
-**Chunks worked:** D5 (bevel) — **vertex bevel done; edge bevel deferred to a follow-up.**
+**Chunks worked:** D5 (bevel) — **complete: vertex bevel + edge bevel (1 segment).**
 **Milestone context:** M1 in progress. This session also shipped, ahead of D5: the tools
 rework (modal extrude/inset + slide-to-target Weld + Dissolve — PLAN_PROGRESS_11), viewport
 Select All (A), and the extrude/inset "show new polygon selected" highlight. Remaining M1:
-D5 edge bevel, D6 snapping, D7 boolean worker, D8 splines + pen tool, D9 spline extrude,
-F1 generator graph, F3 boolean object, C5 display modes / color management.
+D6 snapping, D7 boolean worker, D8 splines + pen tool, D9 spline extrude, F1 generator graph,
+F3 boolean object, C5 display modes / color management.
 
 ## Completed
 
@@ -54,13 +54,38 @@ seeds (valid kernel, verts grow, one cut face per vertex, lift sanity) + empty-s
   infra (Playwright + pixelmatch) isn't built yet; `validateMesh` over cube/cylinder/random
   vertex subsets is the real bar here.
 
-## Left mid-flight
+## Post-round: edge bevel (D5 now complete)
 
-- **Edge bevel** (`bevelEdges`) — the other half of D5. Approach fixed (per-face planar
-  offset-intersect, scoped to planar convex faces = cube + cylinder, abort otherwise). Prototype
-  probe: bevel all four edges of ONE cube face and assert the four strip-end points are four
-  DISTINCT locations (that single check discriminates the correct formula from the degenerate
-  one). Reuses the same `lift`/modal path (edge mode).
+- **`geometry/ops/bevelEdge.ts` — `bevelEdges(mesh, edgeIds, width)`**: 1-segment chamfer.
+  Each selected edge → a quad strip; the faces on both sides recede. The receded corner of every
+  face is the **planar offset-intersect**: in the face plane, each selected boundary edge's line
+  is offset inward by `width`, non-selected edges stay put, and the corner is the intersection of
+  its two (offset-or-original) edge lines (a 2D solve in a per-face basis; linear in width, so
+  `lift` is exact). Corner points that land on the same spot — a non-beveled edge shared by two
+  faces on a symmetric solid — are welded (position hash), so the shared edge stays one edge; the
+  leftover vertex holes are closed by `fillHoles` (chain unmatched directed edges into loops, cap
+  with the reversed loop). Strips are wound to twin both shrunk faces' shared edges. Scoped to
+  interior edges; boundary edges, collinear corners, or non-simple junctions abort untouched.
+  Returns `mode:"edge"` (ids empty — edge handles are unstable post-rebuild) + `lift`.
+- **Modal**: `AmountKind` gains `bevelEdge` (edge mode) in the same `AMOUNT_MODE`/`AMOUNT_OP`
+  tables; the degenerate-width-0 rebuild + amount-≥0 clamp now key off `IS_BEVEL` (covers both
+  bevel kinds). The **Bevel** command + rail dispatch by edit mode — point → vertex truncation,
+  edge → chamfer (both `B`); Bevel added to the edge-mode rail.
+
+**Verified**: op-direct on constructed cube/cylinder — bevel all 12 cube edges = chamfered cube
+(exactly 26 F / 24 V, valid); bevel one face's 4 edges (10 F / 12 V, valid, strip ends distinct —
+the advisor's discriminating probe); capped-cylinder top rim, 8 edges (10→18 F, 16→24 V, valid).
+Full modal in the live viewport: `b` on all cube edges → chamfer builds (26/24), width drag,
+LMB → one "Bevel" step, wireframe renders clean (no black holes — the width-0 rebuild fix
+applies), undo → 6/8, redo → 26/24. Property suite: `bevelEdges` over 4 primitives × 4 seeds
+(random edge subsets → valid kernel when it commits, lift sanity) + empty-set abort.
+
+### Edge-bevel limitations (v1)
+
+- Correct/clean on planar-convex faces (cube, cylinder). Non-planar faces (sphere) use the Newell
+  plane approximation — may commit an imperfect-but-valid result or abort. Concave faces / messy
+  partial junctions (e.g. a single interior edge whose endpoints keep unbeveled corners) may
+  produce odd caps or abort. Multi-segment rounding and knife/loop-cut remain out of scope.
 
 ## Files added / changed
 
@@ -97,8 +122,7 @@ no gaps at any width.
 
 ## Next steps (exact, resumable cold)
 
-1. **D5 edge bevel** (`bevelEdges`, planar-convex, per-face offset-intersect, abort otherwise) —
-   verify with the four-distinct-strip-ends probe on one cube face, then cube edge loop / all
-   edges / capped-cylinder loop; wire edge-mode modal (reuse AmountTool with a "bevelEdge" kind).
-2. **D6 snapping** — vertex/edge snap for component moves (grid snap already exists).
-3. Then D7 boolean worker / D8 pen tool + splines / D9 spline extrude / F1+F3 / C5 to close M1.
+1. **D6 snapping** — vertex/edge snap for component moves (grid snap already exists).
+2. Then D7 boolean worker / D8 pen tool + splines / D9 spline extrude / F1+F3 / C5 to close M1.
+3. (Optional polish) edge-bevel robustness on non-planar/concave faces + multi-segment rounding,
+   proper UVs on strips/caps — deferred with D5's other v1 hedges.

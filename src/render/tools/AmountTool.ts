@@ -6,26 +6,37 @@ import { MeshTopologyCommand } from "@/geometry/commands/topology";
 import type { HEMesh, HEMeshSnapshot } from "@/geometry/kernel/HEMesh";
 import { vertsForSelection } from "@/geometry/kernel/components";
 import { bevelVertices } from "@/geometry/ops/bevel";
+import { bevelEdges } from "@/geometry/ops/bevelEdge";
 import { extrudeFaces, insetFaces } from "@/geometry/ops/faceOps";
 import type { OpResult } from "@/geometry/ops/soup";
 import { meshRegistry } from "@/geometry/store/meshRegistry";
 import type { ViewportSystem } from "@/render/viewport/ViewportSystem";
 
-export type AmountKind = "extrude" | "inset" | "bevel";
+export type AmountKind = "extrude" | "inset" | "bevel" | "bevelEdge";
 
-const LABEL: Record<AmountKind, string> = { extrude: "Extrude", inset: "Inset", bevel: "Bevel" };
+const LABEL: Record<AmountKind, string> = {
+  extrude: "Extrude",
+  inset: "Inset",
+  bevel: "Bevel",
+  bevelEdge: "Bevel",
+};
 /** Which component selection each modal reads/writes. */
 const AMOUNT_MODE: Record<AmountKind, ComponentMode> = {
   extrude: "polygon",
   inset: "polygon",
   bevel: "point",
+  bevelEdge: "edge",
 };
 const AMOUNT_OP: Record<AmountKind, (m: HEMesh, ids: number[], amount: number) => OpResult | null> =
   {
     extrude: extrudeFaces,
     inset: insetFaces,
     bevel: bevelVertices,
+    bevelEdge: bevelEdges,
   };
+/** Bevel kinds collapse to coincident points at width 0 (degenerate n-gon
+ * triangulation); the modal must build them at a small non-zero width. */
+const IS_BEVEL = (k: AmountKind) => k === "bevel" || k === "bevelEdge";
 
 /**
  * Blender-style modal for extrude/inset (polygon selection) and bevel (point
@@ -109,13 +120,13 @@ export class AmountTool {
     const before = mesh.snapshot();
     let result = AMOUNT_OP[kind](mesh, srcIds, 0);
     if (!result?.lift) return null; // op refused — nothing installed
-    if (kind === "bevel") {
-      // At width 0 every cut point collapses onto its vertex, so the cut face
-      // and notched faces are degenerate — their n-gon triangulation is baked
-      // on that collapsed shape and never recomputed (positions only stream),
-      // leaving garbage triangles as the points spread (black holes). Rebuild
-      // at a small non-degenerate width so the triangulation pattern is valid;
-      // the lift still drives the displayed amount from 0. (Extrude/inset are
+    if (IS_BEVEL(kind)) {
+      // At width 0 every cut point collapses onto its vertex, so the cut/strip
+      // faces are degenerate — their n-gon triangulation is baked on that
+      // collapsed shape and never recomputed (positions only stream), leaving
+      // garbage triangles as the points spread (black holes). Rebuild at a
+      // small non-degenerate width so the triangulation pattern is valid; the
+      // lift still drives the displayed amount from 0. (Extrude/inset are
       // quad-only there, whose triangulation is stable under motion.)
       const minClamp = Math.min(...result.lift.max);
       const buildW = 0.02 * (Number.isFinite(minClamp) && minClamp > 0 ? minClamp : 1);
@@ -143,7 +154,7 @@ export class AmountTool {
     this.startY ??= clientY;
     let amount = (this.startY - clientY) * this.worldPerPixel;
     // inset and bevel only grow inward (never negative); extrude is signed
-    if (this.kind === "inset" || this.kind === "bevel") amount = Math.max(0, amount);
+    if (this.kind !== "extrude") amount = Math.max(0, amount);
     this.amount = amount;
     const mesh = meshRegistry.get(this.meshId);
     if (!mesh) return;

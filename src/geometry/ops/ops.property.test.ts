@@ -8,8 +8,10 @@ import { buildPrimitive } from "@/geometry/primitives";
 import { meshRegistry } from "@/geometry/store/meshRegistry";
 import { MeshTopologyCommand } from "@/geometry/commands/topology";
 import { bevelVertices } from "./bevel";
+import { bevelEdges } from "./bevelEdge";
 import { deleteFaces, extrudeFaces, insetFaces } from "./faceOps";
 import { dissolveVertices, weldVerticesTo } from "./weld";
+import { uniqueEdges } from "@/geometry/kernel/components";
 
 /** Deterministic LCG so failures reproduce. */
 const rng = (seed: number) => {
@@ -113,6 +115,22 @@ describe("topology op invariants (randomized)", () => {
           expect([...bLift.max].every((m) => m > 0 && Number.isFinite(m))).toBe(true);
         }
 
+        // edge bevel: chamfer a random edge subset — if it commits, the kernel
+        // stays valid and points grow (each corner splits into new points)
+        mesh = buildPrimitive(desc);
+        const edges = uniqueEdges(mesh);
+        const beIds = pickSubset(1 + Math.floor(rand() * 3), edges.length, rand).map(
+          (i) => edges[i]!,
+        );
+        const evB = mesh.vCount;
+        const beRes = bevelEdges(mesh, beIds, 0.12);
+        if (beRes) {
+          expect(validateMesh(mesh).errors).toEqual([]);
+          expect(mesh.vCount).toBeGreaterThanOrEqual(evB);
+          const beLift = beRes.lift!;
+          expect(beLift.base.length).toBe(beLift.verts.length * 3);
+        }
+
         // weld-to-target (the Weld tool op): target keeps its exact position
         mesh = buildPrimitive(desc);
         const wLoop = mesh.faceVertices(Math.floor(rand() * mesh.fCount));
@@ -146,6 +164,7 @@ describe("topology op invariants (randomized)", () => {
     expect(extrudeFaces(mesh, [], 0.1)).toBeNull();
     expect(insetFaces(mesh, [99999], 0.1)).toBeNull();
     expect(bevelVertices(mesh, [], 0.1)).toBeNull(); // empty selection
+    expect(bevelEdges(mesh, [], 0.1)).toBeNull(); // empty edge selection
     expect(JSON.stringify([...mesh.vPos])).toBe(snap);
     expect(mesh.dirty).toBe(dirtyBefore);
     expect(mesh.topologyVersion).toBe(tvBefore);

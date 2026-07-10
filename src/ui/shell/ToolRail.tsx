@@ -47,6 +47,7 @@ const MODE_TOOLS: Partial<
     { cmd: "mesh.bevel", icon: <IconBevel />, title: "Bevel (B)" },
     { cmd: "mesh.weldTool", icon: <IconWeld />, title: "Weld Tool", toggle: true },
   ],
+  edge: [{ cmd: "mesh.bevel", icon: <IconBevel />, title: "Bevel (B)" }],
   polygon: [
     { cmd: "mesh.extrude", icon: <IconExtrude />, title: "Extrude (D)" },
     { cmd: "mesh.inset", icon: <IconInset />, title: "Inset (I)" },
