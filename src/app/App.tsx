@@ -1,33 +1,36 @@
-import { useEffect, useMemo } from "react";
-import { Document } from "@/core";
-import { CreateNodeCommand } from "@/core/history/commands/scene";
-import { defaultPrimitive } from "@/types/geometry/primitives";
-import { loadLocalProject, startAutosave } from "@/io/storage/local";
-import { setAppDocument } from "@/ui/hooks/doc/document";
+import { useAtomValue } from "jotai";
+import { useEffect, useState } from "react";
+import { docAtom } from "@/ui/hooks/doc/document";
+import { bootWorkspace } from "@/ui/hooks/doc/projects";
 import { Shell } from "@/ui/shell/Shell";
 
-/** Composition root: one Document installed into the jotai store, the shell. */
+/**
+ * Composition root. The multi-project workspace boots asynchronously from
+ * IndexedDB (restoring last session's tabs, migrating any legacy
+ * localStorage autosave); the Shell renders once the active document is
+ * installed into docAtom.
+ */
 export function App() {
-  const doc = useMemo(() => {
-    const doc = new Document();
-    const saved = loadLocalProject();
-    if (saved) {
-      // restore the last autosaved project (survives a refresh/crash)
-      doc.loadDTO(saved);
-    } else {
-      // first run: seed scene with a cube, pre-selected, clean history
-      const seed = new CreateNodeCommand("mesh", "Cube", null, undefined, {
-        primitive: defaultPrimitive("cube"),
-      });
-      doc.history.run(seed);
-      doc.history.clear();
-      doc.selection.selectObjects([seed.nodeId]);
-    }
-    setAppDocument(doc);
-    return doc;
+  const [error, setError] = useState<string | null>(null);
+  const doc = useAtomValue(docAtom);
+
+  useEffect(() => {
+    bootWorkspace().catch((e: unknown) => setError(String(e)));
   }, []);
 
-  useEffect(() => startAutosave(doc), [doc]);
-
+  if (error) {
+    return (
+      <div className="grid h-full place-items-center bg-base-300 text-xs text-error">
+        Failed to open workspace: {error}
+      </div>
+    );
+  }
+  if (!doc) {
+    return (
+      <div className="grid h-full place-items-center bg-base-300">
+        <span className="loading loading-spinner loading-sm opacity-40" />
+      </div>
+    );
+  }
   return <Shell doc={doc} />;
 }

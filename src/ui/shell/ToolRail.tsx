@@ -55,7 +55,7 @@ export function ToolRail({ registry }: { registry: CommandRegistry }) {
         <li key={m.mode} className={m.enabled ? "" : "menu-disabled"}>
           <button
             type="button"
-            className={`tooltip tooltip-right px-1.5 ${editMode === m.mode ? "menu-active" : ""}`}
+            className={`tooltip tooltip-right px-1.5 ${editMode === m.mode ? "menu-active text-primary" : ""}`}
             data-tip={m.title}
             onClick={() => m.enabled && enterMode(m.mode)}
           >

@@ -18,6 +18,7 @@ import type { ViewportSystem } from "@/render/viewport/ViewportSystem";
 import { CommandPalette } from "./CommandPalette";
 import { ContextMenu } from "./ContextMenu";
 import { MenuBar } from "./MenuBar";
+import { ProjectTabs } from "./ProjectTabs";
 import { ToolRail } from "./ToolRail";
 
 const LAYOUT_KEY = "thride.layout.v1";
@@ -116,6 +117,7 @@ export function Shell({ doc }: { doc: Document }) {
   return (
     <div className="flex h-full flex-col bg-base-300 text-base-content">
       <MenuBar registry={registry} />
+      <ProjectTabs />
       <div className="flex min-h-0 flex-1">
         <ToolRail registry={registry} />
         <div className="min-w-0 flex-1">

@@ -10,10 +10,11 @@ import type { PrimitiveType } from "@/types/geometry/primitives";
 import { defaultPrimitive, primitiveLabels } from "@/types/geometry/primitives";
 import { defaultLightData, LIGHT_LABELS, type LightType } from "@/types/core/light";
 import type { AppCommand } from "@/ui/commands/CommandRegistry";
+import { createProject } from "@/ui/hooks/doc/projects";
 import { openPalette } from "@/ui/hooks/editor/shell";
 import { editorState } from "@/ui/hooks/editor/viewport";
 import type { ViewportSystem } from "@/render/viewport/ViewportSystem";
-import { FORMAT_VERSION, type Uuid } from "@/types/core";
+import type { Uuid } from "@/types/core";
 import {
   IconAmbientLight,
   IconAreaLight,
@@ -22,6 +23,7 @@ import {
   IconCube,
   IconCylinder,
   IconDirectionalLight,
+  IconDisc,
   IconHemisphereLight,
   IconIcosphere,
   IconNull,
@@ -31,6 +33,7 @@ import {
   IconSphere,
   IconSpotlight,
   IconTorus,
+  IconCapsule,
 } from "@/icons";
 
 const PRIMITIVE_ICONS: Partial<Record<PrimitiveType, React.ReactNode>> = {
@@ -42,6 +45,8 @@ const PRIMITIVE_ICONS: Partial<Record<PrimitiveType, React.ReactNode>> = {
   torus: <IconTorus size={16} />,
   plane: <IconPlane size={16} />,
   pyramid: <IconPyramid size={16} />,
+  disc: <IconDisc size={16} />,
+  capsule: <IconCapsule size={16} />,
 };
 
 const LIGHT_ICONS: Record<LightType, React.ReactNode> = {
@@ -127,8 +132,8 @@ export function buildCommands(doc: Document, shell: ShellApi): AppCommand[] {
       title: "New Project",
       menu: "File",
       run: () => {
-        doc.loadDTO({ formatVersion: FORMAT_VERSION, nodes: [] });
-        doc.selection.clearObjects();
+        // opens a fresh project as a new workspace tab (multi-project)
+        void createProject();
       },
     },
 

@@ -154,7 +154,7 @@ export function ViewportPanel({ onSystem }: Props) {
       )}
       {navMarker ? (
         <svg
-          className="pointer-events-none absolute text-base-content drop-shadow-[0_0_2px_rgba(0,0,0,0.9)]"
+          className="pointer-events-none absolute text-primary-content drop-shadow-[0_0_2px_rgba(0,0,0,0.9)]"
           style={{ left: navMarker.x - 7, top: navMarker.y - 7 }}
           width="14"
           height="14"

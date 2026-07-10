@@ -20,16 +20,32 @@ export function setAppDocument(doc: Document): void {
 
 const sliceAtomCache = new Map<SliceId, Atom<number>>();
 
-/** Atom mirroring one document slice's version counter. */
+/**
+ * Atom mirroring one document slice's version counter. Re-attaches its
+ * subscription whenever docAtom changes (multi-project tab switches) —
+ * mounted panels must follow the ACTIVE document, not the one that was
+ * active when they first subscribed.
+ */
 export function sliceVersionAtom(slice: SliceId): Atom<number> {
   let cached = sliceAtomCache.get(slice);
   if (!cached) {
     const base = atom(0);
     base.onMount = (set) => {
-      const doc = appStore.get(docAtom);
-      if (!doc) return;
-      set(doc.version(slice));
-      return doc.subscribeSlice(slice, () => set(doc.version(slice)));
+      let unsubDoc: (() => void) | null = null;
+      const attach = () => {
+        unsubDoc?.();
+        unsubDoc = null;
+        const doc = appStore.get(docAtom);
+        if (!doc) return;
+        set(doc.version(slice));
+        unsubDoc = doc.subscribeSlice(slice, () => set(doc.version(slice)));
+      };
+      attach();
+      const unsubSwitch = appStore.sub(docAtom, attach);
+      return () => {
+        unsubDoc?.();
+        unsubSwitch();
+      };
     };
     sliceAtomCache.set(slice, base);
     cached = base;
