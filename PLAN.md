@@ -222,7 +222,7 @@ Each chunk is a session-sized unit of focused work with explicit deps and a **"d
 - **D2 Render sync** _(D1, C1)_ — earcut/fan triangulation, triToFace maps, dirty routing (positions vs topology), BVH refit/rebuild, component overlays. Done when: 60fps position-drag on a 100k-tri mesh in profiling test.
 - **D3 Primitives** _(D1, B1)_ — full parametric set with live params + make-editable command. Done when: every primitive creates, edits params, collapses, undoes.
 - **D4 Component mode tools** _(D2, B3, C4)_ — point/edge/poly modes, hit-testing with screen tolerance, move/rotate/scale on components, extrude, inset, weld, delete/dissolve. Done when: each op property-tested for invariants + one undo step each.
-- **D5 Bevel** _(D4)_ — edge/vert bevel, fixed segments, overlap clamp. Done when: bevel on cube/cylinder/hard-surface goldens pass.
+- **D5 Bevel** _(D4)_ — edge/vert bevel, overlap clamp. **Done (expanded past the original fixed-segment scope at user request):** vertex truncation + edge bevel (planar-convex offset-intersect) as a C4D-style **live tool** with a settings panel — chamfer/straight modes, N rounding segments, and an angle threshold (skip flat edges). Knife/loop-cut still deferred to 1.x.
 - **D6 Snapping** _(C4, D2)_ — grid/vertex/edge snap for move ops and pen tool. Done when: snap toggles work in object + component modes.
 - **D7 Boolean worker** _(D1)_ — Manifold WASM in worker, weld/repair/fallback path, runOriginalID material recovery. Done when: boolean torture suite (coplanar faces, nested shells, non-manifold input) behaves per spec.
 - **D8 Splines + pen tool** _(B3, C4)_ — SplineNode data, spline primitives, 3D pen tool on work planes, spline point-edit mode. Done when: draw-edit-close-undo flow passes e2e.
