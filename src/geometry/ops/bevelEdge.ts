@@ -16,6 +16,22 @@ const norm = (a: Vec3): Vec3 => {
   return [a[0] / l, a[1] / l, a[2] / l];
 };
 
+export type BevelMode = "chamfer" | "straight";
+
+export interface BevelEdgeOpts {
+  width: number;
+  /**
+   * Skip edges whose dihedral (deviation between the two adjacent face
+   * normals, 0° = coplanar) is below this — so flat surface edges are left
+   * alone. Default 0 (bevel every selected edge).
+   */
+  angleDeg?: number;
+  /** Ring subdivisions across the bevel (1 = a flat chamfer). Default 1. */
+  segments?: number;
+  /** chamfer replaces the selected edge; straight keeps it. Default chamfer. */
+  mode?: BevelMode;
+}
+
 /**
  * Edge bevel (chamfer), 1 segment. Each selected edge is replaced by a quad
  * strip and the faces on either side recede. The receded corner of every face
@@ -34,7 +50,15 @@ const norm = (a: Vec3): Vec3 => {
  * Records `lift` (base = original vertex, dir = corner travel per unit width,
  * a single shared clamp) so width can be driven by the interactive modal.
  */
-export function bevelEdges(mesh: HEMesh, edgeIds: number[], width: number): OpResult | null {
+export function bevelEdges(mesh: HEMesh, edgeIds: number[], opts: BevelEdgeOpts): OpResult | null {
+  const { width } = opts;
+  const angleDeg = opts.angleDeg ?? 0;
+  const pos = (v: number): Vec3 => [
+    mesh.vPos[v * 3]!,
+    mesh.vPos[v * 3 + 1]!,
+    mesh.vPos[v * 3 + 2]!,
+  ];
+
   const sel = new Set<number>();
   for (const h of edgeIds) {
     if (h >= 0 && h < mesh.heCount) sel.add(canonicalEdge(mesh, h));
@@ -42,11 +66,21 @@ export function bevelEdges(mesh: HEMesh, edgeIds: number[], width: number): OpRe
   if (sel.size === 0) return null;
   for (const e of sel) if (mesh.heTwin[e] === -1) return null; // boundary edge: abort
 
-  const pos = (v: number): Vec3 => [
-    mesh.vPos[v * 3]!,
-    mesh.vPos[v * 3 + 1]!,
-    mesh.vPos[v * 3 + 2]!,
-  ];
+  // angle threshold: drop edges flatter than angleDeg (deviation between the
+  // two adjacent face normals). This lets "bevel everything" on a panel skip
+  // the flat grid edges and only chamfer the sharp feature edges.
+  if (angleDeg > 0) {
+    const cos = Math.cos((angleDeg * Math.PI) / 180);
+    const n1: Vec3 = [0, 0, 0];
+    const n2: Vec3 = [0, 0, 0];
+    for (const e of [...sel]) {
+      mesh.faceNormal(mesh.heFace[e]!, n1);
+      mesh.faceNormal(mesh.heFace[mesh.heTwin[e]!]!, n2);
+      if (dot(norm(n1), norm(n2)) > cos) sel.delete(e); // deviation < threshold → flat
+    }
+    if (sel.size === 0) return null;
+  }
+
   const selected = (h: number) => sel.has(canonicalEdge(mesh, h));
 
   // shortest incident edge over all endpoints of selected edges → shared clamp

@@ -32,7 +32,7 @@ const AMOUNT_OP: Record<AmountKind, (m: HEMesh, ids: number[], amount: number) =
     extrude: extrudeFaces,
     inset: insetFaces,
     bevel: bevelVertices,
-    bevelEdge: bevelEdges,
+    bevelEdge: (m, ids, amount) => bevelEdges(m, ids, { width: amount, angleDeg: 40 }),
   };
 /** Bevel kinds collapse to coincident points at width 0 (degenerate n-gon
  * triangulation); the modal must build them at a small non-zero width. */

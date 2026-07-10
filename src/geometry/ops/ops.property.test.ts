@@ -124,7 +124,7 @@ describe("topology op invariants (randomized)", () => {
           (i) => edges[i]!,
         );
         const evB = mesh.vCount;
-        const beRes = bevelEdges(mesh, beIds, 0.12);
+        const beRes = bevelEdges(mesh, beIds, { width: 0.12 });
         if (beRes) {
           expect(validateMesh(mesh).errors).toEqual([]);
           expect(mesh.vCount).toBeGreaterThanOrEqual(evB);
@@ -165,7 +165,7 @@ describe("topology op invariants (randomized)", () => {
     expect(extrudeFaces(mesh, [], 0.1)).toBeNull();
     expect(insetFaces(mesh, [99999], 0.1)).toBeNull();
     expect(bevelVertices(mesh, [], 0.1)).toBeNull(); // empty selection
-    expect(bevelEdges(mesh, [], 0.1)).toBeNull(); // empty edge selection
+    expect(bevelEdges(mesh, [], { width: 0.1 })).toBeNull(); // empty edge selection
     expect(JSON.stringify([...mesh.vPos])).toBe(snap);
     expect(mesh.dirty).toBe(dirtyBefore);
     expect(mesh.topologyVersion).toBe(tvBefore);
@@ -197,7 +197,7 @@ describe("topology op invariants (randomized)", () => {
       return want.some((w) => (w[0] === a && w[1] === b) || (w[0] === b && w[1] === a));
     });
     const before = validateMesh(mesh).boundaryEdges;
-    const res = bevelEdges(mesh, inner, 0.15);
+    const res = bevelEdges(mesh, inner, { width: 0.15 });
     expect(res).not.toBeNull();
     const v = validateMesh(mesh);
     expect(v.errors).toEqual([]);
