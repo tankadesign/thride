@@ -48,10 +48,37 @@ mode-switch self-commits. Modes/segments: segments=4 → smoothly rounded edges 
 original 8 verts kept + flanking loops (30 F / 32 V); both valid. Property tests exercise
 segments=3 and straight over the 4 fixtures. `tsc -b` clean; `vp test` 121/121.
 
+## Post-round: auto miter (bug fix) — split corners on a shared non-beveled edge
+
+User report: beveling edges on an asymmetric inset+extruded frame left the new bevel edges not
+lining up along a non-selected diagonal — 2 points where there should be 1 (fixed manually by
+Dissolve). Root cause: the offset-intersect gives each face its receded corner independently; the
+two faces sharing a non-beveled edge land corners on that edge's line at DIFFERENT depths on
+asymmetric geometry (equal only on symmetric solids, which is why cube/cylinder looked perfect),
+so the exact-position weld can't merge them and the edge splits. This is the classic bevel **miter**.
+
+Fix (`bevelEdge.ts`, commit `f401bc3`): a merge pass before the weld unions the two split corners
+of every non-beveled edge whose BOTH ends receded and collapses each collinear class to its
+midpoint (matching Dissolve); mixed junctions (union chained across edges on different lines) snap
+to the shared vertex so every edge stays straight. It only mutates `cornerPos` in place, so the
+existing weld coalesces the now-equal positions — strips/rings/bridges/fillHoles are unchanged.
+Proven: distorted cube, bevel 11 of 12 edges — without the merge the leftover edge splits (a
+near-duplicate vertex pair); with it they weld to one, valid kernel. Regression test asserts no
+near-duplicate vertices; existing tests unchanged (Sharp is a no-op where corners coincide).
+`vp test` 125/125.
+
+**Miter STYLE options (Sharp/Patch/Arc) — deferred (design finding).** During implementation the
+Sharp merge turned out to be a pure CORRECTNESS fix (the diagonal split has only one sensible
+resolution — a point — because the two split points are collinear on the edge, leaving no area to
+patch or round). Blender's Patch/Arc miters apply to CONVEX corners where beveled edges meet (they
+restyle the vertex caps: flat vs pointed vs domed) — a separate, larger feature that does not touch
+the reported bug. `BevelEdgeOpts.miter` is left as a reserved seam (default sharp); the panel
+dropdown + cap restyling is a follow-up if wanted.
+
 ## Commits
 
 `d6f2364` boundary fix · `01fea33` angle threshold + opts object · `5c6078d` live tool framework
-· `a9973f8` segments + straight mode.
+· `a9973f8` segments + straight mode · `f401bc3` auto miter (split-corner fix).
 
 ## Known limitations (v1)
 
