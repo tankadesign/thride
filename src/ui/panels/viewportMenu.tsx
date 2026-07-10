@@ -86,7 +86,7 @@ export function buildViewportMenu(doc: Document, vs: ViewportSystem, pane: numbe
         },
         toggle("Shadows", "shadows", disp.shadows, disp.shading !== "pbr"),
         toggle("Backfaces", "backfaces", disp.backfaces),
-        toggle("SSOA", "ssao", disp.ssao, disp.shading !== "pbr"),
+        toggle("SSAO", "ssao", disp.ssao, disp.shading !== "pbr"),
         toggle("Grid", "grid", disp.grid),
         toggle("Lines", "lines", disp.lines, disp.shading === "wireframe"),
       ],
