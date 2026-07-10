@@ -9,8 +9,9 @@ import { ConvertToMeshCommand } from "@/geometry/commands/convert";
 import { MeshTopologyCommand } from "@/geometry/commands/topology";
 import type { HEMesh } from "@/geometry/kernel/HEMesh";
 import { facesForSelection } from "@/geometry/kernel/components";
-import { deleteFaces, extrudeFaces, insetFaces } from "@/geometry/ops/faceOps";
-import { weldVertices } from "@/geometry/ops/weld";
+import { deleteFaces } from "@/geometry/ops/faceOps";
+import type { OpResult } from "@/geometry/ops/soup";
+import { dissolveVertices } from "@/geometry/ops/weld";
 import { meshRegistry } from "@/geometry/store/meshRegistry";
 import type { PrimitiveType } from "@/types/geometry/primitives";
 import { defaultPrimitive, primitiveLabels } from "@/types/geometry/primitives";
@@ -19,6 +20,7 @@ import type { AppCommand } from "@/ui/commands/CommandRegistry";
 import { createProject } from "@/ui/hooks/doc/projects";
 import { openPalette } from "@/ui/hooks/editor/shell";
 import { editorState } from "@/ui/hooks/editor/viewport";
+import type { AmountKind } from "@/render/tools/AmountTool";
 import type { ViewportSystem } from "@/render/viewport/ViewportSystem";
 import type { ComponentMode, Uuid } from "@/types/core";
 import {
@@ -30,6 +32,7 @@ import {
   IconCylinder,
   IconDirectionalLight,
   IconDisc,
+  IconDissolve,
   IconExtrude,
   IconHemisphereLight,
   IconIcosphere,
@@ -149,7 +152,7 @@ export function buildCommands(doc: Document, shell: ShellApi): AppCommand[] {
   const runTopologyOp = (
     mode: ComponentMode,
     label: string,
-    op: (mesh: HEMesh, ids: number[]) => ReturnType<typeof extrudeFaces>,
+    op: (mesh: HEMesh, ids: number[]) => OpResult | null,
   ) => {
     const target = componentTarget(mode);
     if (!target) return;
@@ -308,34 +311,36 @@ export function buildCommands(doc: Document, shell: ShellApi): AppCommand[] {
       },
     },
 
-    // ---- Mesh (component topology ops) ----
+    // ---- Mesh (modal tools + topology actions) ----
+    // extrude/inset are Blender-style modal TOOLS: activating enters an
+    // amount drag in the viewport (mouse up/down = amount, LMB confirms)
+    ...(["extrude", "inset"] as AmountKind[]).map(
+      (kind): AppCommand => ({
+        id: `mesh.${kind}`,
+        title: kind === "extrude" ? "Extrude" : "Inset",
+        menu: "Mesh",
+        icon: kind === "extrude" ? <IconExtrude size={16} /> : <IconInset size={16} />,
+        shortcut: kind === "extrude" ? "d" : "i",
+        enabled: () => doc.selection.editMode === "polygon" && componentTarget("polygon") !== null,
+        run: () => shell.getViewport()?.beginAmountTool(kind),
+      }),
+    ),
     {
-      id: "mesh.extrude",
-      title: "Extrude",
-      menu: "Mesh",
-      icon: <IconExtrude size={16} />,
-      shortcut: "d",
-      enabled: () => doc.selection.editMode === "polygon" && componentTarget("polygon") !== null,
-      run: () => runTopologyOp("polygon", "Extrude", (m, ids) => extrudeFaces(m, ids, 0.1)),
-    },
-    {
-      id: "mesh.inset",
-      title: "Inset",
-      menu: "Mesh",
-      icon: <IconInset size={16} />,
-      shortcut: "i",
-      enabled: () => doc.selection.editMode === "polygon" && componentTarget("polygon") !== null,
-      run: () => runTopologyOp("polygon", "Inset", (m, ids) => insetFaces(m, ids, 0.1)),
-    },
-    {
-      id: "mesh.weld",
-      title: "Weld Points",
+      id: "mesh.weldTool",
+      title: "Weld Tool",
       menu: "Mesh",
       icon: <IconWeld size={16} />,
+      enabled: () => doc.selection.editMode === "point",
+      run: () => editorState.setWeldArmed(!editorState.weldArmed),
+    },
+    {
+      id: "mesh.dissolve",
+      title: "Dissolve",
+      menu: "Mesh",
+      icon: <IconDissolve size={16} />,
       enabled: () =>
-        doc.selection.editMode === "point" &&
-        (componentTarget("point")?.ids.length ?? 0) >= 2,
-      run: () => runTopologyOp("point", "Weld", (m, ids) => weldVertices(m, ids)),
+        doc.selection.editMode === "point" && (componentTarget("point")?.ids.length ?? 0) >= 2,
+      run: () => runTopologyOp("point", "Dissolve", (m, ids) => dissolveVertices(m, ids)),
     },
 
     // ---- View ----

@@ -65,6 +65,7 @@ export function extrudeFaces(mesh: HEMesh, faceIds: number[], offset: number): O
   };
 
   const dup = new Map<string, number>(); // `${vert}:${sector}` → new vert id
+  const lift = { verts: [] as number[], base: [] as number[], dirs: [] as number[] };
   const dupOf = (v: number, f: number): number => {
     const key = `${v}:${sectorOf(v, f)}`;
     let d = dup.get(key);
@@ -77,6 +78,13 @@ export function extrudeFaces(mesh: HEMesh, faceIds: number[], offset: number): O
         soup.positions[v * 3 + 2]! + (dir[v * 3 + 2]! / len) * offset,
       );
       dup.set(key, d);
+      lift.verts.push(d);
+      lift.base.push(
+        soup.positions[v * 3]!,
+        soup.positions[v * 3 + 1]!,
+        soup.positions[v * 3 + 2]!,
+      );
+      lift.dirs.push(dir[v * 3]! / len, dir[v * 3 + 1]! / len, dir[v * 3 + 2]! / len);
     }
     return d;
   };
@@ -109,7 +117,16 @@ export function extrudeFaces(mesh: HEMesh, faceIds: number[], offset: number): O
   soup.faces = faces;
   soup.faceUVs = faceUVs;
   if (!adoptSoup(mesh, soup)) return null;
-  return { mode: "polygon", ids: [...Array(selected.size).keys()].map((i) => capStart + i) };
+  return {
+    mode: "polygon",
+    ids: [...Array(selected.size).keys()].map((i) => capStart + i),
+    lift: {
+      verts: lift.verts,
+      base: new Float32Array(lift.base),
+      dir: new Float32Array(lift.dirs),
+      max: new Float32Array(lift.verts.length).fill(Number.POSITIVE_INFINITY),
+    },
+  };
 }
 
 /**
@@ -130,6 +147,12 @@ export function insetFaces(mesh: HEMesh, faceIds: number[], amount: number): OpR
     faceUVs.push(soup.faceUVs[f]!);
   }
   const inner: { loop: number[]; uv: number[] }[] = [];
+  const lift = {
+    verts: [] as number[],
+    base: [] as number[],
+    dirs: [] as number[],
+    max: [] as number[],
+  };
   for (const f of [...selected].sort((x, y) => x - y)) {
     const loop = soup.faces[f]!;
     let cx = 0;
@@ -151,6 +174,10 @@ export function insetFaces(mesh: HEMesh, faceIds: number[], amount: number): OpR
       const t = Math.min(0.45, amount / dist);
       const w = soup.positions.length / 3;
       soup.positions.push(x + (cx - x) * t, y + (cy - y) * t, z + (cz - z) * t);
+      lift.verts.push(w);
+      lift.base.push(x, y, z);
+      lift.dirs.push((cx - x) / dist, (cy - y) / dist, (cz - z) / dist);
+      lift.max.push(0.45 * dist);
       return w;
     });
     for (let i = 0; i < loop.length; i++) {
@@ -168,7 +195,16 @@ export function insetFaces(mesh: HEMesh, faceIds: number[], amount: number): OpR
   soup.faces = faces;
   soup.faceUVs = faceUVs;
   if (!adoptSoup(mesh, soup)) return null;
-  return { mode: "polygon", ids: [...Array(inner.length).keys()].map((i) => innerStart + i) };
+  return {
+    mode: "polygon",
+    ids: [...Array(inner.length).keys()].map((i) => innerStart + i),
+    lift: {
+      verts: lift.verts,
+      base: new Float32Array(lift.base),
+      dir: new Float32Array(lift.dirs),
+      max: new Float32Array(lift.max),
+    },
+  };
 }
 
 /** Delete faces; orphaned vertices are compacted away. Selection clears. */

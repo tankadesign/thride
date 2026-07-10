@@ -23,6 +23,8 @@ export class ViewportInput {
     pivot: Vector3 | null;
   } | null = null;
   private mmbClick: { x: number; y: number; pane: number } | null = null;
+  /** RMB cancelled a modal tool — swallow the contextmenu it also fires. */
+  private suppressContext = false;
 
   constructor(vs: ViewportSystem) {
     this.vs = vs;
@@ -55,6 +57,18 @@ export class ViewportInput {
       vs.canvas.setPointerCapture(e.pointerId);
     } catch {
       // synthetic/test events have no active pointer — capture is best-effort
+    }
+
+    // Blender-style modal (extrude/inset): LMB confirms, RMB cancels
+    if (vs.modalTool) {
+      if (e.button === 0) vs.modalTool.confirm();
+      else if (e.button === 2) {
+        vs.modalTool.cancel();
+        this.suppressContext = true;
+      }
+      vs.invalidate();
+      e.preventDefault();
+      return;
     }
 
     if (!e.altKey && e.button === 1) {
@@ -91,6 +105,13 @@ export class ViewportInput {
     }
 
     if (e.button === 0) {
+      // armed weld tool captures point-mode clicks before gizmo/handles:
+      // drag a vertex to slide-weld, or fall through to normal selection
+      if (vs.doc.selection.editMode === "point" && vs.editor.weldArmed) {
+        if (!vs.weldTool.beginDrag(e, pane)) this.componentClick(e, pane, "point");
+        vs.invalidate();
+        return;
+      }
       vs.setRayFromEvent(e, pane);
       // primitive adjustment handles take priority over the gizmo
       if (vs.handles.pointerDown(vs.raycaster, vs.activeObject())) {
@@ -122,6 +143,16 @@ export class ViewportInput {
 
   private onPointerMove = (e: PointerEvent): void => {
     const vs = this.vs;
+    if (vs.modalTool) {
+      vs.modalTool.onPointerMove(e.clientY);
+      vs.invalidate();
+      return;
+    }
+    if (vs.weldTool.isDragging) {
+      vs.weldTool.update(e);
+      vs.invalidate();
+      return;
+    }
     if (this.mmbClick) {
       const moved = Math.hypot(e.clientX - this.mmbClick.x, e.clientY - this.mmbClick.y);
       if (moved > 4) this.mmbClick = null; // became a drag, not a click
@@ -172,6 +203,11 @@ export class ViewportInput {
     } catch {
       // see setPointerCapture note
     }
+    if (vs.weldTool.isDragging) {
+      vs.weldTool.finish();
+      vs.invalidate();
+      return;
+    }
     if (this.mmbClick && e.button === 1) {
       const pane = this.mmbClick.pane;
       this.mmbClick = null;
@@ -210,6 +246,10 @@ export class ViewportInput {
   private onContextMenu = (e: Event): void => {
     e.preventDefault();
     const vs = this.vs;
+    if (this.suppressContext) {
+      this.suppressContext = false;
+      return;
+    }
     const me = e as MouseEvent;
     if (me.altKey) return; // alt+RMB is dolly
     const rect = vs.canvas.getBoundingClientRect();
@@ -279,7 +319,13 @@ export class ViewportInput {
   private onKeyDown = (e: KeyboardEvent): void => {
     const vs = this.vs;
     if (e.key !== "Escape") return;
-    if (vs.handles.isDragging) {
+    if (vs.modalTool) {
+      vs.modalTool.cancel();
+      vs.invalidate();
+    } else if (vs.weldTool.isDragging) {
+      vs.weldTool.cancel();
+      vs.invalidate();
+    } else if (vs.handles.isDragging) {
       vs.handles.cancelDrag();
       vs.invalidate();
     } else if (vs.gizmo.isDragging) {

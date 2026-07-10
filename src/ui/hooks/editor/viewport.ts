@@ -36,6 +36,8 @@ export const maximizedPaneAtom = atom(0);
 export const paneCamerasAtom = atom<PaneCamera[]>(["persp", "top", "front", "right"]);
 /** Gizmo axes follow the object (local) by default; W toggles world alignment. */
 export const gizmoSpaceAtom = atom<GizmoSpace>("local");
+/** Weld TOOL armed state (point mode): drag a vertex to slide-weld it. */
+export const weldArmedAtom = atom(false);
 /** Per-logical-pane display settings (viewport context menu → Display). */
 export const paneDisplaysAtom = atom<PaneDisplay[]>([
   defaultPaneDisplay(),
@@ -90,6 +92,14 @@ class EditorStateStore implements EditorViewportState {
     appStore.set(gizmoSpaceAtom, this.gizmoSpace === "local" ? "world" : "local");
   }
 
+  get weldArmed(): boolean {
+    return appStore.get(weldArmedAtom);
+  }
+
+  setWeldArmed(on: boolean): void {
+    appStore.set(weldArmedAtom, on);
+  }
+
   paneDisplay(pane: number): PaneDisplay {
     return appStore.get(paneDisplaysAtom)[pane] ?? defaultPaneDisplay();
   }
@@ -137,6 +147,7 @@ class EditorStateStore implements EditorViewportState {
       appStore.sub(maximizedPaneAtom, cb),
       appStore.sub(paneCamerasAtom, cb),
       appStore.sub(gizmoSpaceAtom, cb),
+      appStore.sub(weldArmedAtom, cb),
       appStore.sub(paneDisplaysAtom, cb),
     ];
     return () => {

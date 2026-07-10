@@ -23,12 +23,7 @@ export class MeshTopologyCommand implements Command {
   private before: HEMeshSnapshot | null = null;
   private inert = false;
 
-  constructor(
-    nodeId: Uuid,
-    meshId: Uuid,
-    label: string,
-    apply: (mesh: HEMesh) => OpResult | null,
-  ) {
+  constructor(nodeId: Uuid, meshId: Uuid, label: string, apply: (mesh: HEMesh) => OpResult | null) {
     this.nodeId = nodeId;
     this.meshId = meshId;
     this.label = label;

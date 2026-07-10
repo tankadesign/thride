@@ -8,7 +8,7 @@ import { buildPrimitive } from "@/geometry/primitives";
 import { meshRegistry } from "@/geometry/store/meshRegistry";
 import { MeshTopologyCommand } from "@/geometry/commands/topology";
 import { deleteFaces, extrudeFaces, insetFaces } from "./faceOps";
-import { weldVertices } from "./weld";
+import { dissolveVertices, weldVerticesTo } from "./weld";
 
 /** Deterministic LCG so failures reproduce. */
 const rng = (seed: number) => {
@@ -20,7 +20,10 @@ const FIXTURES: PrimitiveDescriptor[] = [
   { type: "cube", params: { width: 2, height: 2, depth: 2 } },
   { type: "sphere", params: { radius: 1, segments: 8, rings: 5 } },
   { type: "disc", params: { radius: 1, segments: 8, rings: 2 } },
-  { type: "cylinder", params: { radiusTop: 1, radiusBottom: 1, height: 2, segments: 6, capped: true } },
+  {
+    type: "cylinder",
+    params: { radiusTop: 1, radiusBottom: 1, height: 2, segments: 6, capped: true },
+  },
 ];
 
 const pickSubset = (count: number, max: number, rand: () => number): number[] => {
@@ -48,6 +51,11 @@ describe("topology op invariants (randomized)", () => {
         expect(mesh.fCount).toBeGreaterThan(fBefore);
         expect(vExt.boundaryEdges).toBe(before.boundaryEdges); // openness unchanged
         for (const id of ext!.ids) expect(id).toBeLessThan(mesh.fCount);
+        // modal-tool lift data: one base/dir triple per lifted vert, unclamped
+        const eLift = ext!.lift!;
+        expect(eLift.base.length).toBe(eLift.verts.length * 3);
+        expect(eLift.dir.length).toBe(eLift.verts.length * 3);
+        expect([...eLift.max].every((m) => m === Number.POSITIVE_INFINITY)).toBe(true);
 
         // inset random faces on a fresh mesh
         mesh = buildPrimitive(desc);
@@ -60,6 +68,10 @@ describe("topology op invariants (randomized)", () => {
         expect(validateMesh(mesh).errors).toEqual([]);
         expect(mesh.fCount).toBe(f0 + sumLoop); // one ring quad per corner
         expect(mesh.vCount).toBe(v0 + sumLoop);
+        // inset lift: every inner vert clamped to a positive finite max
+        const iLift = ins!.lift!;
+        expect(iLift.verts.length).toBe(sumLoop);
+        expect([...iLift.max].every((m) => m > 0 && Number.isFinite(m))).toBe(true);
 
         // delete random faces on a fresh mesh: no orphaned vertices remain
         mesh = buildPrimitive(desc);
@@ -72,15 +84,34 @@ describe("topology op invariants (randomized)", () => {
         for (let f = 0; f < mesh.fCount; f++) for (const v of mesh.faceVertices(f)) used.add(v);
         expect(used.size).toBe(mesh.vCount);
 
-        // weld two vertices of one face (guaranteed-adjacent-ish selection)
+        // dissolve two vertices of one face (guaranteed-adjacent-ish selection)
         mesh = buildPrimitive(desc);
         const loop = mesh.faceVertices(Math.floor(rand() * mesh.fCount));
         const vW = mesh.vCount;
-        const weld = weldVertices(mesh, [loop[0]!, loop[1]!]);
+        const weld = dissolveVertices(mesh, [loop[0]!, loop[1]!]);
         if (weld) {
           expect(validateMesh(mesh).errors).toEqual([]);
           expect(mesh.vCount).toBeLessThan(vW);
           expect(weld.ids[0]).toBeLessThan(mesh.vCount);
+        }
+
+        // weld-to-target (the Weld tool op): target keeps its exact position
+        mesh = buildPrimitive(desc);
+        const wLoop = mesh.faceVertices(Math.floor(rand() * mesh.fCount));
+        const source = wLoop[0]!;
+        const target = wLoop[1]!;
+        const targetPos = [
+          mesh.vPos[target * 3]!,
+          mesh.vPos[target * 3 + 1]!,
+          mesh.vPos[target * 3 + 2]!,
+        ];
+        const vT = mesh.vCount;
+        const weldTo = weldVerticesTo(mesh, [source], target);
+        if (weldTo) {
+          expect(validateMesh(mesh).errors).toEqual([]);
+          expect(mesh.vCount).toBe(vT - 1);
+          const t = weldTo.ids[0]!;
+          expect([mesh.vPos[t * 3], mesh.vPos[t * 3 + 1], mesh.vPos[t * 3 + 2]]).toEqual(targetPos);
         }
       });
     }
@@ -91,7 +122,9 @@ describe("topology op invariants (randomized)", () => {
     const snap = JSON.stringify([...mesh.vPos]);
     const dirtyBefore = mesh.dirty;
     const tvBefore = mesh.topologyVersion;
-    expect(weldVertices(mesh, [0])).toBeNull();
+    expect(dissolveVertices(mesh, [0])).toBeNull();
+    expect(weldVerticesTo(mesh, [0], 0)).toBeNull(); // source === target
+    expect(weldVerticesTo(mesh, [0], 99999)).toBeNull(); // bad target
     expect(extrudeFaces(mesh, [], 0.1)).toBeNull();
     expect(insetFaces(mesh, [99999], 0.1)).toBeNull();
     expect(JSON.stringify([...mesh.vPos])).toBe(snap);
@@ -112,9 +145,7 @@ describe("topology op invariants (randomized)", () => {
     const steps = doc.history.stats.steps;
 
     doc.history.run(
-      new MeshTopologyCommand(create.nodeId, meshId, "Extrude", (m) =>
-        extrudeFaces(m, [0], 0.25),
-      ),
+      new MeshTopologyCommand(create.nodeId, meshId, "Extrude", (m) => extrudeFaces(m, [0], 0.25)),
     );
     expect(doc.history.stats.steps).toBe(steps + 1);
     expect(mesh.fCount).toBe(beforeF + 4); // cap replaces original + 4 walls

@@ -11,7 +11,10 @@ const boundaryEdges = (m: HEMesh): number => {
 
 describe("combined sphere primitive", () => {
   it("standard mode is unchanged (closed, Euler 2) and legacy params still build", () => {
-    const legacy = buildPrimitive({ type: "sphere", params: { radius: 1, segments: 16, rings: 8 } });
+    const legacy = buildPrimitive({
+      type: "sphere",
+      params: { radius: 1, segments: 16, rings: 8 },
+    });
     expect(boundaryEdges(legacy)).toBe(0);
     expect(legacy.vCount - legacy.edgeCount + legacy.fCount).toBe(2);
     expect(validateMesh(legacy).ok).toBe(true);
@@ -22,7 +25,10 @@ describe("combined sphere primitive", () => {
       type: "sphere",
       params: { radius: 1, icosa: true, segments: 32, rings: 16, subdivisions: 2 },
     });
-    const standalone = buildPrimitive({ type: "icosphere", params: { radius: 1, subdivisions: 2 } });
+    const standalone = buildPrimitive({
+      type: "icosphere",
+      params: { radius: 1, subdivisions: 2 },
+    });
     expect(combined.vCount).toBe(standalone.vCount);
     expect(combined.fCount).toBe(standalone.fCount);
     expect(validateMesh(combined).ok).toBe(true);
@@ -40,7 +46,8 @@ describe("combined sphere primitive", () => {
     expect(boundaryEdges(mesh)).toBe(n); // the open equator
     expect(mesh.vCount - mesh.edgeCount + mesh.fCount).toBe(1);
     // every vertex sits on or above the equator plane
-    for (let v = 0; v < mesh.vCount; v++) expect(mesh.vPos[v * 3 + 1]!).toBeGreaterThanOrEqual(-1e-6);
+    for (let v = 0; v < mesh.vCount; v++)
+      expect(mesh.vPos[v * 3 + 1]!).toBeGreaterThanOrEqual(-1e-6);
     expect(validateMesh(mesh).ok).toBe(true);
   });
 

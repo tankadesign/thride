@@ -1,13 +1,14 @@
+import { useAtomValue } from "jotai";
 import type { EditMode } from "@/types/core";
 import { ConvertToMeshCommand } from "@/geometry/commands/convert";
 import type { CommandRegistry } from "@/ui/commands/CommandRegistry";
 import { useDocument } from "@/ui/hooks/doc/document";
 import { useSelectionInfo } from "@/ui/hooks/doc/selection";
+import { weldArmedAtom } from "@/ui/hooks/editor/viewport";
 import {
   IconCube,
   IconCursor,
   IconCylinder,
-  IconDelete,
   IconEdge,
   IconExtrude,
   IconInset,
@@ -36,25 +37,23 @@ const QUICK_CREATE: { cmd: string; icon: React.ReactNode; title: string }[] = [
   { cmd: "create.plane", icon: <IconPlane />, title: "Plane" },
 ];
 
-/** Context tools per edit mode (the M1 context-sensitive toolbar). */
-const MODE_TOOLS: Partial<Record<EditMode, { cmd: string; icon: React.ReactNode; title: string }[]>> =
-  {
-    point: [
-      { cmd: "mesh.weld", icon: <IconWeld />, title: "Weld Points" },
-      { cmd: "edit.delete", icon: <IconDelete />, title: "Delete" },
-    ],
-    edge: [{ cmd: "edit.delete", icon: <IconDelete />, title: "Delete" }],
-    polygon: [
-      { cmd: "mesh.extrude", icon: <IconExtrude />, title: "Extrude (D)" },
-      { cmd: "mesh.inset", icon: <IconInset />, title: "Inset (I)" },
-      { cmd: "edit.delete", icon: <IconDelete />, title: "Delete" },
-    ],
-  };
+/** Context TOOLS per edit mode — the rail is reserved for tools, not actions.
+ * `toggle` marks stateful tools that stay armed (highlighted) until toggled. */
+const MODE_TOOLS: Partial<
+  Record<EditMode, { cmd: string; icon: React.ReactNode; title: string; toggle?: boolean }[]>
+> = {
+  point: [{ cmd: "mesh.weldTool", icon: <IconWeld />, title: "Weld Tool", toggle: true }],
+  polygon: [
+    { cmd: "mesh.extrude", icon: <IconExtrude />, title: "Extrude (D)" },
+    { cmd: "mesh.inset", icon: <IconInset />, title: "Inset (I)" },
+  ],
+};
 
 /** Left toolbar — context-sensitive by edit mode (per-mode tools land with D4b). */
 export function ToolRail({ registry }: { registry: CommandRegistry }) {
   const doc = useDocument();
   const { editMode } = useSelectionInfo();
+  const weldArmed = useAtomValue(weldArmedAtom);
 
   /** Entering a component mode on a primitive converts it first (Spline-style,
    * one undoable "Convert to Mesh" step) so components are editable at once. */
@@ -89,7 +88,9 @@ export function ToolRail({ registry }: { registry: CommandRegistry }) {
             <li key={t.cmd}>
               <button
                 type="button"
-                className="tooltip tooltip-right px-1.5"
+                className={`tooltip tooltip-right px-1.5 ${
+                  t.toggle && weldArmed ? "menu-active text-primary" : ""
+                }`}
                 data-tip={t.title}
                 onClick={() => registry.run(t.cmd)}
               >

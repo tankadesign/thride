@@ -34,6 +34,57 @@ Chain on a converted cube — every action exactly ONE undo step: `d` extruded t
 - Aborted ops (e.g. a weld that would go non-manifold) still record one inert history step when triggered — harmless (undo/redo skip it) but could be suppressed by pre-flighting the op.
 - Extrude walls/inset rings get placeholder UVs (0..1 quads).
 
+## Post-round: tools rework — modal extrude/inset + slide-to-target Weld tool
+
+User feedback: centroid weld → rename **Dissolve**; Weld becomes a C4D-style TOOL
+(drag a point along an edge, weld into the nearest point); extrude/inset become
+Blender-style modal tools; **the tool rail is reserved for tools, not actions**.
+
+- **Ops split** (`geometry/ops/weld.ts`): shared `mergeInto()` core;
+  `dissolveVertices` (collapse to centroid — the Mesh-menu "Dissolve" action) and
+  `weldVerticesTo(mesh, sources, target)` (merge INTO target keeping its exact
+  position — the Weld tool op). `OpResult` gained optional `lift` data
+  (`pos(v) = base + dir·min(amount, max)`) recorded by `extrudeFaces` (max=∞) and
+  `insetFaces` (max = 0.45·corner→centroid — the inversion clamp).
+- **`render/tools/AmountTool.ts`** — modal extrude/inset: activation applies the
+  topology once at amount 0, then mouse-Y drives the amount live through
+  positions-only updates (`setPosition` + preview `touchNode` — no per-frame
+  topology/BVH rebuild). LMB confirms: snapshot restored, then ONE
+  `MeshTopologyCommand` re-runs the op at the final amount (single deterministic
+  undo step, cap/inner selection installed). Esc/RMB cancels bit-exact with the
+  original selection re-stamped. Cursor is `move` while modal; the gizmo hides by
+  itself (mid-edit selection stamps are void — emergent, zero code).
+  Screen→world scale from the pane camera at the selection centroid.
+- **`render/tools/WeldTool.ts`** — armed via `weldArmedAtom` (exposed through the
+  `EditorViewportState` facade as `weldArmed`/`setWeldArmed`). Dragging a vertex
+  slides a GHOST billboard along the best incident edge (screen-space projection;
+  the real vertex never moves). Within **50px** (`WELD_RADIUS_PX`) of the edge's
+  far vertex: target lights up (success color) + connecting line appears;
+  release welds source INTO target via `weldVerticesTo` (one "Weld" step).
+  Release outside the radius = strict no-op. Esc cancels.
+- **Input routing** (`ViewportInput`): modal first (LMB confirm / RMB cancel with
+  contextmenu suppression / Esc), weld drag second (armed point-mode clicks skip
+  gizmo/handles; misses fall through to normal component selection), then the
+  existing chain. Esc priority: modal > weld drag > handles > gizmo.
+- **UI:** ToolRail is tools-only — point: Weld toggle (GitMergeIcon, primary
+  highlight when armed); polygon: Extrude (D) / Inset (I) — Delete buttons
+  removed (Delete key/menu still does actions). Mesh menu: Extrude, Inset,
+  Weld Tool (toggle), Dissolve. Icons: `IconWeld` → GitMergeIcon,
+  new `IconDissolve` = PathfinderMergeIcon.
+
+**Verified in-browser** (WebGPU, synthetic pointer/keyboard through real handlers):
+`d` on a selected cube face → modal (6→10 faces at amount 0, cursor `move`),
+90px pull, LMB → exactly one "Extrude" step (face pushed to z≈3.64), undo/redo
+exact; `i` → inset modal, 400px over-pull clamped precisely at ±0.275
+(0.45 rule), one "Inset" step; `d`+drag+**Esc** → bit-exact restore, 0 steps,
+selection re-stamped. Weld: armed via rail (button highlights), drag on a 510px
+screen edge — mid-edge: ghost only (not locked); ≤50px from target: target quad
++ success line visible; release → 16→15 verts, one "Weld" step, merged vert
+keeps the target's exact position; release outside radius → 0 steps, mesh
+untouched; undo restores. Property tests extended: `weldVerticesTo` (target
+position preserved, −1 vert, valid kernel), lift-data sanity for both ops,
+`dissolveVertices` rename. `tsc -b` clean; `vp test` 115/115.
+
 ## Next steps (exact, resumable cold)
 
 1. **D5 bevel** (edge/vert, fixed segments, overlap clamp) — same soup pipeline; add edge-dissolve alongside.

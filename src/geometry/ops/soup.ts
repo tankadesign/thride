@@ -6,6 +6,17 @@ import { HEMesh } from "@/geometry/kernel/HEMesh";
 export interface OpResult {
   mode: ComponentMode;
   ids: number[];
+  /**
+   * Interactive-adjust data for the modal tools (extrude/inset): the verts
+   * the amount drives, their base positions (amount 0), unit directions,
+   * and per-vert amount clamps. `pos(v) = base + dir * min(amount, max)`.
+   */
+  lift?: {
+    verts: number[];
+    base: Float32Array;
+    dir: Float32Array;
+    max: Float32Array;
+  };
 }
 
 /**

@@ -25,7 +25,9 @@ describe("meshPack (interim autosave mesh serialization)", () => {
   });
 
   it("throws on truncated data instead of building a broken mesh", () => {
-    const packed = packMesh(buildPrimitive({ type: "cube", params: { width: 1, height: 1, depth: 1 } }));
+    const packed = packMesh(
+      buildPrimitive({ type: "cube", params: { width: 1, height: 1, depth: 1 } }),
+    );
     packed.vPos = packed.vPos.slice(0, 8);
     expect(() => unpackMesh(packed)).toThrow();
   });

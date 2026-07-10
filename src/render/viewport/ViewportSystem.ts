@@ -20,6 +20,8 @@ import { PrimitiveHandles } from "@/render/handles/PrimitiveHandles";
 import { CameraRig } from "@/render/nav/CameraRig";
 import { ComponentOverlays } from "@/render/overlays/ComponentOverlays";
 import { SceneSynchronizer } from "@/render/scene-sync/SceneSynchronizer";
+import { type AmountKind, AmountTool } from "@/render/tools/AmountTool";
+import { WeldTool } from "@/render/tools/WeldTool";
 import { ViewportInput } from "./ViewportInput";
 
 export interface PaneRect {
@@ -78,6 +80,9 @@ export class ViewportSystem {
   readonly gizmo: TransformGizmo;
   readonly handles: PrimitiveHandles;
   readonly overlays: ComponentOverlays;
+  readonly weldTool: WeldTool;
+  /** Active Blender-style modal (extrude/inset amount drag), or null. */
+  modalTool: AmountTool | null = null;
   readonly raycaster = new Raycaster();
   private renderer: WebGPURenderer | null = null;
   private readonly scene = new Scene();
@@ -132,6 +137,8 @@ export class ViewportSystem {
     this.scene.add(this.handles.group);
     this.overlays = new ComponentOverlays(doc, this.sync);
     this.scene.add(this.overlays.group);
+    this.weldTool = new WeldTool(this);
+    this.scene.add(this.weldTool.group);
 
     this.unsubs.push(editor.subscribe(() => this.invalidate()));
     this.input = new ViewportInput(this);
@@ -203,6 +210,13 @@ export class ViewportSystem {
     // biome-ignore lint/suspicious/noExplicitAny: backend introspection
     const backend = (this.renderer as any)?.backend;
     return backend?.isWebGPUBackend ? "WebGPU" : this.renderer ? "WebGL2" : "…";
+  }
+
+  /** Start the extrude/inset modal on the current polygon selection. */
+  beginAmountTool(kind: AmountKind): void {
+    if (this.modalTool) return;
+    this.modalTool = AmountTool.begin(this, kind);
+    this.invalidate();
   }
 
   /** The Object3D of the active selected node (gizmo/handles anchor). */

@@ -56,6 +56,9 @@ export interface EditorViewportState {
   /** Gizmo axis orientation: object-local (default) or world-aligned. */
   readonly gizmoSpace: GizmoSpace;
   toggleGizmoSpace(): void;
+  /** Weld tool armed (point mode): vertex drags slide-weld instead of moving. */
+  readonly weldArmed: boolean;
+  setWeldArmed(on: boolean): void;
   /** Per-pane display settings (shading, shadows, grid…). */
   paneDisplay(pane: number): PaneDisplay;
   setPaneDisplay(pane: number, patch: Partial<PaneDisplay>): void;

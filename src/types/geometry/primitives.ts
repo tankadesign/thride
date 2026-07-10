@@ -158,8 +158,7 @@ const perTypeParamMeta: Partial<Record<PrimitiveType, Record<string, ParamMeta>>
 
 export function paramMeta(key: string, type?: PrimitiveType): ParamMeta {
   return (
-    (type ? perTypeParamMeta[type]?.[key] : undefined) ??
-    primitiveParamMeta[key] ?? { min: 0.001 }
+    (type ? perTypeParamMeta[type]?.[key] : undefined) ?? primitiveParamMeta[key] ?? { min: 0.001 }
   );
 }
 

@@ -14,6 +14,7 @@ import {
   EyeIcon,
   EyeClosedIcon,
   Folder01Icon,
+  GitMergeIcon,
   GridIcon,
   Idea01Icon,
   LayerMask01Icon,
@@ -96,9 +97,10 @@ export const IconPointLight = makeIcon(BulbIcon);
 export const IconSpotlight = makeIcon(SpotlightIcon);
 
 // mesh tools
+export const IconDissolve = makeIcon(PathfinderMergeIcon);
 export const IconExtrude = makeIcon(SquareArrowUp01Icon);
 export const IconInset = makeIcon(SquareArrowShrink01Icon);
-export const IconWeld = makeIcon(PathfinderMergeIcon);
+export const IconWeld = makeIcon(GitMergeIcon);
 
 // UI
 export const IconCollapse = makeIcon(MinusSignSquareIcon);
