@@ -179,8 +179,19 @@ export function bevelEdges(mesh: HEMesh, edgeIds: number[], width: number): OpRe
     }
   }
 
+  // pre-existing mesh boundaries (open meshes like a plane) must stay open —
+  // only the NEW vertex holes the bevel opened get capped
+  const keepOpen = new Set<number>();
+  const BIG = 1 << 26;
+  for (let h = 0; h < mesh.heCount; h++) {
+    if (mesh.heTwin[h] !== -1) continue;
+    const a = indexOfHE.get(h);
+    const b = indexOfHE.get(mesh.heNext[h]!);
+    if (a !== undefined && b !== undefined && a !== b) keepOpen.add(a * BIG + b);
+  }
+
   // --- fill vertex holes: any boundary loop left after strips + faces ------
-  if (!fillHoles(faces, faceUVs)) return null;
+  if (!fillHoles(faces, faceUVs, keepOpen)) return null;
 
   const soup = { positions, faces, faceUVs };
   if (!adoptSoup(mesh, soup)) return null;
@@ -202,7 +213,7 @@ export function bevelEdges(mesh: HEMesh, edgeIds: number[], width: number): OpRe
  * reversed loop as a face. Returns false if a hole can't be closed into a
  * simple loop (non-manifold junction → the whole op aborts).
  */
-function fillHoles(faces: number[][], faceUVs: number[][]): boolean {
+function fillHoles(faces: number[][], faceUVs: number[][], keepOpen: Set<number>): boolean {
   const BIG = 1 << 26;
   const key = (a: number, b: number) => a * BIG + b;
   const dirEdges = new Set<number>();
@@ -213,12 +224,13 @@ function fillHoles(faces: number[][], faceUVs: number[][]): boolean {
       dirEdges.add(key(a, b));
     }
   }
-  // boundary edge a→b : no opposite b→a
+  // boundary edge a→b : no opposite b→a, excluding pre-existing open boundaries
   const boundary = new Map<number, number>(); // a → b
   for (const loop of faces) {
     for (let i = 0; i < loop.length; i++) {
       const a = loop[i]!;
       const b = loop[(i + 1) % loop.length]!;
+      if (keepOpen.has(key(a, b))) continue; // original mesh boundary — leave open
       if (!dirEdges.has(key(b, a))) {
         if (boundary.has(a)) return false; // fan-out: not a simple boundary
         boundary.set(a, b);

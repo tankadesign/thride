@@ -3,6 +3,7 @@ import type { PrimitiveDescriptor } from "@/types/geometry/primitives";
 import { Document } from "@/core/document/Document";
 import { CreateNodeCommand } from "@/core/history/commands/scene";
 import { uuidv7 } from "@/core/ids/uuid";
+import { HEMesh } from "@/geometry/kernel/HEMesh";
 import { validateMesh } from "@/geometry/kernel/validate";
 import { buildPrimitive } from "@/geometry/primitives";
 import { meshRegistry } from "@/geometry/store/meshRegistry";
@@ -168,6 +169,39 @@ describe("topology op invariants (randomized)", () => {
     expect(JSON.stringify([...mesh.vPos])).toBe(snap);
     expect(mesh.dirty).toBe(dirtyBefore);
     expect(mesh.topologyVersion).toBe(tvBefore);
+  });
+
+  it("edge bevel on an OPEN mesh keeps the outer boundary open (no giant cap)", () => {
+    // 3×3 grid plane: an open mesh with a 12-edge outer boundary
+    const idx = (r: number, c: number) => r * 4 + c;
+    const positions: number[] = [];
+    for (let r = 0; r < 4; r++) for (let c = 0; c < 4; c++) positions.push(c, 0, r);
+    const gridFaces: number[][] = [];
+    const gridUVs: number[][] = [];
+    for (let r = 0; r < 3; r++)
+      for (let c = 0; c < 3; c++) {
+        gridFaces.push([idx(r, c), idx(r, c + 1), idx(r + 1, c + 1), idx(r + 1, c)]);
+        gridUVs.push([0, 0, 1, 0, 1, 1, 0, 1]);
+      }
+    const mesh = HEMesh.fromPolygons({ positions, faces: gridFaces, faceUVs: gridUVs });
+    // the four edges around the center face (all interior) — a clean loop
+    const want = [
+      [5, 6],
+      [6, 10],
+      [10, 9],
+      [9, 5],
+    ];
+    const inner = uniqueEdges(mesh).filter((h) => {
+      const a = mesh.heVert[h]!;
+      const b = mesh.heVert[mesh.heNext[h]!]!;
+      return want.some((w) => (w[0] === a && w[1] === b) || (w[0] === b && w[1] === a));
+    });
+    const before = validateMesh(mesh).boundaryEdges;
+    const res = bevelEdges(mesh, inner, 0.15);
+    expect(res).not.toBeNull();
+    const v = validateMesh(mesh);
+    expect(v.errors).toEqual([]);
+    expect(v.boundaryEdges).toBe(before); // outer boundary untouched, not capped
   });
 
   it("MeshTopologyCommand: ONE step, undo restores arrays exactly, redo re-runs", () => {
