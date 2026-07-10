@@ -213,6 +213,54 @@ describe("topology op invariants (randomized)", () => {
     expect(v.boundaryEdges).toBe(before); // outer boundary untouched, not capped
   });
 
+  it("edge bevel auto-miters split corners on a shared non-beveled edge", () => {
+    // a distorted (non-orthogonal) cube: corner at vertex 6 is asymmetric, so
+    // beveling 11 of its 12 edges leaves ONE non-beveled edge whose two faces
+    // recede by DIFFERENT depths → without a miter that edge splits into two
+    // near-duplicate points; the Sharp miter must weld them into one.
+    const P = [
+      [-1, -1, -1],
+      [1, -1, -1],
+      [1, 1, -1],
+      [-1, 1, -1],
+      [-1, -1, 1],
+      [1, -1, 1],
+      [2.4, 2, 1.7],
+      [-1, 1, 1],
+    ];
+    const cubeFaces = [
+      [0, 3, 2, 1],
+      [4, 5, 6, 7],
+      [0, 1, 5, 4],
+      [2, 3, 7, 6],
+      [1, 2, 6, 5],
+      [0, 4, 7, 3],
+    ];
+    const mesh = HEMesh.fromPolygons({
+      positions: P.flat(),
+      faces: cubeFaces.map((f) => [...f]),
+      faceUVs: cubeFaces.map(() => [0, 0, 1, 0, 1, 1, 0, 1]),
+    });
+    const edges = uniqueEdges(mesh);
+    const sel = edges.filter((_, i) => i !== 1); // bevel 11 of 12
+    const res = bevelEdges(mesh, sel, { width: 0.2, miter: "sharp" });
+    expect(res).not.toBeNull();
+    expect(validateMesh(mesh).errors).toEqual([]);
+    // no two distinct output vertices sit almost on top of each other — a split
+    // miter would leave such a near-duplicate pair
+    let minPair = Number.POSITIVE_INFINITY;
+    for (let i = 0; i < mesh.vCount; i++)
+      for (let j = i + 1; j < mesh.vCount; j++) {
+        const d = Math.hypot(
+          mesh.vPos[i * 3]! - mesh.vPos[j * 3]!,
+          mesh.vPos[i * 3 + 1]! - mesh.vPos[j * 3 + 1]!,
+          mesh.vPos[i * 3 + 2]! - mesh.vPos[j * 3 + 2]!,
+        );
+        minPair = Math.min(minPair, d);
+      }
+    expect(minPair).toBeGreaterThan(0.03);
+  });
+
   it("MeshTopologyCommand: ONE step, undo restores arrays exactly, redo re-runs", () => {
     const doc = new Document();
     const create = new CreateNodeCommand("mesh", "Cube");

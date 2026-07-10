@@ -27,6 +27,7 @@ const slerp = (a: Vec3, b: Vec3, t: number): Vec3 => {
 };
 
 export type BevelMode = "chamfer" | "straight";
+export type BevelMiter = "sharp" | "patch" | "arc";
 
 export interface BevelEdgeOpts {
   width: number;
@@ -40,6 +41,12 @@ export interface BevelEdgeOpts {
   segments?: number;
   /** chamfer replaces the selected edge; straight keeps it. Default chamfer. */
   mode?: BevelMode;
+  /**
+   * How the corners where a bevel terminates against a non-selected edge are
+   * joined: `sharp` welds the split points to one (default), `patch` fills a
+   * flat facet, `arc` rounds it.
+   */
+  miter?: BevelMiter;
 }
 
 /**
@@ -155,6 +162,87 @@ export function bevelEdges(mesh: HEMesh, edgeIds: number[], opts: BevelEdgeOpts)
         Pv[1] + px * u[1] + py * vv[1],
         Pv[2] + px * u[2] + py * vv[2],
       ]);
+    }
+  }
+
+  // --- miter: reconcile the corner points a bevel leaves on a shared
+  // NON-beveled edge. Where two selected edges meet at a vertex, the diagonal
+  // between their faces receives a receded corner from EACH face at a
+  // different depth (they coincide only on symmetric solids), splitting the
+  // edge into two points. Union those split corners and collapse them to a
+  // single miter point. Mutating cornerPos is enough — the weld below then
+  // coalesces the now-equal positions into one soup vertex, so strips, ring
+  // endpoints, straight bridges and fillHoles all see the joined corner.
+  {
+    const mEps = Math.max(1e-6, 1e-4 * (Number.isFinite(clamp) ? clamp : 1));
+    const parent = new Map<number, number>();
+    const find = (x: number): number => {
+      if (!parent.has(x)) parent.set(x, x);
+      let r = x;
+      while (parent.get(r) !== r) r = parent.get(r)!;
+      while (parent.get(x) !== r) {
+        const p = parent.get(x)!;
+        parent.set(x, r);
+        x = p;
+      }
+      return r;
+    };
+    const union = (a: number, b: number) => parent.set(find(a), find(b));
+    const receded = (h: number): boolean => {
+      const p = cornerPos.get(h);
+      if (!p) return false;
+      const d = sub(p, pos(cornerBase.get(h)!));
+      return Math.hypot(d[0], d[1], d[2]) > mEps;
+    };
+    // union the two corners of every non-beveled interior edge whose BOTH ends
+    // receded (the "2 points on one edge" case the user hits)
+    for (let h = 0; h < mesh.heCount; h++) {
+      const tw = mesh.heTwin[h]!;
+      if (tw === -1 || h > tw || selected(h)) continue; // once, interior, non-beveled
+      const vHE = h; // F1 corner at V (h starts at V)
+      const vHE2 = mesh.heNext[tw]!; // F2 corner at V
+      const wHE = mesh.heNext[h]!; // F1 corner at W
+      const wHE2 = tw; // F2 corner at W
+      if (receded(vHE) && receded(vHE2)) union(vHE, vHE2);
+      if (receded(wHE) && receded(wHE2)) union(wHE, wHE2);
+    }
+    // two-phase: snapshot classes, then collapse each to its miter point
+    const classes = new Map<number, number[]>();
+    for (const h of cornerPos.keys()) {
+      if (!parent.has(h)) continue;
+      const r = find(h);
+      const list = classes.get(r);
+      if (list) list.push(h);
+      else classes.set(r, [h]);
+    }
+    for (const [, members] of classes) {
+      if (members.length < 2) continue;
+      const P = pos(cornerBase.get(members[0]!)!);
+      // collinear about the shared base vertex → midpoint; a mixed junction
+      // (chained across edges on different lines) → snap to the vertex
+      let ref: Vec3 | null = null;
+      let collinear = true;
+      for (const h of members) {
+        const d = sub(cornerPos.get(h)!, P);
+        if (Math.hypot(d[0], d[1], d[2]) < mEps) continue;
+        const u = norm(d);
+        if (!ref) ref = u;
+        else if (Math.abs(Math.abs(dot(ref, u)) - 1) > 1e-4) {
+          collinear = false;
+          break;
+        }
+      }
+      let m: Vec3 = [0, 0, 0];
+      if (collinear) {
+        for (const h of members) {
+          const p = cornerPos.get(h)!;
+          m = [m[0] + p[0], m[1] + p[1], m[2] + p[2]];
+        }
+        m = [m[0] / members.length, m[1] / members.length, m[2] / members.length];
+      } else {
+        m = P;
+      }
+      for (const h of members) cornerPos.set(h, m);
     }
   }
 
