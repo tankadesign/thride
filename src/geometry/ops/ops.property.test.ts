@@ -1,0 +1,134 @@
+import { describe, expect, it } from "vite-plus/test";
+import type { PrimitiveDescriptor } from "@/types/geometry/primitives";
+import { Document } from "@/core/document/Document";
+import { CreateNodeCommand } from "@/core/history/commands/scene";
+import { uuidv7 } from "@/core/ids/uuid";
+import { validateMesh } from "@/geometry/kernel/validate";
+import { buildPrimitive } from "@/geometry/primitives";
+import { meshRegistry } from "@/geometry/store/meshRegistry";
+import { MeshTopologyCommand } from "@/geometry/commands/topology";
+import { deleteFaces, extrudeFaces, insetFaces } from "./faceOps";
+import { weldVertices } from "./weld";
+
+/** Deterministic LCG so failures reproduce. */
+const rng = (seed: number) => {
+  let s = seed >>> 0;
+  return () => ((s = (s * 1664525 + 1013904223) >>> 0), s / 0xffffffff);
+};
+
+const FIXTURES: PrimitiveDescriptor[] = [
+  { type: "cube", params: { width: 2, height: 2, depth: 2 } },
+  { type: "sphere", params: { radius: 1, segments: 8, rings: 5 } },
+  { type: "disc", params: { radius: 1, segments: 8, rings: 2 } },
+  { type: "cylinder", params: { radiusTop: 1, radiusBottom: 1, height: 2, segments: 6, capped: true } },
+];
+
+const pickSubset = (count: number, max: number, rand: () => number): number[] => {
+  const picked = new Set<number>();
+  while (picked.size < count) picked.add(Math.floor(rand() * max));
+  return [...picked];
+};
+
+describe("topology op invariants (randomized)", () => {
+  for (const desc of FIXTURES) {
+    for (let seed = 1; seed <= 4; seed++) {
+      it(`${desc.type} seed ${seed}: extrude/inset/delete/weld keep the kernel valid`, () => {
+        const rand = rng(seed * 7919);
+
+        // extrude a random region
+        let mesh = buildPrimitive(desc);
+        const before = validateMesh(mesh);
+        const faces = pickSubset(1 + Math.floor(rand() * 3), mesh.fCount, rand);
+        const fBefore = mesh.fCount;
+        const ext = extrudeFaces(mesh, faces, 0.15);
+        expect(ext).not.toBeNull();
+        const vExt = validateMesh(mesh);
+        expect(vExt.errors).toEqual([]);
+        // caps replace originals; walls add one face per region-boundary edge
+        expect(mesh.fCount).toBeGreaterThan(fBefore);
+        expect(vExt.boundaryEdges).toBe(before.boundaryEdges); // openness unchanged
+        for (const id of ext!.ids) expect(id).toBeLessThan(mesh.fCount);
+
+        // inset random faces on a fresh mesh
+        mesh = buildPrimitive(desc);
+        const insetIds = pickSubset(1 + Math.floor(rand() * 3), mesh.fCount, rand);
+        const sumLoop = insetIds.reduce((acc, f) => acc + mesh.faceSize(f), 0);
+        const f0 = mesh.fCount;
+        const v0 = mesh.vCount;
+        const ins = insetFaces(mesh, insetIds, 0.1);
+        expect(ins).not.toBeNull();
+        expect(validateMesh(mesh).errors).toEqual([]);
+        expect(mesh.fCount).toBe(f0 + sumLoop); // one ring quad per corner
+        expect(mesh.vCount).toBe(v0 + sumLoop);
+
+        // delete random faces on a fresh mesh: no orphaned vertices remain
+        mesh = buildPrimitive(desc);
+        const delIds = pickSubset(1 + Math.floor(rand() * 2), mesh.fCount, rand);
+        const del = deleteFaces(mesh, delIds);
+        expect(del).not.toBeNull();
+        const vDel = validateMesh(mesh);
+        expect(vDel.errors).toEqual([]);
+        const used = new Set<number>();
+        for (let f = 0; f < mesh.fCount; f++) for (const v of mesh.faceVertices(f)) used.add(v);
+        expect(used.size).toBe(mesh.vCount);
+
+        // weld two vertices of one face (guaranteed-adjacent-ish selection)
+        mesh = buildPrimitive(desc);
+        const loop = mesh.faceVertices(Math.floor(rand() * mesh.fCount));
+        const vW = mesh.vCount;
+        const weld = weldVertices(mesh, [loop[0]!, loop[1]!]);
+        if (weld) {
+          expect(validateMesh(mesh).errors).toEqual([]);
+          expect(mesh.vCount).toBeLessThan(vW);
+          expect(weld.ids[0]).toBeLessThan(mesh.vCount);
+        }
+      });
+    }
+  }
+
+  it("aborted ops leave the mesh untouched (weld below 2 verts, empty sets)", () => {
+    const mesh = buildPrimitive(FIXTURES[0]!);
+    const snap = JSON.stringify([...mesh.vPos]);
+    const dirtyBefore = mesh.dirty;
+    const tvBefore = mesh.topologyVersion;
+    expect(weldVertices(mesh, [0])).toBeNull();
+    expect(extrudeFaces(mesh, [], 0.1)).toBeNull();
+    expect(insetFaces(mesh, [99999], 0.1)).toBeNull();
+    expect(JSON.stringify([...mesh.vPos])).toBe(snap);
+    expect(mesh.dirty).toBe(dirtyBefore);
+    expect(mesh.topologyVersion).toBe(tvBefore);
+  });
+
+  it("MeshTopologyCommand: ONE step, undo restores arrays exactly, redo re-runs", () => {
+    const doc = new Document();
+    const create = new CreateNodeCommand("mesh", "Cube");
+    doc.history.run(create);
+    const meshId = uuidv7();
+    const mesh = buildPrimitive(FIXTURES[0]!);
+    meshRegistry.register(meshId, mesh);
+    doc.setNodeData(create.nodeId, { mesh: { id: meshId } });
+    const beforePos = [...mesh.vPos];
+    const beforeF = mesh.fCount;
+    const steps = doc.history.stats.steps;
+
+    doc.history.run(
+      new MeshTopologyCommand(create.nodeId, meshId, "Extrude", (m) =>
+        extrudeFaces(m, [0], 0.25),
+      ),
+    );
+    expect(doc.history.stats.steps).toBe(steps + 1);
+    expect(mesh.fCount).toBe(beforeF + 4); // cap replaces original + 4 walls
+    const sel = doc.selection.componentsFor(create.nodeId, "polygon");
+    expect(sel?.bits.count).toBe(1); // the cap stays selected
+    expect(sel?.topologyVersion).toBe(mesh.topologyVersion);
+
+    doc.history.undo();
+    expect(mesh.fCount).toBe(beforeF);
+    expect([...mesh.vPos]).toEqual(beforePos);
+    expect(validateMesh(mesh).ok).toBe(true);
+
+    doc.history.redo();
+    expect(mesh.fCount).toBe(beforeF + 4);
+    expect(validateMesh(mesh).ok).toBe(true);
+  });
+});

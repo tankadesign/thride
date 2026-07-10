@@ -3,7 +3,7 @@ import { shortcutLabel } from "@/ui/commands/CommandRegistry";
 import { useHistoryInfo } from "@/ui/hooks/doc/history";
 import { useSelectionInfo } from "@/ui/hooks/doc/selection";
 
-const MENUS: MenuId[] = ["File", "Edit", "Create", "View", "Help"];
+const MENUS: MenuId[] = ["File", "Edit", "Create", "Mesh", "View", "Help"];
 
 function MenuItem({ cmd }: { cmd: AppCommand }) {
   const enabled = cmd.enabled?.() ?? true;

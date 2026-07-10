@@ -55,6 +55,32 @@ export function vertsForSelection(mesh: HEMesh, mode: ComponentMode, bits: Bitse
   return [...verts];
 }
 
+/** Distinct face indices touched by a component selection (delete targets). */
+export function facesForSelection(mesh: HEMesh, mode: ComponentMode, bits: Bitset): number[] {
+  const faces = new Set<number>();
+  if (mode === "polygon") {
+    bits.forEach((f) => {
+      if (f < mesh.fCount) faces.add(f);
+    });
+  } else if (mode === "edge") {
+    bits.forEach((h) => {
+      if (h >= mesh.heCount) return;
+      faces.add(mesh.heFace[h]!);
+      const t = mesh.heTwin[h]!;
+      if (t !== -1) faces.add(mesh.heFace[t]!);
+    });
+  } else {
+    const verts = new Set<number>();
+    bits.forEach((v) => {
+      if (v < mesh.vCount) verts.add(v);
+    });
+    for (let f = 0; f < mesh.fCount; f++) {
+      if (mesh.faceVertices(f).some((v) => verts.has(v))) faces.add(f);
+    }
+  }
+  return [...faces];
+}
+
 /** Axis-aligned bounding-box extents (w/h/d) of a vertex set, mesh-local. */
 export function vertexExtents(mesh: HEMesh, verts: readonly number[]): [number, number, number] {
   if (verts.length === 0) return [0, 0, 0];

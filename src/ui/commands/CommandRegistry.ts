@@ -1,4 +1,4 @@
-export type MenuId = "File" | "Edit" | "Create" | "View" | "Help";
+export type MenuId = "File" | "Edit" | "Create" | "Mesh" | "View" | "Help";
 
 export interface AppCommand {
   id: string;

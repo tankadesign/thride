@@ -6,6 +6,12 @@ import {
   ReparentNodeCommand,
 } from "@/core/history/commands/scene";
 import { ConvertToMeshCommand } from "@/geometry/commands/convert";
+import { MeshTopologyCommand } from "@/geometry/commands/topology";
+import type { HEMesh } from "@/geometry/kernel/HEMesh";
+import { facesForSelection } from "@/geometry/kernel/components";
+import { deleteFaces, extrudeFaces, insetFaces } from "@/geometry/ops/faceOps";
+import { weldVertices } from "@/geometry/ops/weld";
+import { meshRegistry } from "@/geometry/store/meshRegistry";
 import type { PrimitiveType } from "@/types/geometry/primitives";
 import { defaultPrimitive, primitiveLabels } from "@/types/geometry/primitives";
 import { defaultLightData, LIGHT_LABELS, type LightType } from "@/types/core/light";
@@ -14,7 +20,7 @@ import { createProject } from "@/ui/hooks/doc/projects";
 import { openPalette } from "@/ui/hooks/editor/shell";
 import { editorState } from "@/ui/hooks/editor/viewport";
 import type { ViewportSystem } from "@/render/viewport/ViewportSystem";
-import type { Uuid } from "@/types/core";
+import type { ComponentMode, Uuid } from "@/types/core";
 import {
   IconAmbientLight,
   IconAreaLight,
@@ -24,8 +30,10 @@ import {
   IconCylinder,
   IconDirectionalLight,
   IconDisc,
+  IconExtrude,
   IconHemisphereLight,
   IconIcosphere,
+  IconInset,
   IconNull,
   IconPlane,
   IconPointLight,
@@ -34,6 +42,7 @@ import {
   IconSpotlight,
   IconTorus,
   IconCapsule,
+  IconWeld,
 } from "@/icons";
 
 const PRIMITIVE_ICONS: Partial<Record<PrimitiveType, React.ReactNode>> = {
@@ -125,6 +134,30 @@ export function buildCommands(doc: Document, shell: ShellApi): AppCommand[] {
         ),
     );
 
+  /** Active editable mesh + its live component selection for `mode` (topology ops). */
+  const componentTarget = (mode: ComponentMode) => {
+    const active = doc.selection.active;
+    if (!active || !doc.scene.has(active)) return null;
+    const meshRef = doc.scene.mustGet(active).data?.mesh as { id: Uuid } | undefined;
+    const mesh = meshRef ? meshRegistry.get(meshRef.id) : undefined;
+    if (!meshRef || !mesh) return null;
+    const sel = doc.selection.componentsFor(active, mode);
+    if (!sel || sel.topologyVersion !== mesh.topologyVersion || sel.bits.count === 0) return null;
+    return { nodeId: active, meshId: meshRef.id, mesh, ids: sel.bits.toArray() };
+  };
+
+  const runTopologyOp = (
+    mode: ComponentMode,
+    label: string,
+    op: (mesh: HEMesh, ids: number[]) => ReturnType<typeof extrudeFaces>,
+  ) => {
+    const target = componentTarget(mode);
+    if (!target) return;
+    doc.history.run(
+      new MeshTopologyCommand(target.nodeId, target.meshId, label, (m) => op(m, target.ids)),
+    );
+  };
+
   return [
     // ---- File ----
     {
@@ -160,8 +193,28 @@ export function buildCommands(doc: Document, shell: ShellApi): AppCommand[] {
       menu: "Edit",
       sep: true,
       shortcut: "delete",
-      enabled: () => doc.selection.objectIds.length > 0,
+      enabled: () => {
+        const mode = doc.selection.editMode;
+        if (mode === "point" || mode === "edge" || mode === "polygon") {
+          return componentTarget(mode) !== null;
+        }
+        return doc.selection.objectIds.length > 0;
+      },
       run: () => {
+        // component modes delete the touched faces; object mode deletes nodes
+        const mode = doc.selection.editMode;
+        if (mode === "point" || mode === "edge" || mode === "polygon") {
+          const target = componentTarget(mode);
+          if (!target) return;
+          const sel = doc.selection.componentsFor(target.nodeId, mode)!;
+          const faces = facesForSelection(target.mesh, mode, sel.bits);
+          doc.history.run(
+            new MeshTopologyCommand(target.nodeId, target.meshId, "Delete Components", (m) =>
+              deleteFaces(m, faces),
+            ),
+          );
+          return;
+        }
         const ids = topmostSelection();
         if (ids.length === 0) return;
         doc.history.transact("Delete", () => {
@@ -253,6 +306,36 @@ export function buildCommands(doc: Document, shell: ShellApi): AppCommand[] {
         doc.history.run(cmd);
         doc.selection.selectObjects([cmd.nodeId]);
       },
+    },
+
+    // ---- Mesh (component topology ops) ----
+    {
+      id: "mesh.extrude",
+      title: "Extrude",
+      menu: "Mesh",
+      icon: <IconExtrude size={16} />,
+      shortcut: "d",
+      enabled: () => doc.selection.editMode === "polygon" && componentTarget("polygon") !== null,
+      run: () => runTopologyOp("polygon", "Extrude", (m, ids) => extrudeFaces(m, ids, 0.1)),
+    },
+    {
+      id: "mesh.inset",
+      title: "Inset",
+      menu: "Mesh",
+      icon: <IconInset size={16} />,
+      shortcut: "i",
+      enabled: () => doc.selection.editMode === "polygon" && componentTarget("polygon") !== null,
+      run: () => runTopologyOp("polygon", "Inset", (m, ids) => insetFaces(m, ids, 0.1)),
+    },
+    {
+      id: "mesh.weld",
+      title: "Weld Points",
+      menu: "Mesh",
+      icon: <IconWeld size={16} />,
+      enabled: () =>
+        doc.selection.editMode === "point" &&
+        (componentTarget("point")?.ids.length ?? 0) >= 2,
+      run: () => runTopologyOp("point", "Weld", (m, ids) => weldVertices(m, ids)),
     },
 
     // ---- View ----

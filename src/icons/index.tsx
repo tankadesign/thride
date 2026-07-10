@@ -22,6 +22,7 @@ import {
   MatrixIcon,
   MinusSignSquareIcon,
   PaintBoardIcon,
+  PathfinderMergeIcon,
   PentagonIcon,
   PillIcon,
   PlusSignSquareIcon,
@@ -31,6 +32,8 @@ import {
   SphereIcon,
   SplinePointerIcon,
   SpotlightIcon,
+  SquareArrowShrink01Icon,
+  SquareArrowUp01Icon,
   SquareIcon,
   SunCloud02Icon,
   SunsetIcon,
@@ -91,6 +94,11 @@ export const IconDirectionalLight = makeIcon(SunsetIcon);
 export const IconHemisphereLight = makeIcon(LayerMask01Icon);
 export const IconPointLight = makeIcon(BulbIcon);
 export const IconSpotlight = makeIcon(SpotlightIcon);
+
+// mesh tools
+export const IconExtrude = makeIcon(SquareArrowUp01Icon);
+export const IconInset = makeIcon(SquareArrowShrink01Icon);
+export const IconWeld = makeIcon(PathfinderMergeIcon);
 
 // UI
 export const IconCollapse = makeIcon(MinusSignSquareIcon);
