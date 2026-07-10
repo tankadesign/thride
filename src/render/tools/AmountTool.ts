@@ -1,22 +1,37 @@
 import { MathUtils, type OrthographicCamera, type PerspectiveCamera, Vector3 } from "three";
-import type { Uuid } from "@/types/core";
+import type { ComponentMode, Uuid } from "@/types/core";
 import type { Document } from "@/core";
 import { Bitset } from "@/core/selection/Bitset";
 import { MeshTopologyCommand } from "@/geometry/commands/topology";
 import type { HEMesh, HEMeshSnapshot } from "@/geometry/kernel/HEMesh";
+import { vertsForSelection } from "@/geometry/kernel/components";
+import { bevelVertices } from "@/geometry/ops/bevel";
 import { extrudeFaces, insetFaces } from "@/geometry/ops/faceOps";
 import type { OpResult } from "@/geometry/ops/soup";
 import { meshRegistry } from "@/geometry/store/meshRegistry";
 import type { ViewportSystem } from "@/render/viewport/ViewportSystem";
 
-export type AmountKind = "extrude" | "inset";
+export type AmountKind = "extrude" | "inset" | "bevel";
 
-const LABEL: Record<AmountKind, string> = { extrude: "Extrude", inset: "Inset" };
+const LABEL: Record<AmountKind, string> = { extrude: "Extrude", inset: "Inset", bevel: "Bevel" };
+/** Which component selection each modal reads/writes. */
+const AMOUNT_MODE: Record<AmountKind, ComponentMode> = {
+  extrude: "polygon",
+  inset: "polygon",
+  bevel: "point",
+};
+const AMOUNT_OP: Record<AmountKind, (m: HEMesh, ids: number[], amount: number) => OpResult | null> =
+  {
+    extrude: extrudeFaces,
+    inset: insetFaces,
+    bevel: bevelVertices,
+  };
 
 /**
- * Blender-style modal for extrude/inset: activating the tool applies the
- * topology at amount 0, then vertical mouse motion drives the amount live
- * (positions-only updates — cheap). Left click confirms as ONE undo step
+ * Blender-style modal for extrude/inset (polygon selection) and bevel (point
+ * selection): activating the tool applies the topology at amount 0, then
+ * vertical mouse motion drives the amount live (positions-only updates —
+ * cheap). Left click confirms as ONE undo step
  * (snapshot restored, then the op re-runs at the final amount through
  * MeshTopologyCommand); Escape/right-click cancels with zero trace. The
  * gizmo hides by itself while modal (selection stamps are void mid-edit)
@@ -28,7 +43,9 @@ export class AmountTool {
   private readonly doc: Document;
   private readonly nodeId: Uuid;
   private readonly meshId: Uuid;
-  private readonly faceIds: number[];
+  /** Source component selection (faces for extrude/inset, verts for bevel). */
+  private readonly srcIds: number[];
+  private readonly srcMode: ComponentMode;
   private readonly before: HEMeshSnapshot;
   private readonly lift: NonNullable<OpResult["lift"]>;
   private readonly worldPerPixel: number;
@@ -40,7 +57,7 @@ export class AmountTool {
     kind: AmountKind,
     nodeId: Uuid,
     meshId: Uuid,
-    faceIds: number[],
+    srcIds: number[],
     before: HEMeshSnapshot,
     lift: NonNullable<OpResult["lift"]>,
     worldPerPixel: number,
@@ -50,35 +67,35 @@ export class AmountTool {
     this.kind = kind;
     this.nodeId = nodeId;
     this.meshId = meshId;
-    this.faceIds = faceIds;
+    this.srcIds = srcIds;
+    this.srcMode = AMOUNT_MODE[kind];
     this.before = before;
     this.lift = lift;
     this.worldPerPixel = worldPerPixel;
   }
 
-  /** Start the modal on the active polygon selection; null when not applicable. */
+  /** Start the modal on the active selection for this kind's mode; null if N/A. */
   static begin(vs: ViewportSystem, kind: AmountKind): AmountTool | null {
     const doc = vs.doc;
+    const mode = AMOUNT_MODE[kind];
     const active = doc.selection.active;
     if (!active || !doc.scene.has(active)) return null;
     const meshRef = doc.scene.mustGet(active).data?.mesh as { id: Uuid } | undefined;
     const mesh = meshRef ? meshRegistry.get(meshRef.id) : undefined;
     if (!meshRef || !mesh) return null;
-    const sel = doc.selection.componentsFor(active, "polygon");
+    const sel = doc.selection.componentsFor(active, mode);
     if (!sel || sel.topologyVersion !== mesh.topologyVersion || sel.bits.count === 0) return null;
-    const faceIds = sel.bits.toArray();
+    const srcIds = sel.bits.toArray();
 
     // screen→world scale at the selection centroid, through the active pane
     const rig = vs.rigFor(vs.editor.activePane);
     const paneH = Math.max(1, vs.paneRect(vs.editor.activePane).h);
+    const cverts = vertsForSelection(mesh, mode, sel.bits);
     const centroid = new Vector3();
-    for (const f of faceIds) {
-      const verts = mesh.faceVertices(f);
-      for (const v of verts) {
-        centroid.x += mesh.vPos[v * 3]! / (faceIds.length * verts.length);
-        centroid.y += mesh.vPos[v * 3 + 1]! / (faceIds.length * verts.length);
-        centroid.z += mesh.vPos[v * 3 + 2]! / (faceIds.length * verts.length);
-      }
+    for (const v of cverts) {
+      centroid.x += mesh.vPos[v * 3]! / cverts.length;
+      centroid.y += mesh.vPos[v * 3 + 1]! / cverts.length;
+      centroid.z += mesh.vPos[v * 3 + 2]! / cverts.length;
     }
     const obj = vs.sync.object(active);
     if (obj) centroid.applyMatrix4(obj.matrixWorld);
@@ -90,10 +107,9 @@ export class AmountTool {
       : (ortho.top - ortho.bottom) / paneH;
 
     const before = mesh.snapshot();
-    const op = kind === "extrude" ? extrudeFaces : insetFaces;
-    const result = op(mesh, faceIds, 0);
+    const result = AMOUNT_OP[kind](mesh, srcIds, 0);
     if (!result?.lift) return null; // op refused — nothing installed
-    // show the freshly created cap/inner faces selected while the modal runs
+    // show the freshly created components selected while the modal runs
     // (positions stream without touching topology, so this stamp stays valid)
     const bits = new Bitset();
     for (const id of result.ids) bits.add(id);
@@ -105,23 +121,15 @@ export class AmountTool {
     });
     doc.touchNode(active);
     vs.canvas.style.cursor = "move";
-    return new AmountTool(
-      vs,
-      kind,
-      active,
-      meshRef.id,
-      faceIds,
-      before,
-      result.lift,
-      worldPerPixel,
-    );
+    return new AmountTool(vs, kind, active, meshRef.id, srcIds, before, result.lift, worldPerPixel);
   }
 
   /** Vertical mouse motion → amount (up = grow). */
   onPointerMove(clientY: number): void {
     this.startY ??= clientY;
     let amount = (this.startY - clientY) * this.worldPerPixel;
-    if (this.kind === "inset") amount = Math.max(0, amount);
+    // inset and bevel only grow inward (never negative); extrude is signed
+    if (this.kind === "inset" || this.kind === "bevel") amount = Math.max(0, amount);
     this.amount = amount;
     const mesh = meshRegistry.get(this.meshId);
     if (!mesh) return;
@@ -145,10 +153,10 @@ export class AmountTool {
     this.exit();
     if (!mesh) return;
     mesh.restore(this.before);
-    const op = this.kind === "extrude" ? extrudeFaces : insetFaces;
+    const op = AMOUNT_OP[this.kind];
     this.doc.history.run(
       new MeshTopologyCommand(this.nodeId, this.meshId, LABEL[this.kind], (m: HEMesh) =>
-        op(m, this.faceIds, finalAmount),
+        op(m, this.srcIds, finalAmount),
       ),
     );
   }
@@ -161,11 +169,11 @@ export class AmountTool {
     mesh.restore(this.before);
     this.doc.touchNode(this.nodeId);
     const bits = new Bitset();
-    for (const f of this.faceIds) bits.add(f);
+    for (const id of this.srcIds) bits.add(id);
     this.doc.selection.setComponents(this.nodeId, {
-      mode: "polygon",
+      mode: this.srcMode,
       bits,
-      order: [...this.faceIds],
+      order: [...this.srcIds],
       topologyVersion: mesh.topologyVersion,
     });
   }

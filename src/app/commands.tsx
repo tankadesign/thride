@@ -27,6 +27,7 @@ import type { ComponentMode, Uuid } from "@/types/core";
 import {
   IconAmbientLight,
   IconAreaLight,
+  IconBevel,
   IconCamera,
   IconCone,
   IconCube,
@@ -345,6 +346,15 @@ export function buildCommands(doc: Document, shell: ShellApi): AppCommand[] {
         run: () => shell.getViewport()?.beginAmountTool(kind),
       }),
     ),
+    {
+      id: "mesh.bevel",
+      title: "Bevel",
+      menu: "Mesh",
+      icon: <IconBevel size={16} />,
+      shortcut: "b",
+      enabled: () => doc.selection.editMode === "point" && componentTarget("point") !== null,
+      run: () => shell.getViewport()?.beginAmountTool("bevel"),
+    },
     {
       id: "mesh.weldTool",
       title: "Weld Tool",

@@ -22,6 +22,7 @@ import {
   MaterialAndTextureIcon,
   MatrixIcon,
   MinusSignSquareIcon,
+  OctagonIcon,
   PaintBoardIcon,
   PathfinderMergeIcon,
   PentagonIcon,
@@ -97,6 +98,7 @@ export const IconPointLight = makeIcon(BulbIcon);
 export const IconSpotlight = makeIcon(SpotlightIcon);
 
 // mesh tools
+export const IconBevel = makeIcon(OctagonIcon);
 export const IconDissolve = makeIcon(PathfinderMergeIcon);
 export const IconExtrude = makeIcon(SquareArrowUp01Icon);
 export const IconInset = makeIcon(SquareArrowShrink01Icon);

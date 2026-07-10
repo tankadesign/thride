@@ -6,6 +6,7 @@ import { useDocument } from "@/ui/hooks/doc/document";
 import { useSelectionInfo } from "@/ui/hooks/doc/selection";
 import { weldArmedAtom } from "@/ui/hooks/editor/viewport";
 import {
+  IconBevel,
   IconCube,
   IconCursor,
   IconCylinder,
@@ -42,7 +43,10 @@ const QUICK_CREATE: { cmd: string; icon: React.ReactNode; title: string }[] = [
 const MODE_TOOLS: Partial<
   Record<EditMode, { cmd: string; icon: React.ReactNode; title: string; toggle?: boolean }[]>
 > = {
-  point: [{ cmd: "mesh.weldTool", icon: <IconWeld />, title: "Weld Tool", toggle: true }],
+  point: [
+    { cmd: "mesh.bevel", icon: <IconBevel />, title: "Bevel (B)" },
+    { cmd: "mesh.weldTool", icon: <IconWeld />, title: "Weld Tool", toggle: true },
+  ],
   polygon: [
     { cmd: "mesh.extrude", icon: <IconExtrude />, title: "Extrude (D)" },
     { cmd: "mesh.inset", icon: <IconInset />, title: "Inset (I)" },

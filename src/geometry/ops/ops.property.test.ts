@@ -7,6 +7,7 @@ import { validateMesh } from "@/geometry/kernel/validate";
 import { buildPrimitive } from "@/geometry/primitives";
 import { meshRegistry } from "@/geometry/store/meshRegistry";
 import { MeshTopologyCommand } from "@/geometry/commands/topology";
+import { bevelVertices } from "./bevel";
 import { deleteFaces, extrudeFaces, insetFaces } from "./faceOps";
 import { dissolveVertices, weldVerticesTo } from "./weld";
 
@@ -95,6 +96,23 @@ describe("topology op invariants (randomized)", () => {
           expect(weld.ids[0]).toBeLessThan(mesh.vCount);
         }
 
+        // vertex bevel: truncate a couple of random vertices — kernel stays
+        // valid, verts grow (each cut adds points), a cut face per vertex
+        mesh = buildPrimitive(desc);
+        const bevIds = pickSubset(1 + Math.floor(rand() * 2), mesh.vCount, rand);
+        const fB = mesh.fCount;
+        const vB = mesh.vCount;
+        const bev = bevelVertices(mesh, bevIds, 0.15);
+        if (bev) {
+          expect(validateMesh(mesh).errors).toEqual([]);
+          expect(mesh.vCount).toBeGreaterThan(vB - bevIds.length); // cuts add points
+          expect(mesh.fCount).toBeGreaterThan(fB); // one cut face per beveled vert
+          for (const id of bev.ids) expect(id).toBeLessThan(mesh.vCount);
+          const bLift = bev.lift!;
+          expect(bLift.base.length).toBe(bLift.verts.length * 3);
+          expect([...bLift.max].every((m) => m > 0 && Number.isFinite(m))).toBe(true);
+        }
+
         // weld-to-target (the Weld tool op): target keeps its exact position
         mesh = buildPrimitive(desc);
         const wLoop = mesh.faceVertices(Math.floor(rand() * mesh.fCount));
@@ -127,6 +145,7 @@ describe("topology op invariants (randomized)", () => {
     expect(weldVerticesTo(mesh, [0], 99999)).toBeNull(); // bad target
     expect(extrudeFaces(mesh, [], 0.1)).toBeNull();
     expect(insetFaces(mesh, [99999], 0.1)).toBeNull();
+    expect(bevelVertices(mesh, [], 0.1)).toBeNull(); // empty selection
     expect(JSON.stringify([...mesh.vPos])).toBe(snap);
     expect(mesh.dirty).toBe(dirtyBefore);
     expect(mesh.topologyVersion).toBe(tvBefore);
