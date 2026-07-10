@@ -21,6 +21,7 @@ import { CameraRig } from "@/render/nav/CameraRig";
 import { ComponentOverlays } from "@/render/overlays/ComponentOverlays";
 import { SceneSynchronizer } from "@/render/scene-sync/SceneSynchronizer";
 import { type AmountKind, AmountTool } from "@/render/tools/AmountTool";
+import { BevelTool } from "@/render/tools/BevelTool";
 import { WeldTool } from "@/render/tools/WeldTool";
 import { ViewportInput } from "./ViewportInput";
 
@@ -81,6 +82,7 @@ export class ViewportSystem {
   readonly handles: PrimitiveHandles;
   readonly overlays: ComponentOverlays;
   readonly weldTool: WeldTool;
+  readonly bevelTool: BevelTool;
   /** Active Blender-style modal (extrude/inset amount drag), or null. */
   modalTool: AmountTool | null = null;
   readonly raycaster = new Raycaster();
@@ -139,6 +141,7 @@ export class ViewportSystem {
     this.scene.add(this.overlays.group);
     this.weldTool = new WeldTool(this);
     this.scene.add(this.weldTool.group);
+    this.bevelTool = new BevelTool(this);
 
     this.unsubs.push(editor.subscribe(() => this.invalidate()));
     this.input = new ViewportInput(this);
@@ -217,6 +220,17 @@ export class ViewportSystem {
     if (this.modalTool) return;
     this.modalTool = AmountTool.begin(this, kind);
     this.invalidate();
+  }
+
+  /** Arm the live edge-bevel tool on the current edge selection. */
+  beginBevelTool(): void {
+    if (this.bevelTool.isActive) return;
+    this.bevelTool.begin();
+  }
+
+  /** Bake the live bevel if one is running (called before mode/tool switches). */
+  commitBevelIfActive(): void {
+    if (this.bevelTool.isActive) this.bevelTool.commit();
   }
 
   /** The Object3D of the active selected node (gizmo/handles anchor). */
@@ -397,10 +411,9 @@ export class ViewportSystem {
       const activePane = i === this.editor.activePane && this.editor.layout === "quad";
       this.scene.background = new Color(activePane ? 0x12121a : 0x101014);
       const activeObj = this.activeObject();
-      // the extrude/inset modal keeps the new cap selected (for the overlay
-      // highlight) but drives its amount with the mouse — hide the gizmo so it
-      // doesn't fight the drag
-      if (this.modalTool) this.gizmo.group.visible = false;
+      // the extrude/inset modal and the live bevel drive their own drag — hide
+      // the gizmo so it doesn't fight them
+      if (this.modalTool || this.bevelTool.isActive) this.gizmo.group.visible = false;
       else this.gizmo.update(rig.camera, activeObj, this.editor.gizmoSpace);
       this.handles.update(rig.camera, activeObj);
       this.overlays.update(rig.camera, p.h);

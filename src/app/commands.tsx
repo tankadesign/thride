@@ -361,7 +361,7 @@ export function buildCommands(doc: Document, shell: ShellApi): AppCommand[] {
       },
       run: () => {
         const vp = shell.getViewport();
-        if (doc.selection.editMode === "edge") vp?.beginAmountTool("bevelEdge");
+        if (doc.selection.editMode === "edge") vp?.beginBevelTool();
         else vp?.beginAmountTool("bevel");
       },
     },

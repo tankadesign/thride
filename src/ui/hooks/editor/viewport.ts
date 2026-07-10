@@ -1,13 +1,14 @@
 import { atom, useAtom, useAtomValue } from "jotai";
 import type { Uuid, Vec3 } from "@/types/core";
 import type {
+  BevelToolParams,
   EditorViewportState,
   GizmoSpace,
   PaneCamera,
   PaneDisplay,
   ViewportLayout,
 } from "@/types/editor";
-import { defaultPaneDisplay } from "@/types/editor";
+import { defaultBevelParams, defaultPaneDisplay } from "@/types/editor";
 import { appStore } from "@/ui/hooks/doc/document";
 import { gridSnapSizeAtom } from "./settings";
 import { paletteOpenAtom } from "./shell";
@@ -38,6 +39,9 @@ export const paneCamerasAtom = atom<PaneCamera[]>(["persp", "top", "front", "rig
 export const gizmoSpaceAtom = atom<GizmoSpace>("local");
 /** Weld TOOL armed state (point mode): drag a vertex to slide-weld it. */
 export const weldArmedAtom = atom(false);
+/** Live edge-bevel tool: active flag + its adjustable parameters. */
+export const bevelActiveAtom = atom(false);
+export const bevelParamsAtom = atom<BevelToolParams>(defaultBevelParams());
 /** Per-logical-pane display settings (viewport context menu → Display). */
 export const paneDisplaysAtom = atom<PaneDisplay[]>([
   defaultPaneDisplay(),
@@ -100,6 +104,26 @@ class EditorStateStore implements EditorViewportState {
     appStore.set(weldArmedAtom, on);
   }
 
+  get bevelActive(): boolean {
+    return appStore.get(bevelActiveAtom);
+  }
+
+  get bevelParams(): BevelToolParams {
+    return appStore.get(bevelParamsAtom);
+  }
+
+  setBevelActive(on: boolean): void {
+    appStore.set(bevelActiveAtom, on);
+  }
+
+  setBevelParams(patch: Partial<BevelToolParams>): void {
+    appStore.set(bevelParamsAtom, { ...appStore.get(bevelParamsAtom), ...patch });
+  }
+
+  subscribeBevel(cb: () => void): () => void {
+    return appStore.sub(bevelParamsAtom, cb);
+  }
+
   paneDisplay(pane: number): PaneDisplay {
     return appStore.get(paneDisplaysAtom)[pane] ?? defaultPaneDisplay();
   }
@@ -148,6 +172,7 @@ class EditorStateStore implements EditorViewportState {
       appStore.sub(paneCamerasAtom, cb),
       appStore.sub(gizmoSpaceAtom, cb),
       appStore.sub(weldArmedAtom, cb),
+      appStore.sub(bevelActiveAtom, cb),
       appStore.sub(paneDisplaysAtom, cb),
     ];
     return () => {

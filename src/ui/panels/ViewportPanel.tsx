@@ -1,9 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 import type { Uuid } from "@/types/core";
 import type { PaneCamera } from "@/types/editor";
+import { useAtomValue } from "jotai";
 import { appStore, useDocument, useSliceVersion } from "@/ui/hooks/doc/document";
 import { openContextMenu } from "@/ui/hooks/editor/shell";
-import { editorState, targetRotationBakerAtom, useViewportState } from "@/ui/hooks/editor/viewport";
+import {
+  bevelActiveAtom,
+  editorState,
+  targetRotationBakerAtom,
+  useViewportState,
+} from "@/ui/hooks/editor/viewport";
+import { BevelSettings } from "./BevelSettings";
 import {
   type PaneAxes,
   type ViewportStats,
@@ -70,6 +77,8 @@ export function ViewportPanel({ onSystem }: Props) {
   const [stats, setStats] = useState<ViewportStats | null>(null);
   const [navMarker, setNavMarker] = useState<{ x: number; y: number } | null>(null);
   const [axes, setAxes] = useState<PaneAxes[]>([]);
+  const [system, setSystem] = useState<ViewportSystem | null>(null);
+  const bevelActive = useAtomValue(bevelActiveAtom);
   const { layout, maximizedPane, paneCameras, setPaneCamera } = useViewportState();
   useSliceVersion("scene");
 
@@ -77,6 +86,7 @@ export function ViewportPanel({ onSystem }: Props) {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const vs = new ViewportSystem(canvas, doc, editorState);
+    setSystem(vs);
     vs.onStats = setStats;
     vs.onNavMarker = setNavMarker;
     vs.onAxes = setAxes;
@@ -98,6 +108,7 @@ export function ViewportPanel({ onSystem }: Props) {
     appStore.set(targetRotationBakerAtom, { bake: (id: Uuid) => vs.sync.currentLocalRotation(id) });
     return () => {
       onSystem(null);
+      setSystem(null);
       appStore.set(targetRotationBakerAtom, null);
       vs.dispose();
     };
@@ -132,6 +143,7 @@ export function ViewportPanel({ onSystem }: Props) {
   return (
     <div className="relative h-full w-full overflow-hidden">
       <canvas ref={canvasRef} className="block h-full w-full" />
+      {bevelActive && system ? <BevelSettings vs={system} /> : null}
       {slots.map((pane, slot) => (
         <select
           key={pane}

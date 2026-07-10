@@ -16,6 +16,26 @@ export type GizmoSpace = "local" | "world";
 
 export type ShadingMode = "pbr" | "flat" | "wireframe";
 
+/** Chamfer replaces the beveled edge; straight keeps it and adds flanking loops. */
+export type BevelToolMode = "chamfer" | "straight";
+
+/** Live edge-bevel tool parameters (adjustable while the tool is active). */
+export interface BevelToolParams {
+  width: number;
+  /** Ring subdivisions across the bevel (1 = flat chamfer). */
+  segments: number;
+  /** Skip edges flatter than this dihedral (deviation between face normals). */
+  angleDeg: number;
+  mode: BevelToolMode;
+}
+
+export const defaultBevelParams = (): BevelToolParams => ({
+  width: 0.1,
+  segments: 1,
+  angleDeg: 40,
+  mode: "chamfer",
+});
+
 /** Per-viewport display settings (viewport background context menu). */
 export interface PaneDisplay {
   shading: ShadingMode;
@@ -59,6 +79,13 @@ export interface EditorViewportState {
   /** Weld tool armed (point mode): vertex drags slide-weld instead of moving. */
   readonly weldArmed: boolean;
   setWeldArmed(on: boolean): void;
+  /** Live edge-bevel tool: active flag + adjustable params (C4D-style). */
+  readonly bevelActive: boolean;
+  readonly bevelParams: BevelToolParams;
+  setBevelActive(on: boolean): void;
+  setBevelParams(patch: Partial<BevelToolParams>): void;
+  /** Fires only on a bevel PARAM change (so the tool rebuilds, not re-renders). */
+  subscribeBevel(cb: () => void): () => void;
   /** Per-pane display settings (shading, shadows, grid…). */
   paneDisplay(pane: number): PaneDisplay;
   setPaneDisplay(pane: number, patch: Partial<PaneDisplay>): void;

@@ -24,6 +24,8 @@ export class ViewportInput {
     pivot: Vector3 | null;
   } | null = null;
   private mmbClick: { x: number; y: number; pane: number } | null = null;
+  /** Live-bevel width scrub state. */
+  private bevelDrag: { startY: number; lastY: number; moved: boolean } | null = null;
   /** RMB cancelled a modal tool — swallow the contextmenu it also fires. */
   private suppressContext = false;
   /** Pointer is over the canvas — gates viewport-scoped keys (Select All). */
@@ -82,6 +84,19 @@ export class ViewportInput {
         this.suppressContext = true;
       }
       vs.invalidate();
+      e.preventDefault();
+      return;
+    }
+
+    // Live bevel tool: LMB drag scrubs width, a plain click applies, RMB cancels
+    if (vs.bevelTool.isActive && !e.altKey) {
+      if (e.button === 0) {
+        this.bevelDrag = { startY: e.clientY, lastY: e.clientY, moved: false };
+        vs.bevelTool.beginWidthDrag();
+      } else if (e.button === 2) {
+        vs.bevelTool.cancel();
+        this.suppressContext = true;
+      }
       e.preventDefault();
       return;
     }
@@ -163,6 +178,13 @@ export class ViewportInput {
       vs.invalidate();
       return;
     }
+    if (this.bevelDrag) {
+      const dy = e.clientY - this.bevelDrag.lastY;
+      this.bevelDrag.lastY = e.clientY;
+      if (Math.abs(e.clientY - this.bevelDrag.startY) > 3) this.bevelDrag.moved = true;
+      if (this.bevelDrag.moved) vs.bevelTool.onWidthDrag(dy);
+      return;
+    }
     if (vs.weldTool.isDragging) {
       vs.weldTool.update(e);
       vs.invalidate();
@@ -217,6 +239,13 @@ export class ViewportInput {
       vs.canvas.releasePointerCapture(e.pointerId);
     } catch {
       // see setPointerCapture note
+    }
+    if (this.bevelDrag) {
+      const moved = this.bevelDrag.moved;
+      this.bevelDrag = null;
+      vs.bevelTool.endWidthDrag();
+      if (!moved) vs.bevelTool.commit(); // a plain click applies the bevel
+      return;
     }
     if (vs.weldTool.isDragging) {
       vs.weldTool.finish();
@@ -357,6 +386,19 @@ export class ViewportInput {
 
   private onKeyDown = (e: KeyboardEvent): void => {
     const vs = this.vs;
+    // Live bevel tool: Enter bakes, Escape cancels
+    if (vs.bevelTool.isActive) {
+      if (e.key === "Enter") {
+        vs.bevelTool.commit();
+        e.preventDefault();
+        return;
+      }
+      if (e.key === "Escape") {
+        vs.bevelTool.cancel();
+        e.preventDefault();
+        return;
+      }
+    }
     // Select All (bare A) — only while the pointer is over the viewport and no
     // drag/modal is in flight; object mode selects all nodes, component modes
     // select all components of the active mesh

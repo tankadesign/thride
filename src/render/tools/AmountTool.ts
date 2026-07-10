@@ -6,37 +6,31 @@ import { MeshTopologyCommand } from "@/geometry/commands/topology";
 import type { HEMesh, HEMeshSnapshot } from "@/geometry/kernel/HEMesh";
 import { vertsForSelection } from "@/geometry/kernel/components";
 import { bevelVertices } from "@/geometry/ops/bevel";
-import { bevelEdges } from "@/geometry/ops/bevelEdge";
 import { extrudeFaces, insetFaces } from "@/geometry/ops/faceOps";
 import type { OpResult } from "@/geometry/ops/soup";
 import { meshRegistry } from "@/geometry/store/meshRegistry";
 import type { ViewportSystem } from "@/render/viewport/ViewportSystem";
 
-export type AmountKind = "extrude" | "inset" | "bevel" | "bevelEdge";
+// Edge bevel is NOT here — it's a live tool (BevelTool), since its segments /
+// angle / mode change topology and can't ride the build-once position stream.
+export type AmountKind = "extrude" | "inset" | "bevel";
 
-const LABEL: Record<AmountKind, string> = {
-  extrude: "Extrude",
-  inset: "Inset",
-  bevel: "Bevel",
-  bevelEdge: "Bevel",
-};
+const LABEL: Record<AmountKind, string> = { extrude: "Extrude", inset: "Inset", bevel: "Bevel" };
 /** Which component selection each modal reads/writes. */
 const AMOUNT_MODE: Record<AmountKind, ComponentMode> = {
   extrude: "polygon",
   inset: "polygon",
   bevel: "point",
-  bevelEdge: "edge",
 };
 const AMOUNT_OP: Record<AmountKind, (m: HEMesh, ids: number[], amount: number) => OpResult | null> =
   {
     extrude: extrudeFaces,
     inset: insetFaces,
     bevel: bevelVertices,
-    bevelEdge: (m, ids, amount) => bevelEdges(m, ids, { width: amount, angleDeg: 40 }),
   };
-/** Bevel kinds collapse to coincident points at width 0 (degenerate n-gon
- * triangulation); the modal must build them at a small non-zero width. */
-const IS_BEVEL = (k: AmountKind) => k === "bevel" || k === "bevelEdge";
+/** Vertex bevel collapses to coincident points at width 0 (degenerate n-gon
+ * triangulation); the modal must build it at a small non-zero width. */
+const IS_BEVEL = (k: AmountKind) => k === "bevel";
 
 /**
  * Blender-style modal for extrude/inset (polygon selection) and bevel (point
