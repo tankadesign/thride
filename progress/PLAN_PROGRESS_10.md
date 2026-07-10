@@ -107,6 +107,13 @@ The kernel-edge wire made the truth visible and the user pinned the repro: with 
 - **Stale picking:** the D4a `bvhStale` deferral keyed on `preview` alone — but Attributes param scrubs commit with preview-tagged events (`pushWithoutExecute` pattern), so the BVH never refreshed after a param edit. Deferral now applies only to positions-only previews (`preview && !keyChanged`, i.e. component drags); key changes rebuild the BVH immediately (they retriangulate anyway).
 - Verified via the exact user repros, through the real panel inputs: segments 12→32 + rings 1→3 with Lines on updates faces AND wire together (160 tris, drawn-geometry identity current); radius 1→2 then a real click at r≈1.85 (outside the old radius) selects the disc. 93/93 tests.
 
+## Post-round: combined sphere primitive (Icosa mode, Hemisphere + Filled)
+
+- Sphere and Icosphere are ONE primitive now (user-directed, mirroring C4D's sphere Type). `SphereParams` gains `icosa`, `subdivisions`, `hemisphere`, `filled` (all optional — pre-existing saved spheres load unchanged in standard mode). Icosa mode dispatches to the icosphere builder in `buildPrimitiveData`; the standalone `icosphere` type stays in the union/builder/labels for legacy nodes but is gone from the Create menu.
+- **Standard mode:** labels renamed via new `ParamMeta.label` — Segments → "Horizontal Segments", Rings → "Vertical Segments". **Hemisphere** toggle builds the top half (lathe profile pole→equator, open boundary of exactly `segments` edges, disk Euler 1); enabling it reveals **Filled**, which closes the hole with a center-point fan — implemented as a lathe `bottomPole` AT the equator plane (y=0), the same center-vertex convention as the disc (watertight: boundary 0, Euler 2, cap center at origin). **Icosa mode:** panel shows only Radius/Icosa/Subdivisions.
+- New pure helper `visibleParams(desc)` gives the panel an ordered, mode-aware key list (with defaults merged under stored params); `paramMeta` labels render with a hover title since the label column truncates.
+- 4 new topology tests (97/97). Verified live through the real menu/toggles: Create menu lists Sphere only; panel label set switches per mode; Hemisphere → boundary 32 appears; Filled → watertight (+fan cap); Icosa → 320 tris at subdivisions 2 with the reduced panel.
+
 ## Next steps (exact, resumable cold)
 
 1. **D4b:** topology ops as `(mesh, selection, params) → { newSelection }` in `geometry/ops/`: extrude (faces), inset, weld, delete/dissolve — each one undo step (kernel snapshot command), each property-tested for half-edge invariants (`validate.ts` exists).

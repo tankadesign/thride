@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import type { ComponentMode, TransformDTO, Uuid } from "@/types/core";
 import type { PrimitiveDescriptor } from "@/types/geometry/primitives";
-import { paramMeta, primitiveDefaults } from "@/types/geometry/primitives";
+import { paramMeta, primitiveDefaults, visibleParams } from "@/types/geometry/primitives";
 import { LIGHT_LABELS, type LightDataDTO, SHADOW_CAPABLE } from "@/types/core/light";
 import { ComponentTransformSession } from "@/geometry/commands/meshEdit";
 import { vertexCentroid, vertexExtents, vertsForSelection } from "@/geometry/kernel/components";
@@ -450,12 +450,22 @@ function PrimitiveParams({ id, prim }: { id: Uuid; prim: PrimitiveDescriptor }) 
       <legend className="fieldset-legend py-1 text-[10px] uppercase opacity-60">
         {prim.type} parameters
       </legend>
-      {/* defaults first: params added after a node was saved still show up */}
-      {Object.entries({ ...primitiveDefaults[prim.type], ...prim.params }).map(([key, value]) => {
+      {/* mode-aware key list; defaults merged under stored params so params
+          added after a node was saved still show up */}
+      {visibleParams(prim).map((key) => {
+        const merged = { ...primitiveDefaults[prim.type], ...prim.params } as Record<
+          string,
+          number | boolean
+        >;
+        const value = merged[key];
+        const meta = paramMeta(key, prim.type);
+        const label = meta.label ?? key;
         if (typeof value === "boolean") {
           return (
             <div className="grid grid-cols-[64px_1fr] items-center gap-1" key={key}>
-              <span className="truncate opacity-60">{key}</span>
+              <span className="truncate opacity-60" title={label}>
+                {label}
+              </span>
               <input
                 type="checkbox"
                 className="toggle toggle-xs"
@@ -465,10 +475,12 @@ function PrimitiveParams({ id, prim }: { id: Uuid; prim: PrimitiveDescriptor }) 
             </div>
           );
         }
-        const meta = paramMeta(key, prim.type);
+        if (typeof value !== "number") return null;
         return (
           <div className="grid grid-cols-[64px_1fr] items-center gap-1" key={key}>
-            <span className="truncate opacity-60">{key}</span>
+            <span className="truncate opacity-60" title={label}>
+              {label}
+            </span>
             <NumberDrag
               value={value}
               step={meta.int ? 0.08 : 0.01}

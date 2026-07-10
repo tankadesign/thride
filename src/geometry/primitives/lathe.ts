@@ -94,9 +94,25 @@ function lathe(profile: ProfilePoint[], opts: LatheOptions): PolygonMeshData {
   return { positions, faces, faceUVs };
 }
 
-export function buildSphere({ radius, segments, rings }: SphereParams): PolygonMeshData {
-  const R = Math.max(3, Math.round(rings));
+/** Standard (lathe) sphere; Icosa mode dispatches to buildIcosphere upstream. */
+export function buildSphere(params: SphereParams): PolygonMeshData {
+  const { radius, segments } = params;
+  const R = Math.max(3, Math.round(params.rings));
   const profile: ProfilePoint[] = [];
+  if (params.hemisphere) {
+    // top half: pole → equator; open at the equator unless filled — the
+    // fill is a bottomPole AT the equator plane (y=0), i.e. a center-point
+    // fan cap (same convention as the disc primitive)
+    for (let i = 1; i <= R; i++) {
+      const theta = (i / R) * (Math.PI / 2);
+      profile.push({ r: radius * Math.sin(theta), y: radius * Math.cos(theta), v: 1 - i / R });
+    }
+    return lathe(profile, {
+      segments,
+      topPole: radius,
+      bottomPole: params.filled ? 0 : undefined,
+    });
+  }
   for (let i = 1; i < R; i++) {
     const theta = (i / R) * Math.PI;
     profile.push({ r: radius * Math.sin(theta), y: radius * Math.cos(theta), v: 1 - i / R });

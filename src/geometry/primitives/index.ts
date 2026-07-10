@@ -16,6 +16,13 @@ export function buildPrimitiveData(desc: PrimitiveDescriptor): PolygonMeshData {
     case "pyramid":
       return buildPyramid(desc.params);
     case "sphere":
+      // Icosa mode: the combined sphere delegates to the icosphere builder
+      if (desc.params.icosa) {
+        return buildIcosphere({
+          radius: desc.params.radius,
+          subdivisions: desc.params.subdivisions ?? 2,
+        });
+      }
       return buildSphere(desc.params);
     case "cylinder":
       return buildCylinder(desc.params);

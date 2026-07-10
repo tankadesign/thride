@@ -66,10 +66,10 @@ export interface ShellApi {
   resetLayout: () => void;
 }
 
+// icosphere is folded into sphere (Icosa toggle); the legacy type still loads
 const PRIMITIVES: PrimitiveType[] = [
   "cube",
   "sphere",
-  "icosphere",
   "cylinder",
   "cone",
   "capsule",

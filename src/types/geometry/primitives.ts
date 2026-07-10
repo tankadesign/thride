@@ -24,9 +24,17 @@ export interface DiscParams {
 }
 export interface SphereParams {
   radius: number;
-  segments: number; // around Y
-  rings: number; // pole to pole
+  /** Icosa mode: subdivided icosahedron (standard-mode params hidden). */
+  icosa?: boolean;
+  segments: number; // standard: around Y ("Horizontal Segments")
+  rings: number; // standard: pole to pole ("Vertical Segments")
+  subdivisions?: number; // icosa mode, 0..5
+  /** Standard mode: top half only (open at the equator). */
+  hemisphere?: boolean;
+  /** Hemisphere only: close the equator hole with a center-point fan. */
+  filled?: boolean;
 }
+/** Legacy standalone type — new content uses sphere's icosa mode. */
 export interface IcosphereParams {
   radius: number;
   subdivisions: number; // 0..4
@@ -82,7 +90,15 @@ export const primitiveDefaults: {
   cube: { width: 2, height: 2, depth: 2 },
   plane: { width: 4, depth: 4, segmentsX: 4, segmentsZ: 4 },
   disc: { radius: 1, segments: 32, rings: 1 },
-  sphere: { radius: 1, segments: 32, rings: 16 },
+  sphere: {
+    radius: 1,
+    icosa: false,
+    segments: 32,
+    rings: 16,
+    subdivisions: 2,
+    hemisphere: false,
+    filled: false,
+  },
   icosphere: { radius: 1, subdivisions: 2 },
   cylinder: { radiusTop: 1, radiusBottom: 1, height: 2, segments: 32, capped: true },
   cone: { radius: 1, height: 2, segments: 32, capped: true },
@@ -112,6 +128,8 @@ export interface ParamMeta {
   int?: boolean;
   min?: number;
   max?: number;
+  /** Display label when the raw param key isn't right for the panel. */
+  label?: string;
 }
 
 /** Editing metadata per parameter name (int-stepped inputs, ranges). */
@@ -128,6 +146,14 @@ export const primitiveParamMeta: Record<string, ParamMeta> = {
 /** Same param name, different rules per primitive (disc rings start at 1). */
 const perTypeParamMeta: Partial<Record<PrimitiveType, Record<string, ParamMeta>>> = {
   disc: { rings: { int: true, min: 1, max: 500 } },
+  sphere: {
+    segments: { int: true, min: 3, max: 1000, label: "Horizontal Segments" },
+    rings: { int: true, min: 3, max: 1000, label: "Vertical Segments" },
+    subdivisions: { int: true, min: 0, max: 5, label: "Subdivisions" },
+    icosa: { label: "Icosa" },
+    hemisphere: { label: "Hemisphere" },
+    filled: { label: "Filled" },
+  },
 };
 
 export function paramMeta(key: string, type?: PrimitiveType): ParamMeta {
@@ -135,4 +161,20 @@ export function paramMeta(key: string, type?: PrimitiveType): ParamMeta {
     (type ? perTypeParamMeta[type]?.[key] : undefined) ??
     primitiveParamMeta[key] ?? { min: 0.001 }
   );
+}
+
+/**
+ * Ordered, mode-aware param keys for the editor panel. Defaults are merged
+ * under stored params first, so params added after a node was saved still
+ * appear. Sphere hides standard-mode params in Icosa mode and reveals
+ * Filled only for hemispheres.
+ */
+export function visibleParams(desc: PrimitiveDescriptor): string[] {
+  if (desc.type === "sphere") {
+    if (desc.params.icosa) return ["radius", "icosa", "subdivisions"];
+    const keys = ["radius", "icosa", "segments", "rings", "hemisphere"];
+    if (desc.params.hemisphere) keys.push("filled");
+    return keys;
+  }
+  return Object.keys({ ...primitiveDefaults[desc.type], ...desc.params });
 }
