@@ -34,7 +34,13 @@ const KIND_ICON: Record<string, React.ReactNode> = {
   camera: <IconCamera size={14} className="opacity-60" />,
 };
 
-const CONTEXT_COMMANDS = ["edit.group", "edit.convertToMesh", "edit.delete", "edit.deselect"];
+const CONTEXT_COMMANDS = [
+  "edit.group",
+  "edit.convertToMesh",
+  "edit.delete",
+  "edit.selectAll",
+  "edit.deselect",
+];
 
 interface Row {
   id: Uuid;

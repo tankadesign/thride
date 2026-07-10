@@ -79,11 +79,37 @@ exact; `i` → inset modal, 400px over-pull clamped precisely at ±0.275
 (0.45 rule), one "Inset" step; `d`+drag+**Esc** → bit-exact restore, 0 steps,
 selection re-stamped. Weld: armed via rail (button highlights), drag on a 510px
 screen edge — mid-edge: ghost only (not locked); ≤50px from target: target quad
-+ success line visible; release → 16→15 verts, one "Weld" step, merged vert
-keeps the target's exact position; release outside radius → 0 steps, mesh
-untouched; undo restores. Property tests extended: `weldVerticesTo` (target
-position preserved, −1 vert, valid kernel), lift-data sanity for both ops,
-`dissolveVertices` rename. `tsc -b` clean; `vp test` 115/115.
+
+- success line visible; release → 16→15 verts, one "Weld" step, merged vert
+  keeps the target's exact position; release outside radius → 0 steps, mesh
+  untouched; undo restores. Property tests extended: `weldVerticesTo` (target
+  position preserved, −1 vert, valid kernel), lift-data sanity for both ops,
+  `dissolveVertices` rename. `tsc -b` clean; `vp test` 115/115.
+
+## Post-round: viewport Select All + modal shows the new polygon selected
+
+- **Select All (bare A, Blender-style, viewport-scoped)** — `edit.selectAll`
+  command running `selectAll(doc)` (`geometry/selection/selectAll.ts`): object
+  mode selects every scene node; point/edge/polygon modes select all
+  vertices/canonical-edges/faces of the active editable mesh (no-op without a
+  mesh under focus). Fires only while the pointer is over the canvas
+  (`ViewportInput` tracks pointerenter/leave; new `AppCommand.viewportScoped`
+  keeps it out of the global key handler, so it still shows "A" in menus but
+  won't fire from the object manager). Guarded against text-field focus and
+  mid-drag/modal. Added to both context menus (viewport object menu + object
+  manager) next to Deselect All; Deselect All is now mode-aware too (clears the
+  active component mode's selection instead of the object selection).
+- **Modal extrude/inset highlight** — `AmountTool.begin` now installs the new
+  cap/inner faces as the component selection at the post-op topologyVersion, so
+  the polygon overlay highlights them live through the drag (positions stream
+  without a topology change, so the stamp stays valid). The gizmo is suppressed
+  while `modalTool` is active (`ViewportSystem` hides `gizmo.group`) so the
+  highlight shows without the gizmo fighting the amount drag.
+- Verified in-browser: A outside the viewport = ignored, inside = selects all
+  (3 nodes); polygon/edge/point A select 6/12/8 on a cube; extrude modal shows
+  cap face 9 selected (warning highlight) with the gizmo hidden, confirm = one
+  "Extrude" step + gizmo returns. New `selectAll.test.ts` (5 cases).
+  `tsc -b` clean; `vp test` 120/120.
 
 ## Next steps (exact, resumable cold)
 

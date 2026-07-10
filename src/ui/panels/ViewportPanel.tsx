@@ -16,6 +16,7 @@ const OBJECT_CONTEXT_COMMANDS = [
   "edit.group",
   "edit.convertToMesh",
   "edit.delete",
+  "edit.selectAll",
   "edit.deselect",
 ];
 

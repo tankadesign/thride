@@ -1,6 +1,7 @@
 import { Mesh, Raycaster, Vector3 } from "three";
 import type { ComponentMode, Uuid } from "@/types/core";
 import { Bitset } from "@/core/selection/Bitset";
+import { selectAll } from "@/geometry/selection/selectAll";
 import { meshRegistry } from "@/geometry/store/meshRegistry";
 import { pickComponent } from "@/render/picking/componentPicking";
 import type { ViewportSystem } from "./ViewportSystem";
@@ -25,12 +26,16 @@ export class ViewportInput {
   private mmbClick: { x: number; y: number; pane: number } | null = null;
   /** RMB cancelled a modal tool — swallow the contextmenu it also fires. */
   private suppressContext = false;
+  /** Pointer is over the canvas — gates viewport-scoped keys (Select All). */
+  private pointerInside = false;
 
   constructor(vs: ViewportSystem) {
     this.vs = vs;
     vs.canvas.addEventListener("pointerdown", this.onPointerDown);
     vs.canvas.addEventListener("pointermove", this.onPointerMove);
     vs.canvas.addEventListener("pointerup", this.onPointerUp);
+    vs.canvas.addEventListener("pointerenter", this.onPointerEnter);
+    vs.canvas.addEventListener("pointerleave", this.onPointerLeave);
     vs.canvas.addEventListener("wheel", this.onWheel, { passive: false });
     vs.canvas.addEventListener("contextmenu", this.onContextMenu);
     window.addEventListener("keydown", this.onKeyDown);
@@ -41,10 +46,20 @@ export class ViewportInput {
     c.removeEventListener("pointerdown", this.onPointerDown);
     c.removeEventListener("pointermove", this.onPointerMove);
     c.removeEventListener("pointerup", this.onPointerUp);
+    c.removeEventListener("pointerenter", this.onPointerEnter);
+    c.removeEventListener("pointerleave", this.onPointerLeave);
     c.removeEventListener("wheel", this.onWheel);
     c.removeEventListener("contextmenu", this.onContextMenu);
     window.removeEventListener("keydown", this.onKeyDown);
   }
+
+  private onPointerEnter = (): void => {
+    this.pointerInside = true;
+  };
+
+  private onPointerLeave = (): void => {
+    this.pointerInside = false;
+  };
 
   private onPointerDown = (e: PointerEvent): void => {
     const vs = this.vs;
@@ -307,6 +322,30 @@ export class ViewportInput {
     });
   }
 
+  /** A drag/modal is mid-flight — swallow viewport-scoped keys until it ends. */
+  private isBusy(): boolean {
+    const vs = this.vs;
+    return (
+      !!vs.modalTool ||
+      vs.weldTool.isDragging ||
+      vs.gizmo.isDragging ||
+      vs.handles.isDragging ||
+      this.nav !== null
+    );
+  }
+
+  /** Keydown originated in a text field — leave it to the field. */
+  private typingTarget(e: KeyboardEvent): boolean {
+    const t = e.target as HTMLElement | null;
+    if (!t) return false;
+    return (
+      t.tagName === "INPUT" ||
+      t.tagName === "TEXTAREA" ||
+      t.tagName === "SELECT" ||
+      t.isContentEditable
+    );
+  }
+
   /** First raycast hit that resolves to a visible node, or null. */
   private firstVisibleNode(hits: ReturnType<Raycaster["intersectObject"]>): Uuid | null {
     for (const h of hits) {
@@ -318,6 +357,16 @@ export class ViewportInput {
 
   private onKeyDown = (e: KeyboardEvent): void => {
     const vs = this.vs;
+    // Select All (bare A) — only while the pointer is over the viewport and no
+    // drag/modal is in flight; object mode selects all nodes, component modes
+    // select all components of the active mesh
+    if (e.key.toLowerCase() === "a" && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey) {
+      if (!this.pointerInside || this.isBusy() || this.typingTarget(e)) return;
+      selectAll(vs.doc);
+      vs.invalidate();
+      e.preventDefault();
+      return;
+    }
     if (e.key !== "Escape") return;
     if (vs.modalTool) {
       vs.modalTool.cancel();

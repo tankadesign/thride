@@ -12,6 +12,11 @@ export interface AppCommand {
   sep?: boolean;
   /** e.g. "mod+z", "shift+mod+z", "f", "delete". mod = ⌘ on mac, ctrl elsewhere. */
   shortcut?: string;
+  /**
+   * Shortcut fires only while the pointer is over the viewport (handled in
+   * ViewportInput, not the global handler). The key still shows in menus.
+   */
+  viewportScoped?: boolean;
   enabled?: () => boolean;
   run: () => void;
 }
@@ -66,7 +71,7 @@ export class CommandRegistry {
   handleKey(e: KeyboardEvent): boolean {
     const key = e.key.toLowerCase();
     for (const c of this.commands.values()) {
-      if (!c.shortcut) continue;
+      if (!c.shortcut || c.viewportScoped) continue;
       const parts = c.shortcut.split("+");
       const want = parts.at(-1)!;
       const mod = parts.includes("mod");

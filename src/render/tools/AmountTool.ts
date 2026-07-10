@@ -93,6 +93,16 @@ export class AmountTool {
     const op = kind === "extrude" ? extrudeFaces : insetFaces;
     const result = op(mesh, faceIds, 0);
     if (!result?.lift) return null; // op refused — nothing installed
+    // show the freshly created cap/inner faces selected while the modal runs
+    // (positions stream without touching topology, so this stamp stays valid)
+    const bits = new Bitset();
+    for (const id of result.ids) bits.add(id);
+    doc.selection.setComponents(active, {
+      mode: result.mode,
+      bits,
+      order: [...result.ids],
+      topologyVersion: mesh.topologyVersion,
+    });
     doc.touchNode(active);
     vs.canvas.style.cursor = "move";
     return new AmountTool(

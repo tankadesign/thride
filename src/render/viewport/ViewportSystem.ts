@@ -397,7 +397,11 @@ export class ViewportSystem {
       const activePane = i === this.editor.activePane && this.editor.layout === "quad";
       this.scene.background = new Color(activePane ? 0x12121a : 0x101014);
       const activeObj = this.activeObject();
-      this.gizmo.update(rig.camera, activeObj, this.editor.gizmoSpace);
+      // the extrude/inset modal keeps the new cap selected (for the overlay
+      // highlight) but drives its amount with the mouse — hide the gizmo so it
+      // doesn't fight the drag
+      if (this.modalTool) this.gizmo.group.visible = false;
+      else this.gizmo.update(rig.camera, activeObj, this.editor.gizmoSpace);
       this.handles.update(rig.camera, activeObj);
       this.overlays.update(rig.camera, p.h);
       this.sync.updateOutlines(rig.camera, p.h);

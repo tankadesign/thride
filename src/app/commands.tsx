@@ -11,6 +11,7 @@ import type { HEMesh } from "@/geometry/kernel/HEMesh";
 import { facesForSelection } from "@/geometry/kernel/components";
 import { deleteFaces } from "@/geometry/ops/faceOps";
 import type { OpResult } from "@/geometry/ops/soup";
+import { selectAll } from "@/geometry/selection/selectAll";
 import { dissolveVertices } from "@/geometry/ops/weld";
 import { meshRegistry } from "@/geometry/store/meshRegistry";
 import type { PrimitiveType } from "@/types/geometry/primitives";
@@ -260,11 +261,30 @@ export function buildCommands(doc: Document, shell: ShellApi): AppCommand[] {
       },
     },
     {
+      id: "edit.selectAll",
+      title: "Select All",
+      menu: "Edit",
+      sep: true,
+      // bare A, scoped to the viewport (Blender-style): object mode selects all
+      // nodes, component modes select all points/edges/polygons of the mesh
+      shortcut: "a",
+      viewportScoped: true,
+      run: () => selectAll(doc),
+    },
+    {
       id: "edit.deselect",
       title: "Deselect All",
       menu: "Edit",
       shortcut: "mod+d",
-      run: () => doc.selection.clearObjects(),
+      run: () => {
+        // mirror Select All: component modes clear the active mode's components
+        const mode = doc.selection.editMode;
+        if (mode === "point" || mode === "edge" || mode === "polygon") {
+          if (doc.selection.active) doc.selection.clearComponents(doc.selection.active, mode);
+        } else {
+          doc.selection.clearObjects();
+        }
+      },
     },
 
     // ---- Create ----
