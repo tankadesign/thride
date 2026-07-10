@@ -18,6 +18,9 @@ export interface PlaneParams {
 export interface DiscParams {
   radius: number;
   segments: number;
+  /** Concentric subdivisions from the center outward. Optional: discs saved
+   * before the param existed load as 1 ring. */
+  rings?: number;
 }
 export interface SphereParams {
   radius: number;
@@ -78,7 +81,7 @@ export const primitiveDefaults: {
 } = {
   cube: { width: 2, height: 2, depth: 2 },
   plane: { width: 4, depth: 4, segmentsX: 4, segmentsZ: 4 },
-  disc: { radius: 1, segments: 32 },
+  disc: { radius: 1, segments: 32, rings: 1 },
   sphere: { radius: 1, segments: 32, rings: 16 },
   icosphere: { radius: 1, subdivisions: 2 },
   cylinder: { radiusTop: 1, radiusBottom: 1, height: 2, segments: 32, capped: true },
@@ -122,6 +125,14 @@ export const primitiveParamMeta: Record<string, ParamMeta> = {
   capRings: { int: true, min: 2, max: 128 },
 };
 
-export function paramMeta(key: string): ParamMeta {
-  return primitiveParamMeta[key] ?? { min: 0.001 };
+/** Same param name, different rules per primitive (disc rings start at 1). */
+const perTypeParamMeta: Partial<Record<PrimitiveType, Record<string, ParamMeta>>> = {
+  disc: { rings: { int: true, min: 1, max: 500 } },
+};
+
+export function paramMeta(key: string, type?: PrimitiveType): ParamMeta {
+  return (
+    (type ? perTypeParamMeta[type]?.[key] : undefined) ??
+    primitiveParamMeta[key] ?? { min: 0.001 }
+  );
 }

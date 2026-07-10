@@ -80,19 +80,46 @@ export function buildPlane({ width, depth, segmentsX, segmentsZ }: PlaneParams):
   return { positions, faces, faceUVs };
 }
 
-export function buildDisc({ radius, segments }: DiscParams): PolygonMeshData {
+export function buildDisc({ radius, segments, rings }: DiscParams): PolygonMeshData {
   const n = Math.max(3, Math.round(segments));
-  const positions: number[] = [];
-  const loop: number[] = [];
-  const uv: number[] = [];
-  // top-facing n-gon: reverse φ order for CCW from +Y
+  const R = Math.max(1, Math.round(rings ?? 1)); // pre-rings discs load as 1
+  // center vertex + R concentric rings of n vertices; innermost ring fans
+  // to the center as triangles, ring→ring bands are quads
+  const positions: number[] = [0, 0, 0];
+  const cos: number[] = [];
+  const sin: number[] = [];
   for (let k = 0; k < n; k++) {
-    const phi = (-k / n) * Math.PI * 2;
-    positions.push(radius * Math.cos(phi), 0, radius * Math.sin(phi));
-    loop.push(k);
-    uv.push(0.5 + Math.cos(phi) / 2, 0.5 - Math.sin(phi) / 2);
+    const phi = (-k / n) * Math.PI * 2; // reversed φ: CCW from +Y (see module note)
+    cos.push(Math.cos(phi));
+    sin.push(Math.sin(phi));
   }
-  return { positions, faces: [loop], faceUVs: [uv] };
+  for (let r = 1; r <= R; r++) {
+    const rad = (radius * r) / R;
+    for (let k = 0; k < n; k++) positions.push(rad * cos[k]!, 0, rad * sin[k]!);
+  }
+  const v = (r: number, k: number) => 1 + (r - 1) * n + (k % n);
+  const uvOf = (r: number, k: number): [number, number] => {
+    if (r === 0) return [0.5, 0.5];
+    const t = r / R / 2;
+    return [0.5 + cos[k % n]! * t, 0.5 - sin[k % n]! * t];
+  };
+
+  const faces: number[][] = [];
+  const faceUVs: number[][] = [];
+  for (let k = 0; k < n; k++) {
+    // fan triangle: center → ring-1 edge k→k+1 keeps the +Y-facing winding
+    faces.push([0, v(1, k), v(1, k + 1)]);
+    faceUVs.push([...uvOf(0, 0), ...uvOf(1, k), ...uvOf(1, k + 1)]);
+  }
+  for (let r = 1; r < R; r++) {
+    for (let k = 0; k < n; k++) {
+      // band quad traverses the inner ring k+1→k (antiparallel to the face
+      // inside it) so shared edges twin up and the normal stays +Y
+      faces.push([v(r, k + 1), v(r, k), v(r + 1, k), v(r + 1, k + 1)]);
+      faceUVs.push([...uvOf(r, k + 1), ...uvOf(r, k), ...uvOf(r + 1, k), ...uvOf(r + 1, k + 1)]);
+    }
+  }
+  return { positions, faces, faceUVs };
 }
 
 export function buildPyramid({ width, height, depth }: PyramidParams): PolygonMeshData {

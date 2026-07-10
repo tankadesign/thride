@@ -86,6 +86,13 @@ Four user requests after the D4a review:
 - Verified live end-to-end: legacy autosave migrated to IDB on boot (keys removed); "+" opened an isolated seeded project; tab clicks swap documents with panels tracking (Objects/Attributes/viewport all follow); edited vertex in project A survived tab round-trips AND a full reload bit-exact alongside project B's distinct content; active tab remembered across reload; 8 tabs overflow and scroll horizontally; close keeps records. Zero console errors across create/switch/close on a fresh load (earlier scary entries were a stale HMR console buffer).
 - **Known issues:** per-pane camera rigs live in the ViewportSystem, which is recreated on tab switch — camera PSR resets when switching projects (per-project rig memory is a follow-up). Editor viewport state (pane cameras/layout atoms) is global, not per-project.
 
+## Post-round: disc primitive — center fan + rings subdivision
+
+- Disc rebuilt per user spec: **center vertex** with every innermost-ring point fanning to it (was a single boundary-only n-gon), plus a new **rings** int param — concentric subdivisions from the center outward (n fan triangles + n·(R−1) band quads; V=1+n·R, F=n·R, E=2n·R, Euler χ=1 disk invariant preserved, `validateMesh` clean). Band quads traverse the inner ring antiparallel to the faces inside them so shared edges twin up under the module's +Y winding convention.
+- `paramMeta` gained per-type overrides: disc `rings` is int min 1 (the global `rings` meta stays min 3 for the sphere). `DiscParams.rings` is optional — discs saved before the param build as 1 ring — and `PrimitiveParams` now spreads `primitiveDefaults` under stored params so params added after a node was saved still show (and edit) in the panel.
+- The old RenderMesh triangulate test used the disc as its n-gon/earcut case; that coverage now comes from an explicit hexagon `fromPolygons` mesh.
+- Verified: 3 new disc topology tests (92/92 total); live — panel shows radius/segments/rings, typing rings=4 at segments=32 rebuilt to exactly 129 verts / 128 faces / 256 edges with the center at the origin, and point mode shows the center + 4 concentric vertex rings.
+
 ## Next steps (exact, resumable cold)
 
 1. **D4b:** topology ops as `(mesh, selection, params) → { newSelection }` in `geometry/ops/`: extrude (faces), inset, weld, delete/dissolve — each one undo step (kernel snapshot command), each property-tested for half-edge invariants (`validate.ts` exists).

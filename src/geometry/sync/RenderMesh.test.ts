@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 import { defaultPrimitive } from "@/types/geometry/primitives";
 import { DIRTY_POSITIONS } from "@/types/geometry/mesh";
+import { HEMesh } from "@/geometry/kernel/HEMesh";
 import { buildPrimitive } from "@/geometry/primitives";
 import { RenderMesh } from "./RenderMesh";
 import { triangulate } from "./triangulate";
@@ -10,8 +11,18 @@ describe("triangulate", () => {
     const cube = buildPrimitive(defaultPrimitive("cube")); // 6 quads → 12 tris
     expect(triangulate(cube).triCount).toBe(12);
 
-    const disc = buildPrimitive({ type: "disc", params: { radius: 1, segments: 12 } }); // 12-gon → 10 tris
-    expect(triangulate(disc).triCount).toBe(10);
+    // hexagon n-gon (the disc is fan-triangulated now, so earcut needs its own case)
+    const hexagon = HEMesh.fromPolygons({
+      positions: Array.from({ length: 6 }, (_, k) => {
+        const phi = (-k / 6) * Math.PI * 2;
+        return [Math.cos(phi), 0, Math.sin(phi)];
+      }).flat(),
+      faces: [[0, 1, 2, 3, 4, 5]],
+    });
+    expect(triangulate(hexagon).triCount).toBe(4); // 6-gon → 4 tris
+
+    const disc = buildPrimitive({ type: "disc", params: { radius: 1, segments: 12, rings: 2 } });
+    expect(triangulate(disc).triCount).toBe(12 + 24); // 12 fan tris + 12 band quads
 
     const cone = buildPrimitive({
       type: "cone",
