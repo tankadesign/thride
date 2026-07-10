@@ -15,6 +15,16 @@ const norm = (a: Vec3): Vec3 => {
   const l = Math.hypot(a[0], a[1], a[2]) || 1;
   return [a[0] / l, a[1] / l, a[2] / l];
 };
+/** Spherical interpolation between two unit vectors (rounded-bevel arc). */
+const slerp = (a: Vec3, b: Vec3, t: number): Vec3 => {
+  const d = Math.max(-1, Math.min(1, dot(a, b)));
+  const omega = Math.acos(d);
+  if (omega < 1e-5) return a;
+  const s = Math.sin(omega);
+  const wa = Math.sin((1 - t) * omega) / s;
+  const wb = Math.sin(t * omega) / s;
+  return norm([a[0] * wa + b[0] * wb, a[1] * wa + b[1] * wb, a[2] * wa + b[2] * wb]);
+};
 
 export type BevelMode = "chamfer" | "straight";
 
@@ -33,26 +43,27 @@ export interface BevelEdgeOpts {
 }
 
 /**
- * Edge bevel (chamfer), 1 segment. Each selected edge is replaced by a quad
- * strip and the faces on either side recede. The receded corner of every face
- * is found by **planar offset-intersect**: in the face's plane, each selected
- * boundary edge's line is offset inward by `width`, non-selected edges stay
- * put, and the new corner is the intersection of a corner's two (offset-or-
- * original) edge lines. Points that land on the same spot (a non-beveled edge
- * shared by two faces on a symmetric solid) are welded, so the shared edge
- * stays a single edge; the leftover vertex holes are filled by cap faces.
+ * Edge bevel. Each selected edge's two faces RECEDE (via **planar
+ * offset-intersect**: in each face plane, a selected boundary edge's line is
+ * offset inward by `width`, non-selected edges stay, and the new corner is the
+ * intersection of a corner's two edge lines), then the gap is filled per mode:
+ * - **chamfer** replaces the edge with a strip of `segments` quads (1 = flat,
+ *   >1 = a slerped arc → rounded edge);
+ * - **straight** keeps the original edge and bridges each receded face to it
+ *   with a quad (adds edges without moving the selected ones).
+ * `angleDeg` drops edges flatter than the threshold. Coincident corner points
+ * (a non-beveled edge shared by two faces on a symmetric solid) weld so the
+ * shared edge stays single; leftover vertex holes are capped.
  *
- * Scoped to interior edges on planar convex faces (cube / cylinder — the M1
- * acceptance bar). Anything else — a boundary edge, a non-planar or concave
- * face, a degenerate corner, or a junction that can't be capped into a simple
- * loop — aborts with the mesh untouched (adoptSoup / explicit guards).
- *
- * Records `lift` (base = original vertex, dir = corner travel per unit width,
- * a single shared clamp) so width can be driven by the interactive modal.
+ * Scoped to interior edges on planar-convex faces (cube / cylinder). A
+ * boundary edge, non-planar/concave face, degenerate corner, or a junction
+ * that won't cap into a simple loop aborts with the mesh untouched.
  */
 export function bevelEdges(mesh: HEMesh, edgeIds: number[], opts: BevelEdgeOpts): OpResult | null {
   const { width } = opts;
   const angleDeg = opts.angleDeg ?? 0;
+  const mode: BevelMode = opts.mode ?? "chamfer";
+  const segments = mode === "straight" ? 1 : Math.max(1, Math.round(opts.segments ?? 1));
   const pos = (v: number): Vec3 => [
     mesh.vPos[v * 3]!,
     mesh.vPos[v * 3 + 1]!,
@@ -194,21 +205,67 @@ export function bevelEdges(mesh: HEMesh, edgeIds: number[], opts: BevelEdgeOpts)
     }
   }
 
-  // --- strips: one quad per selected edge ---------------------------------
-  // for edge e (half-edges e / twin), the outgoing-at-V corner on each side
+  // reuse the weld map so a kept original vertex coincides with any cP on it
+  const origIdx = (v: number): number => {
+    const p = pos(v);
+    const k = `${q(p[0])},${q(p[1])},${q(p[2])}`;
+    let idx = weldKey.get(k);
+    if (idx === undefined) {
+      idx = positions.length / 3;
+      positions.push(p[0], p[1], p[2]);
+      weldKey.set(k, idx);
+    }
+    return idx;
+  };
+  // append an interpolated ring point (rounded-chamfer segment) with lift
+  const ringIdx = (V: number, a: Vec3, b: Vec3, t: number): number => {
+    const P = pos(V);
+    const da = sub(a, P);
+    const db = sub(b, P);
+    const dir = slerp(norm(da), norm(db), t);
+    const r = Math.hypot(...(da as Vec3)) * (1 - t) + Math.hypot(...(db as Vec3)) * t;
+    const p: Vec3 = [P[0] + dir[0] * r, P[1] + dir[1] * r, P[2] + dir[2] * r];
+    const idx = positions.length / 3;
+    positions.push(p[0], p[1], p[2]);
+    lift.verts.push(idx);
+    lift.base.push(P[0], P[1], P[2]);
+    lift.dirs.push((p[0] - P[0]) / w, (p[1] - P[1]) / w, (p[2] - P[2]) / w);
+    return idx;
+  };
+
   for (const e of sel) {
     const tw = mesh.heTwin[e]!;
-    // e goes V→W in face F1; tw goes W→V in face F2
-    const eNext = mesh.heNext[e]!;
-    const twNext = mesh.heNext[tw]!;
+    const V = mesh.heVert[e]!;
+    const W = mesh.heVert[mesh.heNext[e]!]!;
     const f1V = indexOfHE.get(e)!; // corner at V on F1 (F1 has edge f1V→f1W)
-    const f1W = indexOfHE.get(eNext)!; // corner at W on F1
+    const f1W = indexOfHE.get(mesh.heNext[e]!)!; // corner at W on F1
     const f2W = indexOfHE.get(tw)!; // corner at W on F2 (F2 has edge f2W→f2V)
-    const f2V = indexOfHE.get(twNext)!; // corner at V on F2
-    // wind the strip so it twins both shrunk faces' shared edges (opposite dir)
-    const quad = [f1W, f1V, f2V, f2W];
-    if (new Set(quad).size === 4) {
-      faces.push(quad);
+    const f2V = indexOfHE.get(mesh.heNext[tw]!)!; // corner at V on F2
+    if (new Set([f1V, f1W, f2V, f2W]).size !== 4) continue;
+
+    if (mode === "straight") {
+      // keep the selected edge (original V–W) and bridge each receded face to it
+      const oV = origIdx(V);
+      const oW = origIdx(W);
+      faces.push([f1W, f1V, oV, oW]);
+      faces.push([f2V, f2W, oW, oV]);
+      faceUVs.push([0, 0, 1, 0, 1, 1, 0, 1], [0, 0, 1, 0, 1, 1, 0, 1]);
+      continue;
+    }
+
+    // chamfer: replace the edge with a (possibly rounded) strip of `segments`
+    // quads — ring points arc from the F1 corner to the F2 corner at each end
+    const ringV: number[] = [f1V];
+    const ringW: number[] = [f1W];
+    for (let s = 1; s < segments; s++) {
+      const t = s / segments;
+      ringV.push(ringIdx(V, cornerPos.get(e)!, cornerPos.get(mesh.heNext[tw]!)!, t));
+      ringW.push(ringIdx(W, cornerPos.get(mesh.heNext[e]!)!, cornerPos.get(tw)!, t));
+    }
+    ringV.push(f2V);
+    ringW.push(f2W);
+    for (let s = 0; s < segments; s++) {
+      faces.push([ringW[s]!, ringV[s]!, ringV[s + 1]!, ringW[s + 1]!]);
       faceUVs.push([0, 0, 1, 0, 1, 1, 0, 1]);
     }
   }

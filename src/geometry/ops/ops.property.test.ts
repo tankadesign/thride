@@ -131,6 +131,15 @@ describe("topology op invariants (randomized)", () => {
           const beLift = beRes.lift!;
           expect(beLift.base.length).toBe(beLift.verts.length * 3);
         }
+        // rounded (segments>1) and straight mode stay valid when they commit
+        for (const o of [{ segments: 3 }, { mode: "straight" as const }]) {
+          const m2 = buildPrimitive(desc);
+          const e2 = uniqueEdges(m2);
+          const ids2 = pickSubset(1 + Math.floor(rand() * 3), e2.length, rand).map((i) => e2[i]!);
+          if (bevelEdges(m2, ids2, { width: 0.1, ...o })) {
+            expect(validateMesh(m2).errors).toEqual([]);
+          }
+        }
 
         // weld-to-target (the Weld tool op): target keeps its exact position
         mesh = buildPrimitive(desc);
