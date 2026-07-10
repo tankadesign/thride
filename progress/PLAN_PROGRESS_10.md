@@ -93,6 +93,12 @@ Four user requests after the D4a review:
 - The old RenderMesh triangulate test used the disc as its n-gon/earcut case; that coverage now comes from an explicit hexagon `fromPolygons` mesh.
 - Verified: 3 new disc topology tests (92/92 total); live — panel shows radius/segments/rings, typing rings=4 at segments=32 rebuilt to exactly 129 verts / 128 faces / 256 edges with the center at the origin, and point mode shows the center + 4 concentric vertex rings.
 
+## Post-round: "disc looks very wrong" — wireframe displays now draw KERNEL edges
+
+- **User report:** disc "very wrong / should work like C4D's". Ruled out geometry first: face normals all exactly +Y (plane-convention match), manifold, correct counts, clean shaded renders — the kernel disc IS C4D's topology. The actual culprit: **Display > Lines and the Wireframe shading mode rendered three's TRIANGLE wireframe** (`wireframe: true` materials), so every band quad showed its triangulation diagonal — on a 32×4 disc that's a hairball of spokes and diagonals instead of C4D's clean rings.
+- **Fix:** both displays now draw the real half-edge kernel edges — a per-mesh-node `LineSegments` (`edgeWires`) built from `uniqueEdges` in local space, rebuilt inside `syncGeometry` whenever the render mesh resyncs (component drags included). Display > Lines shows them subtle/dark over the shading; Wireframe mode shows light-gray edges over a HIDDEN surface (`visible:false` material — the mesh still raycasts, so click-select works in wireframe). depthTest off on the lines: no z-fighting, matching the component-wire style; quads render as quads everywhere (cube = exactly 12 lines, disc = rings + spokes).
+- **500-line rule:** the wire plumbing pushed SceneSynchronizer to 595 → extracted the light-node projection (builders, in-place updates/type-rebuild, oriented helpers, billboards, auto-target creation, light counting) into `render/scene-sync/LightSync.ts` (452 + 196). Regression-verified live: hasLights toggles the default rig both ways, spot cone helper present, point→area type change rebuilds with the new helper, billboards track.
+
 ## Next steps (exact, resumable cold)
 
 1. **D4b:** topology ops as `(mesh, selection, params) → { newSelection }` in `geometry/ops/`: extrude (faces), inset, weld, delete/dissolve — each one undo step (kernel snapshot command), each property-tested for half-edge invariants (`validate.ts` exists).

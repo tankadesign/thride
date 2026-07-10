@@ -1,41 +1,33 @@
 import {
-  AmbientLight,
-  type BufferGeometry,
+  BufferAttribute,
+  BufferGeometry,
   type Camera,
-  Color,
   DirectionalLight,
   DoubleSide,
   FrontSide,
   Group,
-  HemisphereLight,
-  Light,
+  LineBasicMaterial,
+  LineSegments,
   Matrix4,
   Mesh,
   MeshBasicMaterial,
   MeshStandardMaterial,
   Object3D,
-  PointLight,
   Quaternion,
-  RectAreaLight,
   SpotLight,
   Vector3,
 } from "three";
 import { computeBoundsTree, disposeBoundsTree, acceleratedRaycast } from "three-mesh-bvh";
 import type { Uuid } from "@/types/core";
-import { defaultLightData, type LightDataDTO, SHADOW_CAPABLE } from "@/types/core/light";
 import type { Document, SceneNode } from "@/core";
 import type { PrimitiveDescriptor } from "@/types/geometry/primitives";
 import type { HEMesh } from "@/geometry/kernel/HEMesh";
+import { edgeVerts, uniqueEdges } from "@/geometry/kernel/components";
 import { buildPrimitive } from "@/geometry/primitives";
 import { meshRegistry } from "@/geometry/store/meshRegistry";
 import { RenderMesh } from "@/geometry/sync/RenderMesh";
 import { buildCameraHelper } from "@/render/helpers/CameraHelper";
-import {
-  buildBillboardCircle,
-  buildOrientedLightHelper,
-  isBillboardLightType,
-  updateBillboardHelper,
-} from "@/render/helpers/LightHelpers";
+import { LightSync } from "./LightSync";
 import { SelectionOutline } from "./SelectionOutline";
 
 // three-mesh-bvh accelerated raycast, wired once for the whole app
@@ -54,18 +46,18 @@ const BASE_MAT = new MeshStandardMaterial({
   side: DoubleSide,
 });
 const FLAT_MAT = new MeshBasicMaterial({ color: 0xb8b8c0, side: DoubleSide });
-const WIRE_MAT = new MeshBasicMaterial({ color: 0x8a93a8, wireframe: true, side: DoubleSide });
-// wireframe OVERLAY on top of a solid fill (Display > Lines) — polygon offset
-// keeps the lines from z-fighting the filled surface underneath.
-const LINES_MAT = new MeshBasicMaterial({
+// Wireframe shading hides the surface but keeps it raycastable (picking).
+const HIDDEN_MAT = new MeshBasicMaterial({ visible: false });
+// KERNEL edges (quads stay quads — no triangulation diagonals, C4D-style).
+// depthTest off: lines always win over the surface (no z-fighting games);
+// the Lines overlay stays subtle via opacity, wireframe mode reads solid.
+const LINES_EDGE_MAT = new LineBasicMaterial({
   color: 0x14151a,
-  wireframe: true,
   transparent: true,
-  opacity: 0.5,
-  polygonOffset: true,
-  polygonOffsetFactor: -1,
-  polygonOffsetUnits: -1,
+  opacity: 0.55,
+  depthTest: false,
 });
+const WIRE_EDGE_MAT = new LineBasicMaterial({ color: 0x8a93a8, depthTest: false });
 /**
  * Projects the Document into a Three scene graph. The Document is the
  * truth; this class only reacts to events. Mesh nodes carry
@@ -76,9 +68,9 @@ export class SceneSynchronizer {
   private objects = new Map<Uuid, Object3D>();
   private renderMeshes = new Map<Uuid, { key: string; rm: RenderMesh; bvhStale: boolean }>();
   private readonly selectionOutline = new SelectionOutline();
-  private linesOverlays = new Map<Uuid, Mesh>();
-  private lightBillboards = new Map<Uuid, Object3D>();
-  private lightCount = 0;
+  /** Per mesh node: kernel-edge wireframe (Display > Lines + wireframe shading). */
+  private edgeWires = new Map<Uuid, LineSegments>();
+  private readonly lights = new LightSync(this.root);
   private readonly lookMatrix = new Matrix4();
   private readonly lookPos = new Vector3();
   private readonly lookQuat = new Quaternion();
@@ -125,7 +117,7 @@ export class SceneSynchronizer {
 
   /** True once at least one light node exists — the viewport disables its default lighting rig. */
   get hasLights(): boolean {
-    return this.lightCount > 0;
+    return this.lights.hasLights;
   }
 
   nodeIdOf(obj: Object3D): Uuid | null {
@@ -176,9 +168,8 @@ export class SceneSynchronizer {
   private rebuildAll(): void {
     this.root.clear();
     this.objects.clear();
-    this.linesOverlays.clear(); // repopulated by buildMeshObject during the walk below
-    this.lightBillboards.clear(); // root.clear() already detached them; drop the stale refs
-    this.lightCount = 0;
+    this.edgeWires.clear(); // repopulated by buildMeshObject during the walk below
+    this.lights.clear(); // root.clear() already detached the billboards
     const walk = (id: Uuid) => {
       this.addNode(id);
       for (const c of this.doc.scene.childrenOf(id)) walk(c);
@@ -192,13 +183,9 @@ export class SceneSynchronizer {
     if (this.objects.has(id)) return;
     const node = this.doc.scene.mustGet(id);
     let obj: Object3D;
-    let lightData: LightDataDTO | null = null;
     if (node.kind === "mesh") obj = this.buildMeshObject(node);
-    else if (node.kind === "light") {
-      lightData = (node.data?.light as LightDataDTO | undefined) ?? defaultLightData("point");
-      obj = this.buildLightObject(node);
-      this.lightCount++;
-    } else if (node.kind === "camera") obj = this.buildCameraObject();
+    else if (node.kind === "light") obj = this.lights.build(node);
+    else if (node.kind === "camera") obj = this.buildCameraObject();
     else obj = new Group();
     obj.name = node.name;
     obj.userData.nodeId = id;
@@ -207,128 +194,13 @@ export class SceneSynchronizer {
     this.applyTransform(node, obj);
     const parent = node.parent ? this.objects.get(node.parent) : undefined;
     (parent ?? this.root).add(obj);
-    if (lightData) this.refreshLightBillboard(id, lightData);
+    if (node.kind === "light") this.lights.onNodeAdded(id, node);
   }
 
   private buildCameraObject(): Object3D {
     const group = new Group();
     group.add(buildCameraHelper());
     return group;
-  }
-
-  private buildLightObject(node: SceneNode): Object3D {
-    const data = (node.data?.light as LightDataDTO | undefined) ?? defaultLightData("point");
-    let light: Light;
-    switch (data.type) {
-      case "spot": {
-        const l = new SpotLight(data.color, data.intensity, 0, data.angle, data.penumbra);
-        light = l;
-        break;
-      }
-      case "point":
-        light = new PointLight(data.color, data.intensity);
-        break;
-      case "directional":
-        light = new DirectionalLight(data.color, data.intensity);
-        break;
-      case "ambient":
-        light = new AmbientLight(data.color, data.intensity);
-        break;
-      case "hemisphere":
-        light = new HemisphereLight(data.color, data.groundColor ?? "#443c30", data.intensity);
-        break;
-      case "area": {
-        const l = new RectAreaLight(data.color, data.intensity, data.width ?? 2, data.height ?? 2);
-        light = l;
-        break;
-      }
-    }
-    if (
-      light instanceof SpotLight ||
-      light instanceof PointLight ||
-      light instanceof DirectionalLight
-    ) {
-      light.castShadow = data.castShadow ?? true;
-      light.shadow.mapSize.set(1024, 1024);
-      light.shadow.bias = -0.0004;
-    }
-    if (light instanceof SpotLight || light instanceof DirectionalLight) {
-      // three aims spot/directional lights at `.target.position` in world
-      // space and ignores the light's own rotation entirely. Without an
-      // explicit target node, applyTargets() re-points this un-parented
-      // stand-in along the node's own authored rotation each frame, so
-      // rotating an untargeted spot/infinite light actually changes where
-      // it shines.
-      const autoTarget = new Object3D();
-      light.userData.autoTarget = autoTarget;
-      light.target = autoTarget;
-    }
-    light.userData.lightType = data.type;
-    this.attachLightHelper(light, data);
-    return light;
-  }
-
-  /** Cone (spot) / rect (area) visualizer as a child, so it follows the light's rotation. */
-  private attachLightHelper(light: Light, data: LightDataDTO): void {
-    const existing = light.children.find((c) => c.userData.orientedHelper);
-    if (existing) light.remove(existing);
-    const helper = buildOrientedLightHelper(data);
-    if (helper) {
-      helper.userData.orientedHelper = true;
-      light.add(helper);
-    }
-  }
-
-  /** Billboarded circle visualizer for non-oriented light types; tracked outside the light's own transform. */
-  private refreshLightBillboard(id: Uuid, data: LightDataDTO): void {
-    const existing = this.lightBillboards.get(id);
-    if (existing) {
-      existing.removeFromParent();
-      this.lightBillboards.delete(id);
-    }
-    if (isBillboardLightType(data.type)) {
-      const circle = buildBillboardCircle();
-      this.root.add(circle);
-      this.lightBillboards.set(id, circle);
-    }
-  }
-
-  /** Apply light payload changes (color/intensity/shadow/params) in place. */
-  private updateLightObject(node: SceneNode, obj: Object3D): Object3D {
-    const data = node.data?.light as LightDataDTO | undefined;
-    if (!data || !(obj instanceof Light)) return obj;
-    if (obj.userData.lightType !== data.type) {
-      // type changed: rebuild the light, keep real children + hierarchy position
-      // (the stale oriented helper is dropped — buildLightObject attaches a fresh one)
-      const fresh = this.buildLightObject(node);
-      fresh.name = node.name;
-      fresh.userData.nodeId = node.id;
-      for (const child of [...obj.children]) {
-        if (!child.userData.orientedHelper) fresh.add(child);
-      }
-      obj.parent?.add(fresh);
-      obj.removeFromParent();
-      this.objects.set(node.id, fresh);
-      this.refreshLightBillboard(node.id, data);
-      return fresh;
-    }
-    obj.color = new Color(data.color);
-    obj.intensity = data.intensity;
-    if (SHADOW_CAPABLE.has(data.type)) obj.castShadow = data.castShadow ?? true;
-    if (obj instanceof SpotLight) {
-      obj.angle = data.angle ?? obj.angle;
-      obj.penumbra = data.penumbra ?? obj.penumbra;
-    }
-    if (obj instanceof HemisphereLight && data.groundColor) {
-      obj.groundColor = new Color(data.groundColor);
-    }
-    if (obj instanceof RectAreaLight) {
-      obj.width = data.width ?? obj.width;
-      obj.height = data.height ?? obj.height;
-    }
-    this.attachLightHelper(obj, data);
-    this.refreshLightBillboard(node.id, data);
-    return obj;
   }
 
   private removeNode(id: Uuid): void {
@@ -342,13 +214,9 @@ export class SceneSynchronizer {
       if (nid) {
         this.objects.delete(nid);
         this.dropRenderMesh(nid);
-        this.linesOverlays.delete(nid);
-        if (o instanceof Light) this.lightCount--;
-        const billboard = this.lightBillboards.get(nid);
-        if (billboard) {
-          billboard.removeFromParent();
-          this.lightBillboards.delete(nid);
-        }
+        this.edgeWires.get(nid)?.geometry.dispose();
+        this.edgeWires.delete(nid);
+        this.lights.onNodeRemoved(nid, o);
       }
     });
   }
@@ -366,7 +234,10 @@ export class SceneSynchronizer {
     let obj = this.objects.get(id);
     if (!obj) return;
     const node = this.doc.scene.mustGet(id);
-    if (node.kind === "light") obj = this.updateLightObject(node, obj);
+    if (node.kind === "light") {
+      obj = this.lights.update(node, obj);
+      this.objects.set(id, obj); // type changes rebuild the light object
+    }
     obj.name = node.name;
     obj.visible = node.visible;
     this.applyTransform(node, obj);
@@ -440,13 +311,17 @@ export class SceneSynchronizer {
 
   /** Per-pane shading override (viewport Display menu). */
   applyShading(mode: "pbr" | "flat" | "wireframe", backfaces: boolean, lines: boolean): void {
-    const mat = mode === "flat" ? FLAT_MAT : mode === "wireframe" ? WIRE_MAT : BASE_MAT;
+    // wireframe mode: hidden surface (still raycastable for picking) + edges
+    const mat = mode === "flat" ? FLAT_MAT : mode === "wireframe" ? HIDDEN_MAT : BASE_MAT;
     mat.side = backfaces ? DoubleSide : FrontSide;
     for (const obj of this.objects.values()) {
       if (obj instanceof Mesh && !obj.userData.outline) obj.material = mat;
     }
-    const showLines = lines && mode !== "wireframe";
-    for (const overlay of this.linesOverlays.values()) overlay.visible = showLines;
+    const wireMode = mode === "wireframe";
+    for (const wire of this.edgeWires.values()) {
+      wire.visible = wireMode || lines;
+      wire.material = wireMode ? WIRE_EDGE_MAT : LINES_EDGE_MAT;
+    }
   }
 
   /** Resolve the node's geometry source (editable mesh or primitive) into its Mesh. */
@@ -475,8 +350,27 @@ export class SceneSynchronizer {
     else this.rebuildBvh(entry);
     obj.geometry = rm.geometry;
     this.selectionOutline.updateGeometry(id, rm.geometry);
-    const overlay = this.linesOverlays.get(id);
-    if (overlay) overlay.geometry = rm.geometry;
+    this.rebuildEdgeWire(id, source.mesh);
+  }
+
+  /** Kernel-edge line buffer for a mesh node (local coords — child of the mesh). */
+  private rebuildEdgeWire(id: Uuid, mesh: HEMesh): void {
+    const wire = this.edgeWires.get(id);
+    if (!wire) return;
+    const edges = uniqueEdges(mesh);
+    const positions = new Float32Array(edges.length * 6);
+    for (let i = 0; i < edges.length; i++) {
+      const [a, b] = edgeVerts(mesh, edges[i]!);
+      positions[i * 6] = mesh.vPos[a * 3]!;
+      positions[i * 6 + 1] = mesh.vPos[a * 3 + 1]!;
+      positions[i * 6 + 2] = mesh.vPos[a * 3 + 2]!;
+      positions[i * 6 + 3] = mesh.vPos[b * 3]!;
+      positions[i * 6 + 4] = mesh.vPos[b * 3 + 1]!;
+      positions[i * 6 + 5] = mesh.vPos[b * 3 + 2]!;
+    }
+    wire.geometry.dispose();
+    wire.geometry = new BufferGeometry();
+    wire.geometry.setAttribute("position", new BufferAttribute(positions, 3));
   }
 
   private rebuildBvh(entry: { rm: RenderMesh; bvhStale: boolean }): void {
@@ -507,21 +401,24 @@ export class SceneSynchronizer {
     const mesh = new Mesh(undefined, BASE_MAT);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
+    // kernel-edge wire child registered BEFORE the first geometry sync fills it
+    const wire = new LineSegments(new BufferGeometry(), LINES_EDGE_MAT);
+    wire.raycast = () => {}; // never pickable
+    wire.frustumCulled = false; // WebGPU mis-culls Line objects (see helpers)
+    wire.visible = false;
+    wire.renderOrder = 2; // above the surface, below component overlays/gizmo
+    mesh.add(wire);
+    this.edgeWires.set(node.id, wire);
     this.syncGeometry(node.id, node, mesh);
     if (!mesh.geometry.getAttribute("position")) {
       // node without geometry data: fall back to a unit cube
       const rm = new RenderMesh();
-      rm.sync(buildPrimitive({ type: "cube", params: { width: 1, height: 1, depth: 1 } }));
+      const fallback = buildPrimitive({ type: "cube", params: { width: 1, height: 1, depth: 1 } });
+      rm.sync(fallback);
       mesh.geometry = rm.geometry;
       this.renderMeshes.set(node.id, { key: "fallback", rm, bvhStale: false });
+      this.rebuildEdgeWire(node.id, fallback);
     }
-    const overlay = new Mesh(mesh.geometry, LINES_MAT);
-    overlay.raycast = () => {}; // never pickable
-    overlay.userData.linesOverlay = true;
-    overlay.visible = false;
-    overlay.renderOrder = 1; // after the filled surface, so the offset lines win the depth test
-    mesh.add(overlay);
-    this.linesOverlays.set(node.id, overlay);
     return mesh;
   }
 
@@ -550,14 +447,6 @@ export class SceneSynchronizer {
 
   /** Face + resize the billboarded light circles for this pane's camera. Call once per pane, before render. */
   updateHelperBillboards(camera: Camera, viewportHeightPx: number): void {
-    if (this.lightBillboards.size === 0 || viewportHeightPx <= 0) return;
-    const pos = new Vector3();
-    for (const [id, billboard] of this.lightBillboards) {
-      const light = this.objects.get(id);
-      if (!light) continue;
-      light.getWorldPosition(pos);
-      billboard.position.copy(pos);
-      updateBillboardHelper(billboard, camera, viewportHeightPx);
-    }
+    this.lights.updateBillboards(camera, viewportHeightPx, this.objects);
   }
 }
