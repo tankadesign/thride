@@ -107,8 +107,22 @@ export class AmountTool {
       : (ortho.top - ortho.bottom) / paneH;
 
     const before = mesh.snapshot();
-    const result = AMOUNT_OP[kind](mesh, srcIds, 0);
+    let result = AMOUNT_OP[kind](mesh, srcIds, 0);
     if (!result?.lift) return null; // op refused — nothing installed
+    if (kind === "bevel") {
+      // At width 0 every cut point collapses onto its vertex, so the cut face
+      // and notched faces are degenerate — their n-gon triangulation is baked
+      // on that collapsed shape and never recomputed (positions only stream),
+      // leaving garbage triangles as the points spread (black holes). Rebuild
+      // at a small non-degenerate width so the triangulation pattern is valid;
+      // the lift still drives the displayed amount from 0. (Extrude/inset are
+      // quad-only there, whose triangulation is stable under motion.)
+      const minClamp = Math.min(...result.lift.max);
+      const buildW = 0.02 * (Number.isFinite(minClamp) && minClamp > 0 ? minClamp : 1);
+      mesh.restore(before);
+      result = AMOUNT_OP[kind](mesh, srcIds, buildW);
+      if (!result?.lift) return null;
+    }
     // show the freshly created components selected while the modal runs
     // (positions stream without touching topology, so this stamp stays valid)
     const bits = new Bitset();
@@ -148,6 +162,12 @@ export class AmountTool {
 
   /** Left click: collapse the whole gesture into one deterministic undo step. */
   confirm(): void {
+    // no drag (or collapsed back to zero) — commit nothing, just restore
+    // (extrude is signed, so test magnitude, not sign)
+    if (this.startY === null || Math.abs(this.amount) <= 1e-6) {
+      this.cancel();
+      return;
+    }
     const mesh = meshRegistry.get(this.meshId);
     const finalAmount = this.amount;
     this.exit();

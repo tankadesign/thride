@@ -44,7 +44,7 @@ seeds (valid kernel, verts grow, one cut face per vertex, lift sanity) + empty-s
 
 - **Vertex bevel first, edge bevel deferred** (advisor-guided). Edge bevel's degeneracy trap:
   for an edge strip to be non-degenerate the two points at each end must come from offsetting
-  each adjacent face's boundary *into its own plane* (per-face 2D edge-offset-and-intersect),
+  each adjacent face's boundary _into its own plane_ (per-face 2D edge-offset-and-intersect),
   **not** sliding along the beveled edge — sliding along the edge lands both on the same point
   → zero-length strip end, and that fires on every both-beveled corner (i.e. the cube edge-loop
   and cube-all-edges cases, not just pathological ones). Vertex bevel has no strips (shared
@@ -72,6 +72,23 @@ seeds (valid kernel, verts grow, one cut face per vertex, lift sanity) + empty-s
 
 - `tsc -b` clean; `vp test` 120/120. `vp fmt` applied. (Pre-commit tsgolint hook still hangs —
   gate manually + commit `--no-verify`.)
+
+## Post-round fix: bevel modal black-hole gaps
+
+User reported missing polygons (black star-shaped gaps) around a beveled interior vertex on a
+subdivided plane. Root cause was in the RENDER path, not the op: the modal builds topology once
+at width 0 and then only streams positions. At width 0 every cut point collapses onto its
+vertex, so the cut face and notched faces are geometrically degenerate; RenderMeshSync's n-gon
+triangulation is baked on that collapsed shape and never recomputed, so as the points spread the
+triangle pattern is garbage. (Extrude/inset survive width-0 because their faces are quads, whose
+one-diagonal triangulation is stable under motion; bevel's cut face + notched pentagons are not.)
+Fix (`AmountTool.begin`): for bevel only, probe the op at 0 to read the width-independent clamp,
+then rebuild at a small non-degenerate width (2% of the tightest clamp) so the triangulation
+pattern is valid; the lift still drives the displayed amount from 0. Also added a confirm guard —
+a click with no drag (amount ≈ 0) cancels instead of committing a degenerate/no-op step (all
+kinds; magnitude-tested so signed extrude still commits). Verified in-browser: plane interior
+vertex bevels cleanly through the full modal (16→17 F, 25→28 V, valid kernel, one "Bevel" step),
+no gaps at any width.
 
 ## Known issues
 
