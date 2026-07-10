@@ -10,10 +10,11 @@ import {
   Vector3,
 } from "three";
 import { MeshBasicNodeMaterial } from "three/webgpu";
+import type { Node } from "three/webgpu";
 import type { Uuid } from "@/types/core";
 import type { Document } from "@/core";
 import { normalLocal, positionLocal, uniform } from "@/materials/tsl";
-import { themeColor } from "./themeColor";
+import { viewportTheme } from "@/render/theme/viewportTheme";
 
 const OUTLINE_PX = 2;
 
@@ -25,7 +26,7 @@ interface OutlineEntry {
 /** 2px primary-color silhouette (backface hull expanded along normals) on selected mesh nodes. */
 export class SelectionOutline {
   private outlines = new Map<Uuid, OutlineEntry>();
-  private readonly color = themeColor("--color-primary", "#ff865b");
+  private readonly color = viewportTheme.primary;
 
   /** Drop everything without disposing children — call after a full scene-graph rebuild. */
   clear(): void {
@@ -64,7 +65,9 @@ export class SelectionOutline {
       const mat = new MeshBasicNodeMaterial();
       mat.color.copy(this.color);
       mat.side = BackSide;
-      mat.positionNode = positionLocal.add(normalLocal.mul(offset));
+      // Cast to any before chaining to prevent TSL's combinatorial union explosion (TS2590 / tsgolint hang)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      mat.positionNode = (positionLocal as any).add((normalLocal as any).mul(offset)) as Node;
       const outline = new Mesh(obj.geometry, mat);
       outline.raycast = () => {}; // never pickable
       outline.userData.outline = true;

@@ -27,6 +27,7 @@ import { buildPrimitive } from "@/geometry/primitives";
 import { meshRegistry } from "@/geometry/store/meshRegistry";
 import { RenderMesh } from "@/geometry/sync/RenderMesh";
 import { buildCameraHelper } from "@/render/helpers/CameraHelper";
+import { viewportTheme } from "@/render/theme/viewportTheme";
 import { LightSync } from "./LightSync";
 import { SelectionOutline } from "./SelectionOutline";
 
@@ -40,24 +41,35 @@ Mesh.prototype.raycast = acceleratedRaycast;
 // default PBR material — double-sided (open meshes visible from behind),
 // cast/receive shadows enabled on every mesh object
 const BASE_MAT = new MeshStandardMaterial({
-  color: 0xb8b8c0,
+  color: viewportTheme.polygonColor,
   roughness: 0.65,
   metalness: 0.05,
   side: DoubleSide,
 });
-const FLAT_MAT = new MeshBasicMaterial({ color: 0xb8b8c0, side: DoubleSide });
+const FLAT_MAT = new MeshBasicMaterial({ color: viewportTheme.polygonColor, side: DoubleSide });
 // Wireframe shading hides the surface but keeps it raycastable (picking).
 const HIDDEN_MAT = new MeshBasicMaterial({ visible: false });
 // KERNEL edges (quads stay quads — no triangulation diagonals, C4D-style).
 // depthTest off: lines always win over the surface (no z-fighting games);
 // the Lines overlay stays subtle via opacity, wireframe mode reads solid.
 const LINES_EDGE_MAT = new LineBasicMaterial({
-  color: 0x14151a,
+  color: viewportTheme.lineColor,
   transparent: true,
   opacity: 0.55,
   depthTest: false,
 });
-const WIRE_EDGE_MAT = new LineBasicMaterial({ color: 0x8a93a8, depthTest: false });
+const WIRE_EDGE_MAT = new LineBasicMaterial({
+  color: viewportTheme.wireframeColor,
+  depthTest: false,
+});
+
+/** Re-apply theme colors to the shared mesh materials (see viewportTheme). */
+export function applyMeshMaterialsTheme(): void {
+  BASE_MAT.color.copy(viewportTheme.polygonColor);
+  FLAT_MAT.color.copy(viewportTheme.polygonColor);
+  LINES_EDGE_MAT.color.copy(viewportTheme.lineColor);
+  WIRE_EDGE_MAT.color.copy(viewportTheme.wireframeColor);
+}
 /**
  * Projects the Document into a Three scene graph. The Document is the
  * truth; this class only reacts to events. Mesh nodes carry

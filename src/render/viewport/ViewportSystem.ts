@@ -1,7 +1,6 @@
 import {
   AmbientLight,
   Box3,
-  Color,
   DirectionalLight,
   GridHelper,
   Object3D,
@@ -17,9 +16,12 @@ import type { TransformDTO, Uuid } from "@/types/core";
 import type { BuiltinCamera, EditorViewportState } from "@/types/editor";
 import { TransformGizmo } from "@/render/gizmo/TransformGizmo";
 import { PrimitiveHandles } from "@/render/handles/PrimitiveHandles";
+import { applyCameraHelperTheme } from "@/render/helpers/CameraHelper";
+import { applyLightHelperTheme } from "@/render/helpers/LightHelpers";
 import { CameraRig } from "@/render/nav/CameraRig";
 import { ComponentOverlays } from "@/render/overlays/ComponentOverlays";
-import { SceneSynchronizer } from "@/render/scene-sync/SceneSynchronizer";
+import { applyMeshMaterialsTheme, SceneSynchronizer } from "@/render/scene-sync/SceneSynchronizer";
+import { refreshViewportTheme, viewportTheme } from "@/render/theme/viewportTheme";
 import { type AmountKind, AmountTool } from "@/render/tools/AmountTool";
 import { BevelTool } from "@/render/tools/BevelTool";
 import { WeldTool } from "@/render/tools/WeldTool";
@@ -88,7 +90,7 @@ export class ViewportSystem {
   readonly raycaster = new Raycaster();
   private renderer: WebGPURenderer | null = null;
   private readonly scene = new Scene();
-  private readonly grid: GridHelper;
+  private grid: GridHelper;
   private readonly defaultAmbient: AmbientLight;
   private readonly defaultKey: DirectionalLight;
   private readonly defaultFill: DirectionalLight;
@@ -116,18 +118,17 @@ export class ViewportSystem {
     this.doc = doc;
     this.editor = editor;
 
-    this.scene.background = new Color(0x101014);
-    this.grid = new GridHelper(40, 40, 0x333340, 0x22222a);
-    this.grid.position.y = -0.001;
+    this.scene.background = viewportTheme.backgroundColor.clone();
+    this.grid = this.buildGrid();
     this.scene.add(this.grid);
     // fallback lighting rig — disabled once the document supplies its own
     // lights (or, later, an environment), so scenes aren't double-lit.
-    this.defaultAmbient = new AmbientLight(0xffffff, 0.35);
+    this.defaultAmbient = new AmbientLight(viewportTheme.lightAmbientColor, 0.35);
     this.scene.add(this.defaultAmbient);
-    this.defaultKey = new DirectionalLight(0xffffff, 2.2);
+    this.defaultKey = new DirectionalLight(viewportTheme.lightKeyColor, 2.2);
     this.defaultKey.position.set(5, 8, 4);
     this.scene.add(this.defaultKey);
-    this.defaultFill = new DirectionalLight(0x8899bb, 0.6);
+    this.defaultFill = new DirectionalLight(viewportTheme.lightFillColor, 0.6);
     this.defaultFill.position.set(-6, 3, -5);
     this.scene.add(this.defaultFill);
 
@@ -155,6 +156,37 @@ export class ViewportSystem {
     }
 
     void this.init();
+  }
+
+  /** 40×40 world-unit floor grid, colored from the viewport theme. */
+  private buildGrid(): GridHelper {
+    const grid = new GridHelper(40, 40, viewportTheme.gridLineColor, viewportTheme.gridCellColor);
+    grid.position.y = -0.001;
+    return grid;
+  }
+
+  /**
+   * Re-resolve semantic theme colors from CSS and push every color into the
+   * live scene chrome (background is read per-frame; grid, lights and the
+   * shared mesh materials are updated here). Call after the daisyUI theme
+   * changes or a user edits a viewport color.
+   */
+  applyTheme(): void {
+    refreshViewportTheme();
+    applyMeshMaterialsTheme();
+    applyLightHelperTheme();
+    applyCameraHelperTheme();
+    this.gizmo.applyTheme();
+    this.handles.applyTheme();
+    this.overlays.applyTheme();
+    this.defaultAmbient.color.copy(viewportTheme.lightAmbientColor);
+    this.defaultKey.color.copy(viewportTheme.lightKeyColor);
+    this.defaultFill.color.copy(viewportTheme.lightFillColor);
+    this.scene.remove(this.grid);
+    this.grid.dispose();
+    this.grid = this.buildGrid();
+    this.scene.add(this.grid);
+    this.invalidate();
   }
 
   private async init(): Promise<void> {
@@ -409,7 +441,9 @@ export class ViewportSystem {
       renderer.setViewport(p.x, yGL, p.w, p.h);
       renderer.setScissor(p.x, yGL, p.w, p.h);
       const activePane = i === this.editor.activePane && this.editor.layout === "quad";
-      this.scene.background = new Color(activePane ? 0x12121a : 0x101014);
+      this.scene.background = activePane
+        ? viewportTheme.activeBackgroundColor
+        : viewportTheme.backgroundColor;
       const activeObj = this.activeObject();
       // the extrude/inset modal and the live bevel drive their own drag — hide
       // the gizmo so it doesn't fight them

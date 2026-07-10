@@ -113,18 +113,24 @@ export class ViewportInput {
         e.button === 0 ? "orbit" : e.button === 1 ? "pan" : e.button === 2 ? "dolly" : null;
       let pivot: Vector3 | null = null;
       let marker = { x, y };
-      if (mode === "orbit") {
-        // C4D: orbit around the point under the cursor; empty click orbits
-        // the viewport center (no view jump either way — free-camera rig)
+      if (mode === "orbit" || mode === "dolly") {
+        // C4D: orbit AND dolly pivot on the point under the cursor (the
+        // crosshair), so zooming homes in on the picked object just like
+        // rotating spins around it. Empty click falls back to the viewport
+        // center — no view jump either way (free-camera rig).
         const rig = vs.setRayFromEvent(e, pane);
+        const hit = vs.raycaster.intersectObject(vs.sync.root, true)[0];
         if (rig.isPerspective) {
-          const hit = vs.raycaster.intersectObject(vs.sync.root, true)[0];
           pivot = rig.beginOrbitPivot(hit?.point ?? null);
           if (!hit) {
             // marker sits where the pivot actually is: the pane center
             const paneRect = vs.paneRect(pane);
             marker = { x: paneRect.x + paneRect.w / 2, y: paneRect.y + paneRect.h / 2 };
           }
+        } else if (mode === "dolly" && hit) {
+          // ortho doesn't orbit, but dolly can still zoom toward the picked
+          // point; no hit → fall through to plain center zoom
+          pivot = hit.point.clone();
         }
       }
       this.nav = { mode, pane, lastX: e.clientX, lastY: e.clientY, pivot };
@@ -203,7 +209,12 @@ export class ViewportInput {
       const rect = vs.paneRect(this.nav.pane);
       if (this.nav.mode === "orbit" && this.nav.pivot) rig.orbitAround(this.nav.pivot, dx, dy);
       if (this.nav.mode === "pan") rig.pan(dx, dy, rect.h);
-      if (this.nav.mode === "dolly") rig.dolly(dy * 2.5);
+      if (this.nav.mode === "dolly") {
+        // pivot on the crosshair point when we have one (ortho empty-space
+        // dolly keeps the old center zoom)
+        if (this.nav.pivot) rig.dollyToward(this.nav.pivot, dy * 2.5);
+        else rig.dolly(dy * 2.5);
+      }
       vs.updateCameraNav(this.nav.pane, rig);
       vs.invalidate();
       return;

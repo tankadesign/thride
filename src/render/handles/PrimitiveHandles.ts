@@ -15,12 +15,16 @@ import type { Uuid } from "@/types/core";
 import type { Document } from "@/core";
 import { SetNodeDataCommand } from "@/core/history/commands/scene";
 import type { PrimitiveDescriptor } from "@/types/geometry/primitives";
+import { viewportTheme } from "@/render/theme/viewportTheme";
 import { type HandleDef, handleDefs } from "./defs";
 
-const YELLOW = 0xffd60a;
-const HANDLE_MAT = new MeshBasicMaterial({ color: YELLOW, depthTest: false, depthWrite: false });
+const HANDLE_MAT = new MeshBasicMaterial({
+  color: viewportTheme.handleColor,
+  depthTest: false,
+  depthWrite: false,
+});
 const HANDLE_HOVER_MAT = new MeshBasicMaterial({
-  color: 0xffffff,
+  color: viewportTheme.handleHoverColor,
   depthTest: false,
   depthWrite: false,
 });
@@ -61,6 +65,12 @@ export class PrimitiveHandles {
 
   get isDragging(): boolean {
     return this.drag !== null;
+  }
+
+  /** Re-apply themed handle colors to the shared handle materials (see viewportTheme). */
+  applyTheme(): void {
+    HANDLE_MAT.color.copy(viewportTheme.handleColor);
+    HANDLE_HOVER_MAT.color.copy(viewportTheme.handleHoverColor);
   }
 
   /** Rebuild/position handles for the active selected primitive each frame. */

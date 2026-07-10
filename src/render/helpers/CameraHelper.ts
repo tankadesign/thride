@@ -1,5 +1,5 @@
 import { BufferAttribute, BufferGeometry, LineBasicMaterial, LineSegments, Object3D } from "three";
-import { themeColor } from "@/render/scene-sync/themeColor";
+import { viewportTheme } from "@/render/theme/viewportTheme";
 
 /**
  * Wireframe pyramid marking a camera node in the viewport: apex at the
@@ -7,8 +7,13 @@ import { themeColor } from "@/render/scene-sync/themeColor";
  * forward) pointing where the camera looks — so it follows node rotation
  * for free as a child of the camera's Object3D.
  */
-const HELPER_COLOR = themeColor("--color-secondary", "#c084fc");
+const HELPER_COLOR = viewportTheme.secondary;
 const HELPER_MAT = new LineBasicMaterial({ color: HELPER_COLOR });
+
+/** Re-apply the themed helper color to the shared camera-helper material. */
+export function applyCameraHelperTheme(): void {
+  HELPER_MAT.color.copy(viewportTheme.secondary);
+}
 
 const FOCUS_DIST = 0.8;
 const HALF_W = 0.5;

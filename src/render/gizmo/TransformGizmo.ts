@@ -1,6 +1,7 @@
 import {
   BoxGeometry,
   Camera,
+  Color,
   ConeGeometry,
   CylinderGeometry,
   Euler,
@@ -21,7 +22,7 @@ import type { TransformDTO, Uuid } from "@/types/core";
 import type { GizmoSpace } from "@/types/editor";
 import type { Document } from "@/core";
 import { TransformDragSession } from "@/core/session/TransformDragSession";
-import { themeColor } from "@/render/scene-sync/themeColor";
+import { viewportTheme } from "@/render/theme/viewportTheme";
 import { ComponentDrag, componentContext } from "./componentDrag";
 
 export interface GizmoModifiers {
@@ -67,7 +68,8 @@ const HANDLE_PRIORITY: Record<HandleKind, number> = {
   rotate: 1,
 };
 
-const AXIS_COLORS = [0xe0554f, 0x69b839, 0x3f7fdc] as const; // x y z
+// X/Y/Z axis colors from the viewport theme (error/success/info).
+const AXIS_COLORS = [viewportTheme.gizmo.x, viewportTheme.gizmo.y, viewportTheme.gizmo.z] as const;
 const AXIS_VECS = [new Vector3(1, 0, 0), new Vector3(0, 1, 0), new Vector3(0, 0, 1)] as const;
 
 interface DragState {
@@ -97,7 +99,7 @@ export class TransformGizmo {
   private drag: DragState | null = null;
   private hovered: Mesh | null = null;
   private activeObject: Object3D | null = null;
-  private readonly hoverColor = themeColor("--color-primary", "#ff865b");
+  private readonly hoverColor = viewportTheme.primary;
 
   constructor(doc: Document) {
     this.doc = doc;
@@ -323,7 +325,7 @@ export class TransformGizmo {
     if (this.hovered) {
       const m = this.hovered.material as MeshBasicMaterial;
       m.opacity = BASE_OPACITY;
-      m.color.setHex(this.hovered.userData.baseColor as number);
+      m.color.copy(this.hovered.userData.baseColor as Color);
     }
     this.hovered = mesh;
     if (mesh) {
@@ -331,6 +333,20 @@ export class TransformGizmo {
       m.opacity = 1;
       m.color.copy(this.hoverColor);
     }
+  }
+
+  /** Re-apply themed axis/center colors to existing handles (see viewportTheme). */
+  applyTheme(): void {
+    this.group.traverse((o) => {
+      const mesh = o as Mesh;
+      const base = mesh.userData.baseColor as Color | undefined;
+      if (!base) return; // pickers/non-handles carry no baseColor
+      const handle = mesh.userData.handle as Handle;
+      const color =
+        handle.kind === "translate-view" ? viewportTheme.gizmo.center : AXIS_COLORS[handle.axis];
+      base.copy(color);
+      if (mesh !== this.hovered) (mesh.material as MeshBasicMaterial).color.copy(color);
+    });
   }
 
   private angleOnPlane(rel: Vector3, axis: Axis, basis: Quaternion): number {
@@ -391,7 +407,7 @@ export class TransformGizmo {
     }
     const center = this.handleMesh(
       new SphereGeometry(0.07, 16, 12),
-      0xdddddd,
+      viewportTheme.gizmo.center,
       { kind: "translate-view", axis: 0 },
       new SphereGeometry(0.07 * PICK_SCALE, 8, 6),
     );
@@ -405,7 +421,7 @@ export class TransformGizmo {
    */
   private handleMesh(
     geometry: BoxGeometry | ConeGeometry | CylinderGeometry | SphereGeometry | TorusGeometry,
-    color: number,
+    color: Color,
     handle: Handle,
     pickerGeometry: BoxGeometry | ConeGeometry | CylinderGeometry | SphereGeometry | TorusGeometry,
   ): Mesh {
@@ -418,7 +434,7 @@ export class TransformGizmo {
     });
     const mesh = new Mesh(geometry, mat);
     mesh.userData.handle = handle;
-    mesh.userData.baseColor = color;
+    mesh.userData.baseColor = color.clone();
     mesh.renderOrder = 1000;
 
     const picker = new Mesh(pickerGeometry, PICKER_MAT);

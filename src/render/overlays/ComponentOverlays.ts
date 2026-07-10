@@ -30,11 +30,11 @@ import type { HEMesh } from "@/geometry/kernel/HEMesh";
 import { edgeVerts, uniqueEdges } from "@/geometry/kernel/components";
 import { meshRegistry } from "@/geometry/store/meshRegistry";
 import type { SceneSynchronizer } from "@/render/scene-sync/SceneSynchronizer";
-import { themeColor } from "@/render/scene-sync/themeColor";
+import { viewportTheme } from "@/render/theme/viewportTheme";
 
 const POINT_PX = 7;
-const WIRE_COLOR = new Color(0x8a93a8);
-const POINT_COLOR = new Color(0xd8dce8);
+const WIRE_COLOR = viewportTheme.wireframeColor;
+const POINT_COLOR = viewportTheme.pointColor;
 
 function noPick(obj: Object3D): void {
   obj.raycast = () => {};
@@ -52,9 +52,9 @@ export class ComponentOverlays {
   readonly group = new Group();
   private readonly doc: Document;
   private readonly sync: SceneSynchronizer;
-  private readonly selectedColor = themeColor("--color-primary", "#ff865b");
-  private readonly warningColor = themeColor("--color-warning", "#ffbf00");
-  private readonly infoColor = themeColor("--color-info", "#38bdf8");
+  private readonly selectedColor = viewportTheme.primary;
+  private readonly warningColor = viewportTheme.warning;
+  private readonly infoColor = viewportTheme.info;
   private readonly localRoot = new Group(); // mirrors the mesh node's matrixWorld
   private wire: LineSegments;
   private facesFront: Mesh;
@@ -121,6 +121,16 @@ export class ComponentOverlays {
     m.geometry.dispose();
     (m.material as MeshBasicMaterial).dispose();
     m.dispose();
+  }
+
+  /** Re-apply themed colors (see viewportTheme). Face/point materials copy
+   * directly; the wire bakes per-vertex colors, so force a rebuild. */
+  applyTheme(): void {
+    (this.facesFront.material as MeshBasicMaterial).color.copy(this.warningColor);
+    (this.facesBack.material as MeshBasicMaterial).color.copy(this.infoColor);
+    (this.pointsSel.material as MeshBasicMaterial).color.copy(this.selectedColor);
+    (this.pointsUnsel.material as MeshBasicMaterial).color.copy(POINT_COLOR);
+    this.built.node = ""; // invalidate → next update() rebuilds the wire vertex colors
   }
 
   /** Per pane, before render: rebuild if stale, then billboard the points. */

@@ -16,6 +16,7 @@ import {
   type ViewportStats,
   ViewportSystem,
 } from "@/render/viewport/ViewportSystem";
+import { themeStyle, viewportTheme } from "@/render/theme/viewportTheme";
 import { buildViewportMenu } from "./viewportMenu";
 import { IconPivotPoint } from "@/icons";
 
@@ -27,8 +28,12 @@ const OBJECT_CONTEXT_COMMANDS = [
   "edit.deselect",
 ];
 
-/** Matches the gizmo's AXIS_COLORS (x, y, z). */
-const AXIS_COLORS = ["#e0554f", "#69b839", "#3f7fdc"] as const;
+/** Shares the gizmo's axis colors (X/Y/Z → error/success/info) via the theme. */
+const AXIS_COLORS = [
+  themeStyle(viewportTheme.gizmo.x),
+  themeStyle(viewportTheme.gizmo.y),
+  themeStyle(viewportTheme.gizmo.z),
+] as const;
 const AXIS_LABELS = ["X", "Y", "Z"] as const;
 
 /** C4D-style orientation indicator: world axes projected into the pane. */
@@ -54,7 +59,7 @@ function AxisIndicator({ axes }: { axes: PaneAxes }) {
                 textAnchor="middle"
                 fontSize="8"
                 fontWeight="700"
-                fill="#101014"
+                fill={themeStyle(viewportTheme.backgroundColor)}
               >
                 {AXIS_LABELS[i]}
               </text>

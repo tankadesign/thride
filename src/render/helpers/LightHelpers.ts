@@ -10,7 +10,7 @@ import {
   PerspectiveCamera,
 } from "three";
 import type { LightDataDTO, LightType } from "@/types/core/light";
-import { themeColor } from "@/render/scene-sync/themeColor";
+import { viewportTheme } from "@/render/theme/viewportTheme";
 
 /**
  * Per-type light helpers: spot gets a cone, area a rect with corner ticks,
@@ -20,8 +20,13 @@ import { themeColor } from "@/render/scene-sync/themeColor";
  * "billboard" circle, tracked/positioned externally by SceneSynchronizer
  * since a billboard can't just inherit the light's rotation.
  */
-const HELPER_COLOR = themeColor("--color-secondary", "#c084fc");
+const HELPER_COLOR = viewportTheme.secondary;
 const HELPER_MAT = new LineBasicMaterial({ color: HELPER_COLOR });
+
+/** Re-apply the themed helper color to the shared light-helper material. */
+export function applyLightHelperTheme(): void {
+  HELPER_MAT.color.copy(viewportTheme.secondary);
+}
 
 function noPick(obj: Object3D): void {
   obj.raycast = () => {};

@@ -41,3 +41,46 @@ describe("CameraRig perspective orbit", () => {
     expect(Math.abs(right.y)).toBeLessThan(1e-3);
   });
 });
+
+describe("CameraRig dollyToward (crosshair-pivot zoom)", () => {
+  // The pivot must stay glued to the same screen pixel while dollying — that
+  // IS the "zoom into the point under the cursor" behavior.
+  const ndc = (rig: CameraRig, p: Vector3) => {
+    rig.camera.updateMatrixWorld();
+    const v = p.clone().project(rig.camera);
+    return { x: v.x, y: v.y };
+  };
+
+  it("perspective: the pivot stays fixed on screen while zooming in and out", () => {
+    const rig = new CameraRig("persp");
+    rig.setAspect(16 / 9);
+    const pivot = new Vector3(1.2, -0.4, 0.7); // off-center, off-axis
+    const before = ndc(rig, pivot);
+    for (let i = 0; i < 40; i++) rig.dollyToward(pivot, 12); // zoom way in
+    const zoomedIn = ndc(rig, pivot);
+    for (let i = 0; i < 80; i++) rig.dollyToward(pivot, -12); // and back out past start
+    const zoomedOut = ndc(rig, pivot);
+    for (const p of [zoomedIn, zoomedOut]) {
+      expect(Math.abs(p.x - before.x)).toBeLessThan(1e-4);
+      expect(Math.abs(p.y - before.y)).toBeLessThan(1e-4);
+    }
+  });
+
+  it("ortho: the pivot stays fixed on screen while zooming", () => {
+    const rig = new CameraRig("front");
+    rig.setAspect(4 / 3);
+    const pivot = new Vector3(2, 1.5, 0); // in the front view's plane
+    const before = ndc(rig, pivot);
+    for (let i = 0; i < 30; i++) rig.dollyToward(pivot, 15);
+    const after = ndc(rig, pivot);
+    expect(Math.abs(after.x - before.x)).toBeLessThan(1e-4);
+    expect(Math.abs(after.y - before.y)).toBeLessThan(1e-4);
+  });
+
+  it("never lands on or crosses the pivot (near-plane clamp holds)", () => {
+    const rig = new CameraRig("persp");
+    const pivot = new Vector3(0, 0, 0);
+    for (let i = 0; i < 500; i++) rig.dollyToward(pivot, 40); // hammer zoom-in
+    expect(rig.camera.position.distanceTo(pivot)).toBeGreaterThanOrEqual(0.05 - 1e-9);
+  });
+});

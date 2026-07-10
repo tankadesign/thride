@@ -149,6 +149,35 @@ export class CameraRig {
     }
   }
 
+  /**
+   * Dolly toward an explicit world `point` — the crosshair pivot under the
+   * cursor at drag start — so zooming homes in on the picked object instead of
+   * the viewport center, matching orbit's pivot behavior. Perspective slides
+   * the camera along the camera→point ray, which keeps `point` on the same
+   * screen pixel (projection is scale-invariant along a view ray). Ortho scales
+   * zoom and shifts the view center so `point` holds still. delta > 0 = closer.
+   */
+  dollyToward(point: Vector3, delta: number): void {
+    const factor = Math.exp(-delta * 0.002);
+    if (this.camera instanceof PerspectiveCamera) {
+      const offset = this.camera.position.clone().sub(point);
+      const dist = offset.length();
+      if (dist < 1e-6) return; // camera sitting on the pivot — nothing to do
+      const newDist = MathUtils.clamp(dist * factor, 0.05, 4000);
+      offset.multiplyScalar(newDist / dist);
+      this.camera.position.copy(point).add(offset);
+      this.focusDistance = MathUtils.clamp(this.focusDistance * factor, 0.05, 4000);
+      this.camera.updateMatrixWorld();
+    } else {
+      const newZoom = MathUtils.clamp(this.orthoZoom * factor, 0.01, 4000);
+      const k = newZoom / this.orthoZoom;
+      // keep `point` fixed on screen: center' = point + (center - point) * k
+      this.pivot.sub(point).multiplyScalar(k).add(point);
+      this.orthoZoom = newZoom;
+      this.applyOrtho();
+    }
+  }
+
   /** Frame a box: intentional recenter (lookAt is expected here, unlike orbit). */
   frame(box: Box3): void {
     if (box.isEmpty()) return;

@@ -1,6 +1,7 @@
 import {
   BufferAttribute,
   BufferGeometry,
+  type Color,
   Group,
   Line,
   LineBasicMaterial,
@@ -19,7 +20,7 @@ import { MeshTopologyCommand } from "@/geometry/commands/topology";
 import { weldVerticesTo } from "@/geometry/ops/weld";
 import { meshRegistry } from "@/geometry/store/meshRegistry";
 import { pickComponent } from "@/render/picking/componentPicking";
-import { themeColor } from "@/render/scene-sync/themeColor";
+import { viewportTheme } from "@/render/theme/viewportTheme";
 import type { ViewportSystem } from "@/render/viewport/ViewportSystem";
 
 /** Screen-space radius around a neighbor point that arms the weld (px). */
@@ -39,7 +40,7 @@ const TARGET_PX = 12;
 export class WeldTool {
   readonly group = new Group();
   private readonly vs: ViewportSystem;
-  private readonly success = themeColor("--color-success", "#00b16a");
+  private readonly success = viewportTheme.success;
   private readonly ghost: Mesh;
   private readonly target: Mesh;
   private readonly link: Line;
@@ -57,7 +58,7 @@ export class WeldTool {
     this.vs = vs;
     this.group.name = "weld-tool";
     this.group.visible = false;
-    const quad = (color: ReturnType<typeof themeColor>, opacity: number) => {
+    const quad = (color: Color, opacity: number) => {
       const m = new Mesh(
         new PlaneGeometry(1, 1),
         new MeshBasicMaterial({ color, transparent: true, opacity, depthTest: false }),
@@ -68,7 +69,7 @@ export class WeldTool {
       this.group.add(m);
       return m;
     };
-    this.ghost = quad(themeColor("--color-base-content", "#e0e0e6"), 0.85);
+    this.ghost = quad(viewportTheme.baseContent, 0.85);
     this.target = quad(this.success, 0.95);
     const lineGeo = new BufferGeometry();
     lineGeo.setAttribute("position", new BufferAttribute(new Float32Array(6), 3));
