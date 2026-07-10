@@ -10,7 +10,7 @@ import type {
 } from "@/types/editor";
 import { defaultBevelParams, defaultPaneDisplay } from "@/types/editor";
 import { appStore } from "@/ui/hooks/doc/document";
-import { gridSnapSizeAtom } from "./settings";
+import { gridSnapSizeAtom, snapEnabledAtom } from "./settings";
 import { paletteOpenAtom } from "./shell";
 
 /**
@@ -86,6 +86,10 @@ class EditorStateStore implements EditorViewportState {
 
   get gridSnapSize(): number {
     return appStore.get(gridSnapSizeAtom);
+  }
+
+  get snapEnabled(): boolean {
+    return appStore.get(snapEnabledAtom);
   }
 
   get gizmoSpace(): GizmoSpace {
@@ -173,6 +177,7 @@ class EditorStateStore implements EditorViewportState {
       appStore.sub(gizmoSpaceAtom, cb),
       appStore.sub(weldArmedAtom, cb),
       appStore.sub(bevelActiveAtom, cb),
+      appStore.sub(snapEnabledAtom, cb),
       appStore.sub(paneDisplaysAtom, cb),
     ];
     return () => {

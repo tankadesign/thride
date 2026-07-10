@@ -1,9 +1,11 @@
 import { Mesh, Raycaster, Vector3 } from "three";
 import type { ComponentMode, Uuid } from "@/types/core";
 import { Bitset } from "@/core/selection/Bitset";
+import { vertsForSelection } from "@/geometry/kernel/components";
 import { selectAll } from "@/geometry/selection/selectAll";
 import { meshRegistry } from "@/geometry/store/meshRegistry";
 import { pickComponent } from "@/render/picking/componentPicking";
+import { findSnap, type SnapCandidate, type SnapHit } from "@/render/picking/snapPoint";
 import type { ViewportSystem } from "./ViewportSystem";
 
 type NavMode = "orbit" | "pan" | "dolly" | null;
@@ -26,6 +28,8 @@ export class ViewportInput {
   private mmbClick: { x: number; y: number; pane: number } | null = null;
   /** Live-bevel width scrub state. */
   private bevelDrag: { startY: number; lastY: number; moved: boolean } | null = null;
+  /** Snap target hit during the current gizmo move (for the magnet marker). */
+  private lastSnap: SnapHit | null = null;
   /** RMB cancelled a modal tool — swallow the contextmenu it also fires. */
   private suppressContext = false;
   /** Pointer is over the canvas — gates viewport-scoped keys (Select All). */
@@ -227,11 +231,17 @@ export class ViewportInput {
     }
     if (vs.gizmo.isDragging) {
       vs.setRayFromEvent(e, vs.editor.activePane);
+      this.lastSnap = null;
       vs.gizmo.pointerMove(vs.raycaster, {
         uniformScale: e.shiftKey,
         snap: e.shiftKey,
         snapSize: vs.editor.gridSnapSize,
+        snapWorld: vs.editor.snapEnabled ? this.snapWorld : undefined,
       });
+      // this.snapWorld (the callback above) mutates lastSnap — read past the
+      // control-flow narrowing from the reset
+      const hit = this.lastSnap as SnapHit | null;
+      vs.onSnapMarker?.(hit ? this.snapScreen(hit.world) : null);
       vs.invalidate();
       return;
     }
@@ -283,6 +293,8 @@ export class ViewportInput {
     }
     if (vs.gizmo.isDragging) {
       vs.gizmo.pointerUp();
+      this.lastSnap = null;
+      vs.onSnapMarker?.(null);
       vs.invalidate();
     }
   };
@@ -384,6 +396,70 @@ export class ViewportInput {
       t.tagName === "SELECT" ||
       t.isContentEditable
     );
+  }
+
+  /** Magnet: snap a moved pivot to the nearest scene vertex/edge (or null). */
+  private snapWorld = (world: Vector3): Vector3 | null => {
+    const vs = this.vs;
+    const pane = vs.editor.activePane;
+    const hit = findSnap(
+      world,
+      vs.rigFor(pane).camera,
+      vs.paneRect(pane),
+      this.snapCandidates(),
+      this.snapExclude(),
+    );
+    this.lastSnap = hit;
+    return hit ? hit.world : null;
+  };
+
+  /** Every editable mesh in the scene as a snap target. */
+  private snapCandidates(): SnapCandidate[] {
+    const vs = this.vs;
+    const out: SnapCandidate[] = [];
+    for (const n of vs.doc.scene.toDTO()) {
+      if (n.kind !== "mesh") continue;
+      const ref = (n.data as { mesh?: { id: Uuid } } | undefined)?.mesh;
+      const mesh = ref ? meshRegistry.get(ref.id) : undefined;
+      const object = vs.sync.object(n.id);
+      if (ref && mesh && object) out.push({ meshId: ref.id, mesh, object });
+    }
+    return out;
+  }
+
+  /** Skip the geometry currently being dragged so it can't snap to itself. */
+  private snapExclude(): (meshId: string, v: number) => boolean {
+    const doc = this.vs.doc;
+    const mode = doc.selection.editMode;
+    if (mode === "point" || mode === "edge" || mode === "polygon") {
+      const active = doc.selection.active;
+      const ref = active
+        ? (doc.scene.get(active)?.data?.mesh as { id: Uuid } | undefined)
+        : undefined;
+      const mesh = ref ? meshRegistry.get(ref.id) : undefined;
+      const sel = active && ref ? doc.selection.componentsFor(active, mode) : undefined;
+      if (ref && mesh && sel) {
+        const dragged = new Set(vertsForSelection(mesh, mode, sel.bits));
+        return (mid, v) => mid === ref.id && dragged.has(v);
+      }
+      return () => false;
+    }
+    const selMeshes = new Set<string>();
+    for (const id of doc.selection.objectIds) {
+      const ref = doc.scene.get(id)?.data?.mesh as { id: Uuid } | undefined;
+      if (ref) selMeshes.add(ref.id);
+    }
+    return (mid) => selMeshes.has(mid);
+  }
+
+  /** Project a world snap target to canvas pixels for the DOM marker. */
+  private snapScreen(world: Vector3): { x: number; y: number } | null {
+    const vs = this.vs;
+    const pane = vs.paneRect(vs.editor.activePane);
+    const cam = vs.rigFor(vs.editor.activePane).camera;
+    cam.updateMatrixWorld();
+    const v = world.clone().applyMatrix4(cam.matrixWorldInverse).applyMatrix4(cam.projectionMatrix);
+    return { x: pane.x + ((v.x + 1) / 2) * pane.w, y: pane.y + ((1 - v.y) / 2) * pane.h };
   }
 
   /** First raycast hit that resolves to a visible node, or null. */

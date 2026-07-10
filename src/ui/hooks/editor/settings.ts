@@ -16,6 +16,13 @@ export const iconSizeAtom = atomWithStorage("thride.settings.iconSize", 20);
  */
 export const gridSnapSizeAtom = atomWithStorage("thride.settings.gridSnapSize", 0.1);
 
+/**
+ * Magnet: when on, translate drags snap the moved pivot to the nearest scene
+ * vertex or edge (in screen space). Grid snap stays on Shift; this is the
+ * absolute snap-to-geometry mode (C4D/Blender magnet).
+ */
+export const snapEnabledAtom = atomWithStorage("thride.settings.snapEnabled", false);
+
 export function useSettings() {
   const [iconSize, setIconSize] = useAtom(iconSizeAtom);
   const [gridSnapSize, setGridSnapSize] = useAtom(gridSnapSizeAtom);

@@ -107,6 +107,8 @@ export class ViewportSystem {
   private lastStats = performance.now();
   /** Canvas-relative 2D position of the active nav pivot marker (the "+"). */
   onNavMarker: ((pos: { x: number; y: number } | null) => void) | null = null;
+  /** Canvas-relative 2D position of the active magnet snap marker, or null. */
+  onSnapMarker: ((pos: { x: number; y: number } | null) => void) | null = null;
   /** Axis-indicator data per visible pane slot, published every rendered frame. */
   onAxes: ((axes: PaneAxes[]) => void) | null = null;
   /** Right-click: UI layer opens the matching context menu. */

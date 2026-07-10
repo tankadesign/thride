@@ -31,6 +31,11 @@ export interface GizmoModifiers {
   /** Snap deltas to snapSize steps — LOCAL, relative to drag start. */
   snap?: boolean;
   snapSize?: number;
+  /**
+   * Magnet: given the moved pivot's would-be world position, return a snapped
+   * position (nearest scene vertex/edge) or null. Applied on translate.
+   */
+  snapWorld?: (world: Vector3) => Vector3 | null;
 }
 
 const ROTATE_SNAP = Math.PI / 36; // 5°
@@ -250,6 +255,17 @@ export class TransformGizmo {
         delta.copy(d.axisWorld).multiplyScalar(along);
       } else if (mods.snap) {
         delta.set(snapTo(delta.x, snapSize), snapTo(delta.y, snapSize), snapTo(delta.z, snapSize));
+      }
+      // magnet: snap the moved pivot to nearby scene geometry (axis handles
+      // keep their constraint — only the along-axis component snaps)
+      if (mods.snapWorld) {
+        const snapped = mods.snapWorld(d.pivot.clone().add(delta));
+        if (snapped) {
+          const sd = snapped.sub(d.pivot);
+          if (d.handle.kind === "translate")
+            delta.copy(d.axisWorld).multiplyScalar(sd.dot(d.axisWorld));
+          else delta.copy(sd);
+        }
       }
       if (d.component) {
         d.component.applyTranslate(delta);

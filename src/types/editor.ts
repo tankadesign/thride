@@ -76,6 +76,8 @@ export interface EditorViewportState {
   readonly paletteOpen: boolean;
   /** Grid snap step in world units for shift-snapping (settings). */
   readonly gridSnapSize: number;
+  /** Magnet: translate drags snap to the nearest scene vertex/edge. */
+  readonly snapEnabled: boolean;
   /** Gizmo axis orientation: object-local (default) or world-aligned. */
   readonly gizmoSpace: GizmoSpace;
   toggleGizmoSpace(): void;

@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import type { Uuid } from "@/types/core";
 import type { PaneCamera } from "@/types/editor";
-import { useAtomValue } from "jotai";
+import { useAtom, useAtomValue } from "jotai";
 import { appStore, useDocument, useSliceVersion } from "@/ui/hooks/doc/document";
 import { openContextMenu } from "@/ui/hooks/editor/shell";
+import { snapEnabledAtom } from "@/ui/hooks/editor/settings";
 import {
   bevelActiveAtom,
   editorState,
@@ -18,7 +19,7 @@ import {
 } from "@/render/viewport/ViewportSystem";
 import { themeStyle, viewportTheme } from "@/render/theme/viewportTheme";
 import { buildViewportMenu } from "./viewportMenu";
-import { IconPivotPoint } from "@/icons";
+import { IconMagnet, IconPivotPoint } from "@/icons";
 
 const OBJECT_CONTEXT_COMMANDS = [
   "edit.group",
@@ -81,9 +82,11 @@ export function ViewportPanel({ onSystem }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [stats, setStats] = useState<ViewportStats | null>(null);
   const [navMarker, setNavMarker] = useState<{ x: number; y: number } | null>(null);
+  const [snapMarker, setSnapMarker] = useState<{ x: number; y: number } | null>(null);
   const [axes, setAxes] = useState<PaneAxes[]>([]);
   const [system, setSystem] = useState<ViewportSystem | null>(null);
   const bevelActive = useAtomValue(bevelActiveAtom);
+  const [snapEnabled, setSnapEnabled] = useAtom(snapEnabledAtom);
   const { layout, maximizedPane, paneCameras, setPaneCamera } = useViewportState();
   useSliceVersion("scene");
 
@@ -94,6 +97,7 @@ export function ViewportPanel({ onSystem }: Props) {
     setSystem(vs);
     vs.onStats = setStats;
     vs.onNavMarker = setNavMarker;
+    vs.onSnapMarker = setSnapMarker;
     vs.onAxes = setAxes;
     vs.onContextMenuRequest = ({ clientX, clientY, pane, nodeId }) => {
       if (nodeId) {
@@ -179,6 +183,20 @@ export function ViewportPanel({ onSystem }: Props) {
           <IconPivotPoint size={16} />
         </div>
       ) : null}
+      {snapMarker ? (
+        <div
+          className="pointer-events-none absolute size-2.5 rounded-full border-2 border-success bg-success/40"
+          style={{ left: snapMarker.x - 5, top: snapMarker.y - 5 }}
+        />
+      ) : null}
+      <button
+        type="button"
+        className={`btn btn-square btn-xs tooltip tooltip-left absolute top-1.5 right-1.5 backdrop-blur ${snapEnabled ? "btn-primary" : "btn-ghost bg-base-100/70"}`}
+        data-tip="Snap to vertex/edge"
+        onClick={() => setSnapEnabled((s) => !s)}
+      >
+        <IconMagnet size={16} />
+      </button>
       {stats ? (
         <div className="badge badge-xs pointer-events-none absolute right-2 bottom-1.5 gap-1 border-0 bg-base-100/60 font-mono opacity-80">
           {stats.backend} · {stats.fps} fps · {stats.nodes} obj
