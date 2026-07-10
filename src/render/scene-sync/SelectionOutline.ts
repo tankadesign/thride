@@ -44,13 +44,18 @@ export class SelectionOutline {
 
   /** Rebuild membership from current selection — call on selection change. */
   sync(doc: Document, objects: ReadonlyMap<Uuid, Object3D>): void {
+    // component/texture modes get component overlays instead — the object
+    // silhouette would just shout over them (mode changes fire selection:changed,
+    // so entering/leaving a mode passes through here)
+    const suppress = doc.selection.editMode !== "object";
     for (const [id, entry] of [...this.outlines]) {
-      if (!doc.selection.has(id) || !objects.has(id)) {
+      if (suppress || !doc.selection.has(id) || !objects.has(id)) {
         entry.mesh.removeFromParent();
         (entry.mesh.material as MeshBasicNodeMaterial).dispose();
         this.outlines.delete(id);
       }
     }
+    if (suppress) return;
     for (const id of doc.selection.objectIds) {
       if (this.outlines.has(id)) continue;
       const obj = objects.get(id);

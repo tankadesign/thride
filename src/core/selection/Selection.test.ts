@@ -49,6 +49,47 @@ describe("Selection", () => {
   });
 });
 
+describe("per-mode component selection memory (C4D-style)", () => {
+  const components = (mode: "point" | "edge" | "polygon", elems: number[]) => {
+    const bits = new Bitset();
+    for (const i of elems) bits.add(i);
+    return { mode, bits, order: [...elems], topologyVersion: 0 };
+  };
+
+  it("each mode keeps its own selection on the same node; mode switches don't touch it", () => {
+    const { doc, ids } = setup();
+    const id = ids[0]!;
+    doc.selection.setComponents(id, components("point", [1, 2]));
+    doc.selection.setComponents(id, components("edge", [7]));
+    doc.selection.setComponents(id, components("polygon", [3]));
+    doc.selection.setEditMode("edge");
+    doc.selection.setEditMode("point");
+    expect(doc.selection.componentsFor(id, "point")?.bits.toArray()).toEqual([1, 2]);
+    expect(doc.selection.componentsFor(id, "edge")?.bits.toArray()).toEqual([7]);
+    expect(doc.selection.componentsFor(id, "polygon")?.bits.toArray()).toEqual([3]);
+  });
+
+  it("clearing one mode leaves the others intact", () => {
+    const { doc, ids } = setup();
+    const id = ids[0]!;
+    doc.selection.setComponents(id, components("point", [1]));
+    doc.selection.setComponents(id, components("edge", [2]));
+    doc.selection.clearComponents(id, "point");
+    expect(doc.selection.componentsFor(id, "point")).toBeUndefined();
+    expect(doc.selection.componentsFor(id, "edge")?.bits.toArray()).toEqual([2]);
+  });
+
+  it("deleting the node drops every mode's selection for it", () => {
+    const { doc, ids } = setup();
+    const id = ids[0]!;
+    doc.selection.setComponents(id, components("point", [1]));
+    doc.selection.setComponents(id, components("edge", [2]));
+    doc.removeNode(id);
+    expect(doc.selection.componentsFor(id, "point")).toBeUndefined();
+    expect(doc.selection.componentsFor(id, "edge")).toBeUndefined();
+  });
+});
+
 describe("Bitset", () => {
   it("add/delete/has/count/forEach across word boundaries", () => {
     const b = new Bitset(8); // deliberately small: force growth

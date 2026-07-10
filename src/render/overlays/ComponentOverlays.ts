@@ -1,10 +1,12 @@
 import {
+  BackSide,
   BufferAttribute,
   BufferGeometry,
   type Camera,
   Color,
   DoubleSide,
   DynamicDrawUsage,
+  FrontSide,
   Group,
   InstancedMesh,
   LineBasicMaterial,
@@ -18,6 +20,7 @@ import {
   type PerspectiveCamera,
   PlaneGeometry,
   Quaternion,
+  type Side,
   Vector3,
 } from "three";
 import type { ComponentMode, Uuid } from "@/types/core";
@@ -50,9 +53,12 @@ export class ComponentOverlays {
   private readonly doc: Document;
   private readonly sync: SceneSynchronizer;
   private readonly selectedColor = themeColor("--color-primary", "#ff865b");
+  private readonly warningColor = themeColor("--color-warning", "#ffbf00");
+  private readonly infoColor = themeColor("--color-info", "#38bdf8");
   private readonly localRoot = new Group(); // mirrors the mesh node's matrixWorld
   private wire: LineSegments;
-  private faces: Mesh;
+  private facesFront: Mesh;
+  private facesBack: Mesh;
   private pointsSel: InstancedMesh;
   private pointsUnsel: InstancedMesh;
   // rebuild guards
@@ -79,19 +85,17 @@ export class ComponentOverlays {
     noPick(this.wire);
     this.localRoot.add(this.wire);
 
-    this.faces = new Mesh(
-      new BufferGeometry(),
-      new MeshBasicMaterial({
-        color: this.selectedColor,
-        transparent: true,
-        opacity: 0.3,
-        depthTest: false,
-        side: DoubleSide,
-      }),
-    );
-    this.faces.renderOrder = 930;
-    noPick(this.faces);
-    this.localRoot.add(this.faces);
+    // selected polygons: camera-facing side in warning, away side in info —
+    // two single-sided meshes over ONE shared geometry
+    const faceMat = (color: Color, side: Side) =>
+      new MeshBasicMaterial({ color, transparent: true, opacity: 0.45, depthTest: false, side });
+    this.facesFront = new Mesh(new BufferGeometry(), faceMat(this.warningColor, FrontSide));
+    this.facesBack = new Mesh(this.facesFront.geometry, faceMat(this.infoColor, BackSide));
+    for (const m of [this.facesFront, this.facesBack]) {
+      m.renderOrder = 930;
+      noPick(m);
+      this.localRoot.add(m);
+    }
 
     this.pointsSel = this.makePoints(this.selectedColor, 64);
     this.pointsUnsel = this.makePoints(POINT_COLOR, 64);
@@ -159,9 +163,8 @@ export class ComponentOverlays {
     const mesh = meshRef ? meshRegistry.get(meshRef.id) : undefined;
     const object = this.sync.object(active);
     if (!mesh || !object) return null;
-    const sel = this.doc.selection.componentsFor(active);
-    const bits =
-      sel && sel.mode === mode && sel.topologyVersion === mesh.topologyVersion ? sel.bits : null;
+    const sel = this.doc.selection.componentsFor(active, mode);
+    const bits = sel && sel.topologyVersion === mesh.topologyVersion ? sel.bits : null;
     return { nodeId: active, mode, mesh, object, bits };
   }
 
@@ -173,7 +176,8 @@ export class ComponentOverlays {
     const pointMode = ctx.mode === "point";
     this.pointsSel.visible = pointMode;
     this.pointsUnsel.visible = pointMode;
-    this.faces.visible = ctx.mode === "polygon";
+    this.facesFront.visible = ctx.mode === "polygon";
+    this.facesBack.visible = ctx.mode === "polygon";
   }
 
   private rebuildWire(ctx: { mesh: HEMesh; mode: ComponentMode; bits: Bitset | null }): void {
@@ -195,7 +199,12 @@ export class ComponentOverlays {
         ],
         i * 6,
       );
-      const selected = ctx.mode === "edge" && (ctx.bits?.has(h) ?? false);
+      // edge mode: the edge itself; polygon mode: edges bounding a selected
+      // face light up like the object outline (primary)
+      const selected =
+        ctx.mode === "edge"
+          ? (ctx.bits?.has(h) ?? false)
+          : ctx.mode === "polygon" && this.edgeOnSelectedFace(mesh, h, ctx.bits);
       const c = selected ? this.selectedColor : WIRE_COLOR;
       colors.set([c.r, c.g, c.b, c.r, c.g, c.b], i * 6);
     }
@@ -205,10 +214,22 @@ export class ComponentOverlays {
     this.wire.geometry.setAttribute("color", new BufferAttribute(colors, 3));
   }
 
+  private edgeOnSelectedFace(mesh: HEMesh, h: number, bits: Bitset | null): boolean {
+    if (!bits) return false;
+    if (bits.has(mesh.heFace[h]!)) return true;
+    const t = mesh.heTwin[h]!;
+    return t !== -1 && bits.has(mesh.heFace[t]!);
+  }
+
+  private setFacesGeometry(geo: BufferGeometry): void {
+    this.facesFront.geometry.dispose();
+    this.facesFront.geometry = geo;
+    this.facesBack.geometry = geo;
+  }
+
   private rebuildFaces(ctx: { nodeId: Uuid; mode: ComponentMode; bits: Bitset | null }): void {
     if (ctx.mode !== "polygon" || !ctx.bits || ctx.bits.count === 0) {
-      this.faces.geometry.dispose();
-      this.faces.geometry = new BufferGeometry();
+      this.setFacesGeometry(new BufferGeometry());
       return;
     }
     const info = this.sync.renderInfoFor(ctx.nodeId);
@@ -222,9 +243,9 @@ export class ComponentOverlays {
         tris.push(src.getX(i), src.getY(i), src.getZ(i));
       }
     }
-    this.faces.geometry.dispose();
-    this.faces.geometry = new BufferGeometry();
-    this.faces.geometry.setAttribute("position", new BufferAttribute(new Float32Array(tris), 3));
+    const geo = new BufferGeometry();
+    geo.setAttribute("position", new BufferAttribute(new Float32Array(tris), 3));
+    this.setFacesGeometry(geo);
   }
 
   // ---- vertex billboards ---------------------------------------------------

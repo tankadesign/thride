@@ -243,11 +243,12 @@ export class ViewportInput {
     });
     const op = e.shiftKey ? "add" : e.metaKey || e.ctrlKey ? "toggle" : "replace";
     if (hit === null) {
-      if (op === "replace") doc.selection.clearComponents(active);
+      // clear only THIS mode's selection — other modes keep their memory
+      if (op === "replace") doc.selection.clearComponents(active, mode);
       return;
     }
-    const prev = doc.selection.componentsFor(active);
-    const valid = prev && prev.mode === mode && prev.topologyVersion === mesh.topologyVersion;
+    const prev = doc.selection.componentsFor(active, mode);
+    const valid = prev && prev.topologyVersion === mesh.topologyVersion;
     const bits = valid && op !== "replace" ? prev.bits.clone() : new Bitset();
     const order = valid && op !== "replace" ? [...prev.order] : [];
     if (op === "toggle" && bits.has(hit)) {

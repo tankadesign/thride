@@ -55,6 +55,16 @@
 - Component edits live only in the registry — a browser refresh drops converted-mesh geometry (existing H1 limitation, now more visible).
 - Pre-existing HMR-only MenuBar setState warning (PLAN_PROGRESS_9) still around; absent on fresh loads.
 
+## Post-round: polygon display colors, outline suppression, per-mode selection memory, Attributes component editing
+
+Four user requests after the D4a review:
+
+- **Selected polygons show orientation** — the face highlight is now two single-sided meshes over ONE shared geometry: camera-facing triangles in `--color-warning` (FrontSide), away-facing in `--color-info` (BackSide) — so a selected face reads warning from the front and info from behind, exposing winding at a glance. Edges bounding a selected polygon light up in primary in the wire overlay ("same as objects"; 1px — `linewidth` is a no-op on WebGL/WebGPU, the 2px-outline treatment for edges can come later if wanted).
+- **Object silhouette suppressed outside object mode** — `SelectionOutline.sync` drops/skips outlines whenever `editMode !== "object"` (mode switches fire `selection:changed`, so it passes through sync both ways).
+- **Per-mode component selection memory (C4D)** — `Selection.components` is now `Map<node, Map<ComponentMode, ComponentSelection>>`; `componentsFor(node, mode)`, `setComponents` stores under `sel.mode`, `clearComponents(node, mode?)` clears one mode / node / all. Empty viewport clicks clear only the CURRENT mode. Verified live: points {5,6} survive an edge-mode detour, polygon memory intact, overlays/gizmo restore from memory. Unit-tested (3 new tests).
+- **Attributes component section** — in point/edge/polygon mode the panel shows `Points/Edges/Polygons (n)` with X/Y/Z NumberDrags (object-space): one point edits its exact position; multiple components act as ONE — fields show the selection **centroid** and edits translate the whole selection rigidly (typed 0.5→1.5 → both verts +1.0, one "Move Components" step, undo restores mesh and panel). Streams through `ComponentTransformSession` like the transform fields.
+- Also: `NumberDrag.setPointerCapture` wrapped best-effort (same convention as ViewportInput) — synthetic/test pointers used to throw before the drag ref was set, killing click-to-edit under e2e drivers; real mice were unaffected.
+
 ## Next steps (exact, resumable cold)
 
 1. **D4b:** topology ops as `(mesh, selection, params) → { newSelection }` in `geometry/ops/`: extrude (faces), inset, weld, delete/dissolve — each one undo step (kernel snapshot command), each property-tested for half-edge invariants (`validate.ts` exists).

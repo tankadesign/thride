@@ -30,8 +30,8 @@ export function componentContext(
   const meshRef = doc.scene.mustGet(active).data?.mesh as { id: Uuid } | undefined;
   const mesh = meshRef ? meshRegistry.get(meshRef.id) : undefined;
   if (!meshRef || !mesh) return null;
-  const sel = doc.selection.componentsFor(active);
-  if (!sel || sel.mode !== mode || sel.topologyVersion !== mesh.topologyVersion) return null;
+  const sel = doc.selection.componentsFor(active, mode);
+  if (!sel || sel.topologyVersion !== mesh.topologyVersion) return null;
   const verts = vertsForSelection(mesh, mode, sel.bits);
   if (verts.length === 0) return null;
   const c = vertexCentroid(mesh, verts);

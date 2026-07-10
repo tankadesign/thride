@@ -44,7 +44,11 @@ export function NumberDrag({
 
   const onPointerDown = (e: React.PointerEvent) => {
     if (editing) return;
-    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    try {
+      (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    } catch {
+      // synthetic/test events have no active pointer — capture is best-effort
+    }
     drag.current = { startX: e.clientX, startValue: value, moved: false };
   };
   const onPointerMove = (e: React.PointerEvent) => {

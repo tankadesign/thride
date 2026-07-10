@@ -24,7 +24,9 @@ export interface ComponentSelection {
 export class Selection {
   private objects = new Set<Uuid>();
   private lastSelected: Uuid | null = null;
-  private components = new Map<Uuid, ComponentSelection>();
+  /** Per mesh node, per component mode — each edit mode keeps its own
+   * selection memory (C4D): switching point→edge→point restores the points. */
+  private components = new Map<Uuid, Map<ComponentMode, ComponentSelection>>();
   private mode: EditMode = "object";
   private readonly onChange: () => void;
 
@@ -88,17 +90,25 @@ export class Selection {
     if (had) this.onChange();
   }
 
-  componentsFor(meshNodeId: Uuid): ComponentSelection | undefined {
-    return this.components.get(meshNodeId);
+  componentsFor(meshNodeId: Uuid, mode: ComponentMode): ComponentSelection | undefined {
+    return this.components.get(meshNodeId)?.get(mode);
   }
 
+  /** Stored under sel.mode — other modes' selections on the node survive. */
   setComponents(meshNodeId: Uuid, sel: ComponentSelection): void {
-    this.components.set(meshNodeId, sel);
+    let perMode = this.components.get(meshNodeId);
+    if (!perMode) {
+      perMode = new Map();
+      this.components.set(meshNodeId, perMode);
+    }
+    perMode.set(sel.mode, sel);
     this.onChange();
   }
 
-  clearComponents(meshNodeId?: Uuid): void {
-    if (meshNodeId) this.components.delete(meshNodeId);
+  /** Clear one mode's selection, a whole node's, or everything. */
+  clearComponents(meshNodeId?: Uuid, mode?: ComponentMode): void {
+    if (meshNodeId && mode) this.components.get(meshNodeId)?.delete(mode);
+    else if (meshNodeId) this.components.delete(meshNodeId);
     else this.components.clear();
     this.onChange();
   }
