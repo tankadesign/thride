@@ -148,6 +148,20 @@ export function switchProject(id: Uuid): void {
   installActive(id);
 }
 
+/** Rename a project (tab double-click). Persists to IndexedDB immediately. */
+export function renameProject(id: Uuid, name: string): void {
+  const trimmed = name.trim();
+  if (!trimmed) return;
+  const open = appStore.get(openProjectsAtom);
+  const handle = open.find((p) => p.id === id);
+  if (!handle || handle.name === trimmed) return;
+  // mutate in place: the autosave closure holds this handle and reads `name`
+  // at write time; the fresh array identity re-renders the tabs
+  handle.name = trimmed;
+  appStore.set(openProjectsAtom, [...open]);
+  autosaves.get(id)?.flush();
+}
+
 /** Close a tab (the stored record stays). The last tab cannot close. */
 export function closeProject(id: Uuid): void {
   const open = appStore.get(openProjectsAtom);
