@@ -1,4 +1,4 @@
-import type { Uuid } from "@/types/core";
+import type { Uuid, Vec3 } from "@/types/core";
 import type { Document, SceneNode } from "@/core";
 import type { SplineData } from "@/types/geometry/spline";
 import type { PrimitiveDescriptor } from "@/types/geometry/primitives";
@@ -158,9 +158,11 @@ function firstChildSpline(
 
 /**
  * Sweep inputs: the first two spline children in object-manager order —
- * [0] profile, [1] path — each sampled to a polyline and baked into the
- * child's world transform so both live in the sweep's local space. The key
- * covers both children's data + transforms (a path edit must recompute).
+ * [0] profile, [1] path — each baked into the child's world transform so both
+ * live in the sweep's local space. The PATH is bezier-sampled to a smooth
+ * polyline; the PROFILE uses its own anchor points verbatim (no interpolation),
+ * so a 4-point circle sweeps as a 4-sided section. The key covers both
+ * children's data + transforms (a path edit must recompute).
  */
 function sweepInputs(doc: Document, id: Uuid) {
   const splines: { data: SplineData; transform: SceneNode["transform"] }[] = [];
@@ -170,19 +172,29 @@ function sweepInputs(doc: Document, id: Uuid) {
     const data = child?.data?.spline as SplineData | undefined;
     if (child?.kind === "spline" && data) splines.push({ data, transform: child.transform });
   }
-  const bake = (s: { data: SplineData; transform: SceneNode["transform"] }): SweepCurve => {
+  const bake = (
+    s: { data: SplineData; transform: SceneNode["transform"] },
+    local: readonly Vec3[],
+  ): SweepCurve => {
     const m = composeTRS(s.transform);
-    const points = sampleSpline3D(s.data).map((p): [number, number, number] => [
-      m[0]! * p[0] + m[4]! * p[1] + m[8]! * p[2] + m[12]!,
-      m[1]! * p[0] + m[5]! * p[1] + m[9]! * p[2] + m[13]!,
-      m[2]! * p[0] + m[6]! * p[1] + m[10]! * p[2] + m[14]!,
-    ]);
+    const points = local.map(
+      (p): Vec3 => [
+        m[0]! * p[0] + m[4]! * p[1] + m[8]! * p[2] + m[12]!,
+        m[1]! * p[0] + m[5]! * p[1] + m[9]! * p[2] + m[13]!,
+        m[2]! * p[0] + m[6]! * p[1] + m[10]! * p[2] + m[14]!,
+      ],
+    );
     return { points, closed: s.data.closed };
   };
   const key = splines.map((s) => JSON.stringify(s.data) + JSON.stringify(s.transform)).join("|");
   return {
-    profile: splines[0] ? bake(splines[0]) : null,
-    path: splines[1] ? bake(splines[1]) : null,
+    profile: splines[0]
+      ? bake(
+          splines[0],
+          splines[0].data.points.map((p) => p.position),
+        )
+      : null,
+    path: splines[1] ? bake(splines[1], sampleSpline3D(splines[1].data)) : null,
     key: key || "∅",
   };
 }

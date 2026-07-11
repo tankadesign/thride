@@ -5,11 +5,9 @@ import { bestFitFrame, type P2, projectToFrame } from "@/geometry/splines/planeF
 export interface SweepParams {
   /** stations sampled along the path curve. */
   pathSegments: number;
-  /** points the profile is resampled to around its ring. */
-  profileSegments: number;
 }
 
-export const defaultSweepParams = (): SweepParams => ({ pathSegments: 48, profileSegments: 16 });
+export const defaultSweepParams = (): SweepParams => ({ pathSegments: 48 });
 
 /** A sampled curve in a common space (handles already resolved to a polyline). */
 export interface SweepCurve {
@@ -23,8 +21,9 @@ export interface SweepCurve {
  * profile is flattened to its own plane, then placed into a rotation-minimizing
  * frame (double-reflection RMF — no Frenet flips at inflection points) at each
  * path station, so the tube never twists or pinches. `pathSegments` resamples
- * the path, `profileSegments` the profile; a closed profile on an open path
- * gets end caps. Returns null on a degenerate input.
+ * the path; the profile's own points define the ring verbatim (no
+ * interpolation). A closed profile on an open path gets end caps. Returns null
+ * on a degenerate input.
  */
 export function buildSweep(
   profile: SweepCurve,
@@ -34,17 +33,11 @@ export function buildSweep(
   if (path.points.length < 2 || profile.points.length < (profile.closed ? 3 : 2)) return null;
 
   const nP = Math.max(2, Math.round(params.pathSegments));
-  const nS = Math.max(3, Math.round(params.profileSegments));
 
-  // even path stations + profile ring (in the profile's own plane)
+  // even path stations, then the profile's own points as the ring (verbatim)
   const centers = resample(path.points, path.closed ? nP : nP + 1, path.closed, lerp3);
   const frame = bestFitFrame(profile.points);
-  const ringPts = resample(
-    profile.points.map((p) => projectToFrame(p, frame)),
-    profile.closed ? nS : nS + 1,
-    profile.closed,
-    lerp2,
-  );
+  const ringPts = profile.points.map((p) => projectToFrame(p, frame));
 
   const tangents = computeTangents(centers, path.closed);
   const { normals, binormals } = rmfFrames(centers, tangents);
@@ -95,9 +88,6 @@ export function buildSweep(
 
 function lerp3(a: Vec3, b: Vec3, t: number): Vec3 {
   return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
-}
-function lerp2(a: P2, b: P2, t: number): P2 {
-  return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
 }
 
 /** Even arc-length resample of a polyline to `count` points. */

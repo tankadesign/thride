@@ -475,10 +475,7 @@ function GeneratorParams({ id, gen }: { id: Uuid; gen: GeneratorDescriptor }) {
 
   if (gen.type === "sweep") {
     const sp = gen.params as unknown as Record<string, number>;
-    const sweepRows = [
-      { key: "pathSegments", label: "Path Segs", min: 2, max: 512 },
-      { key: "profileSegments", label: "Profile Segs", min: 3, max: 256 },
-    ];
+    const sweepRows = [{ key: "pathSegments", label: "Path Segs", min: 2, max: 512 }];
     return (
       <fieldset className="fieldset px-2 py-1.5">
         <legend className="fieldset-legend py-1 text-[10px] uppercase opacity-60">Sweep</legend>

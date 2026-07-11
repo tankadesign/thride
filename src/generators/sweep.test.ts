@@ -20,23 +20,33 @@ const linePath = (len = 4, n = 10): SweepCurve => {
 
 describe("buildSweep", () => {
   it("closed profile on an open path → watertight capped tube", () => {
-    const mesh = buildSweep(circleProfile(), linePath(), {
-      pathSegments: 16,
-      profileSegments: 12,
-    });
+    const mesh = buildSweep(circleProfile(0.3, 12), linePath(), { pathSegments: 16 });
     expect(mesh).not.toBeNull();
     const v = validateMesh(mesh!);
     expect(v.errors).toEqual([]);
     expect(v.boundaryEdges).toBe(0); // caps close both ends
-    // 17 rings × 12 ring points
+    // 17 path rings × the profile's own 12 points (no resampling)
     expect(mesh!.vCount).toBe(17 * 12);
   });
 
+  it("uses the profile's own points verbatim (a 4-pt square stays 4-sided)", () => {
+    const square: SweepCurve = {
+      points: [
+        [-0.5, -0.5, 0],
+        [0.5, -0.5, 0],
+        [0.5, 0.5, 0],
+        [-0.5, 0.5, 0],
+      ],
+      closed: true,
+    };
+    const mesh = buildSweep(square, linePath(4, 5), { pathSegments: 5 })!;
+    // 6 rings × 4 profile points — no interpolation added to the section
+    expect(mesh.vCount).toBe(6 * 4);
+    expect(validateMesh(mesh).boundaryEdges).toBe(0);
+  });
+
   it("follows the path (spans its full extent in Z)", () => {
-    const mesh = buildSweep(circleProfile(), linePath(4, 8), {
-      pathSegments: 12,
-      profileSegments: 8,
-    })!;
+    const mesh = buildSweep(circleProfile(), linePath(4, 8), { pathSegments: 12 })!;
     let minZ = Infinity;
     let maxZ = -Infinity;
     for (let i = 0; i < mesh.vCount; i++) {
@@ -57,7 +67,7 @@ describe("buildSweep", () => {
       ],
       closed: false,
     };
-    const mesh = buildSweep(arc, linePath(), { pathSegments: 8, profileSegments: 6 });
+    const mesh = buildSweep(arc, linePath(), { pathSegments: 8 });
     expect(mesh).not.toBeNull();
     expect(validateMesh(mesh!).errors).toEqual([]);
     expect(validateMesh(mesh!).boundaryEdges).toBeGreaterThan(0);
@@ -75,17 +85,14 @@ describe("buildSweep", () => {
       ],
       closed: false,
     };
-    const mesh = buildSweep(circleProfile(0.2), bend, { pathSegments: 24, profileSegments: 10 });
+    const mesh = buildSweep(circleProfile(0.2), bend, { pathSegments: 24 });
     expect(mesh).not.toBeNull();
     expect(validateMesh(mesh!).errors).toEqual([]);
   });
 
   it("degenerate input → null", () => {
     expect(
-      buildSweep({ points: [[0, 0, 0]], closed: false }, linePath(), {
-        pathSegments: 8,
-        profileSegments: 6,
-      }),
+      buildSweep({ points: [[0, 0, 0]], closed: false }, linePath(), { pathSegments: 8 }),
     ).toBeNull();
   });
 });
