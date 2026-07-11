@@ -206,7 +206,9 @@ export class SceneSynchronizer {
     else obj = new Group();
     obj.name = node.name;
     obj.userData.nodeId = id;
-    obj.visible = node.visible;
+    // splines own their visibility in syncSplineGeometry (a <2-point spline
+    // must stay hidden — its empty Line2 pipeline kills the WebGPU pass)
+    if (!obj.userData.spline) obj.visible = node.visible;
     this.objects.set(id, obj);
     this.applyTransform(node, obj);
     const parent = node.parent ? this.objects.get(node.parent) : undefined;
@@ -258,7 +260,7 @@ export class SceneSynchronizer {
       this.objects.set(id, obj); // type changes rebuild the light object
     }
     obj.name = node.name;
-    obj.visible = node.visible;
+    if (!obj.userData.spline) obj.visible = node.visible; // splines: see addNode
     this.applyTransform(node, obj);
     if (
       (node.kind === "mesh" || node.kind === "generator") &&

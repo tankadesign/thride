@@ -52,7 +52,7 @@ export interface PaneDisplay {
   lines: boolean;
   /** Show edges occluded by surfaces (behind polygons). Requires `lines`. */
   hiddenLines: boolean;
-  /** Output transform (PBR): AgX default, ACES filmic, or neutral. */
+  /** Output transform (PBR): ACES filmic default, AgX, or neutral. */
   toneMapping: ToneMappingMode;
 }
 
@@ -64,7 +64,7 @@ export const defaultPaneDisplay = (): PaneDisplay => ({
   grid: true,
   lines: false,
   hiddenLines: false,
-  toneMapping: "agx",
+  toneMapping: "aces",
 });
 
 /**

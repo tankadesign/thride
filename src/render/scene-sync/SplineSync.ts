@@ -53,6 +53,7 @@ export function syncSplineGeometry(node: SceneNode, line: Line2): void {
   if (drawable) geo.setPositions(Array.from(positions));
   line.geometry = geo;
   // a LineGeometry without instance data builds an invalid pipeline on
-  // WebGPU and kills the whole render pass — never draw a <2-point spline
-  line.visible = drawable;
+  // WebGPU and kills the whole render pass — never draw a <2-point spline.
+  // This owns the object's visibility (SceneSynchronizer skips splines).
+  line.visible = drawable && node.visible;
 }

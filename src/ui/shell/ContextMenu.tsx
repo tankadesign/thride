@@ -66,15 +66,21 @@ function EntryList({
         const shortcut = cmd?.shortcut;
 
         if (entry.children) {
+          // flyout opens only while THIS row (or the flyout itself) is hovered —
+          // a shared group name would open every nested level under a hovered
+          // ancestor at once
           return (
-            <li key={i} className={`group/sub relative ${enabled ? "" : "menu-disabled"}`}>
+            <li
+              key={i}
+              className={`relative [&:hover>div]:visible ${enabled ? "" : "menu-disabled"}`}
+            >
               {entry.sep ? <span className="mx-0 my-0.5 block h-px bg-base-300 p-0" /> : null}
               <span className="flex items-center gap-2">
                 <span className="flex w-4 justify-center">{icon}</span>
                 <span className="flex-1">{label}</span>
                 <span className="opacity-50">›</span>
               </span>
-              <div className="invisible absolute top-0 left-full z-10 pl-0.5 group-hover/sub:visible">
+              <div className="invisible absolute top-0 left-full z-10 pl-0.5">
                 <EntryList entries={entry.children} close={close} width={width} />
               </div>
             </li>
