@@ -86,6 +86,20 @@ export function sampleSpline2D(data: SplineData, perSpan = 24): { x: number; y: 
 }
 
 /**
+ * Sample into 3D local points for consumers that need the real (possibly
+ * non-planar) curve — the extrude's best-fit profile and the sweep's path.
+ * Closed splines omit the duplicate final point.
+ */
+export function sampleSpline3D(data: SplineData, perSpan = 24): Vec3[] {
+  const flat = sampleSpline(data, perSpan);
+  let n = flat.length / 3;
+  if (data.closed && n > 1) n -= 1; // drop the wrap-around duplicate
+  const out: Vec3[] = [];
+  for (let i = 0; i < n; i++) out.push([flat[i * 3]!, flat[i * 3 + 1]!, flat[i * 3 + 2]!]);
+  return out;
+}
+
+/**
  * Selection stamp for spline point selections: point indices stay valid as
  * long as no point is added or removed, so the count doubles as the
  * "topology version" (all structural spline commands change it).

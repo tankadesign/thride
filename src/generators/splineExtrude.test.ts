@@ -90,6 +90,48 @@ describe("buildSplineExtrude", () => {
     expect(mesh!.fCount).toBe(6);
   });
 
+  it("tilted-planar profile extrudes along its own normal (not flattened to XY)", () => {
+    // unit square rotated 45° about X → a planar profile whose normal is
+    // (0, -sin45, cos45). The old XY-drop would squash it; best-fit keeps it.
+    const c = Math.cos(Math.PI / 4);
+    const s = Math.sin(Math.PI / 4);
+    const tilted: SplineData = {
+      closed: true,
+      points: [
+        [0, 0, 0],
+        [1, 0, 0],
+        [1, c, s],
+        [0, c, s],
+      ].map((p) => ({
+        position: p as [number, number, number],
+        inHandle: [0, 0, 0],
+        outHandle: [0, 0, 0],
+        mode: "linear",
+      })),
+    };
+    const mesh = buildSplineExtrude(tilted, { ...defaultSplineExtrudeParams(), depth: 1 });
+    expect(mesh).not.toBeNull();
+    const v = validateMesh(mesh!);
+    expect(v.errors).toEqual([]);
+    expect(v.boundaryEdges).toBe(0);
+    expect(mesh!.fCount).toBe(6);
+    // bottom cap = verts 0..3, top cap = verts 4..7; the extrude direction is
+    // the vector between their centroids — it must tilt (non-zero Y), which a
+    // flatten-to-XY-then-extrude-along-Z result could never have
+    const centroid = (lo: number) => {
+      let y = 0;
+      let z = 0;
+      for (let i = lo; i < lo + 4; i++) {
+        y += mesh!.vPos[i * 3 + 1]!;
+        z += mesh!.vPos[i * 3 + 2]!;
+      }
+      return { y: y / 4, z: z / 4 };
+    };
+    const dir = centroid(4);
+    const base = centroid(0);
+    expect(Math.abs(dir.y - base.y)).toBeGreaterThan(0.3); // tilted, not axis-aligned
+  });
+
   it("smooth profile samples curves (vert count grows)", () => {
     const mesh = buildSplineExtrude(roundedSquare(), {
       ...defaultSplineExtrudeParams(),

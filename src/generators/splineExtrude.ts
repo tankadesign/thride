@@ -1,6 +1,7 @@
 import type { SplineData } from "@/types/geometry/spline";
 import { HEMesh } from "@/geometry/kernel/HEMesh";
-import { sampleSpline2D } from "@/geometry/splines/eval";
+import { sampleSpline3D } from "@/geometry/splines/eval";
+import { bestFitFrame, projectToFrame } from "@/geometry/splines/planeFrame";
 
 export interface SplineExtrudeParams {
   depth: number;
@@ -18,10 +19,7 @@ export const defaultSplineExtrudeParams = (): SplineExtrudeParams => ({
   caps: true,
 });
 
-interface P2 {
-  x: number;
-  y: number;
-}
+type P2 = { x: number; y: number };
 
 /**
  * The Spline-app signature move: child spline in → extruded mesh out, as a
@@ -29,15 +27,32 @@ interface P2 {
  * and convertible. Closed profiles get caps and an optional rounded bevel
  * (quarter-arc rings at both ends, inward miter offset); open profiles
  * extrude as a ribbon. Returns null when the profile is degenerate.
+ *
+ * The profile is flattened onto its own best-fit plane and extruded along
+ * that plane's normal, so a spline whose points span all three dimensions
+ * (drawn on a tilted plane, or edited in 3D) extrudes as the prism the user
+ * drew — not a copy squashed onto local XY. A planar-XY profile maps through
+ * the identity, so the flat case is unchanged.
  */
 export function buildSplineExtrude(spline: SplineData, params: SplineExtrudeParams): HEMesh | null {
-  const profile = dedupe(sampleSpline2D(spline, 24));
+  const raw = sampleSpline3D(spline, 24);
+  if (raw.length < (spline.closed ? 3 : 2)) return null;
+  const frame = bestFitFrame(raw);
+  const profile = dedupe(raw.map((p) => projectToFrame(p, frame)));
   if (profile.length < (spline.closed ? 3 : 2)) return null;
   const depth = Math.max(1e-4, params.depth);
   // ?? 1 keeps projects saved before height segments existed valid
   const heightSegs = Math.max(1, Math.round(params.heightSegments ?? 1));
+  // map in-plane (x,y) + extrude offset z back into 3D local space
+  const emit = (positions: number[], p: P2, z: number): void => {
+    positions.push(
+      frame.origin[0] + p.x * frame.u[0] + p.y * frame.v[0] + z * frame.normal[0],
+      frame.origin[1] + p.x * frame.u[1] + p.y * frame.v[1] + z * frame.normal[1],
+      frame.origin[2] + p.x * frame.u[2] + p.y * frame.v[2] + z * frame.normal[2],
+    );
+  };
 
-  if (!spline.closed) return buildRibbon(profile, depth, heightSegs);
+  if (!spline.closed) return buildRibbon(profile, depth, heightSegs, emit);
 
   if (area(profile) < 0) profile.reverse(); // CCW so inward offsets shrink
 
@@ -69,12 +84,12 @@ export function buildSplineExtrude(spline: SplineData, params: SplineExtrudePara
   const positions: number[] = [];
   for (const [inset, z] of rings) {
     const ring = inset > 0 ? offsetInward(profile, inset) : profile;
-    for (const p of ring) positions.push(p.x, p.y, z);
+    for (const p of ring) emit(positions, p, z);
   }
 
   const faces: number[][] = [];
   const at = (ring: number, i: number) => ring * n + i;
-  // walls between consecutive rings (outward-facing: CCW profile, +Z up)
+  // walls between consecutive rings (outward-facing: CCW profile, +normal up)
   for (let r = 0; r < rings.length - 1; r++) {
     for (let i = 0; i < n; i++) {
       const j = (i + 1) % n;
@@ -95,12 +110,17 @@ export function buildSplineExtrude(spline: SplineData, params: SplineExtrudePara
 }
 
 /** Open profile: a ribbon of heightSegs stacked rings (open, no caps). */
-function buildRibbon(profile: P2[], depth: number, heightSegs: number): HEMesh | null {
+function buildRibbon(
+  profile: P2[],
+  depth: number,
+  heightSegs: number,
+  emit: (positions: number[], p: P2, z: number) => void,
+): HEMesh | null {
   const n = profile.length;
   const positions: number[] = [];
   for (let r = 0; r <= heightSegs; r++) {
     const z = (r / heightSegs) * depth;
-    for (const p of profile) positions.push(p.x, p.y, z);
+    for (const p of profile) emit(positions, p, z);
   }
   const faces: number[][] = [];
   for (let r = 0; r < heightSegs; r++) {

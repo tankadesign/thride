@@ -155,6 +155,7 @@ export class SceneSynchronizer {
   visibleNodeIdOf(obj: Object3D): Uuid | null {
     const id = this.nodeIdOf(obj);
     if (!id) return null;
+    if (this.isConsumed(id)) return null; // boolean inputs click through to the result
     let cur: Uuid | null = id;
     while (cur) {
       const node = this.doc.scene.get(cur);
@@ -163,6 +164,24 @@ export class SceneSynchronizer {
       cur = node.parent;
     }
     return id;
+  }
+
+  /**
+   * True when a node is a descendant of a boolean generator, which consumes
+   * its inputs — they must render nothing and never pick (clicks fall through
+   * to the boolean result), matching C4D. Extrude/sweep keep their spline
+   * children visible as guides, so this is boolean-specific.
+   */
+  private isConsumed(id: Uuid): boolean {
+    let parent = this.doc.scene.get(id)?.parent;
+    while (parent) {
+      const node = this.doc.scene.get(parent);
+      if (!node) return false;
+      const gen = node.data?.generator as { type?: string } | undefined;
+      if (node.kind === "generator" && gen?.type === "boolean") return true;
+      parent = node.parent;
+    }
+    return false;
   }
 
   /** Current local Euler (XYZ) of a node's live object — used to bake a
@@ -208,7 +227,7 @@ export class SceneSynchronizer {
     obj.userData.nodeId = id;
     // splines own their visibility in syncSplineGeometry (a <2-point spline
     // must stay hidden — its empty Line2 pipeline kills the WebGPU pass)
-    if (!obj.userData.spline) obj.visible = node.visible;
+    if (!obj.userData.spline) obj.visible = node.visible && !this.isConsumed(id);
     this.objects.set(id, obj);
     this.applyTransform(node, obj);
     const parent = node.parent ? this.objects.get(node.parent) : undefined;
@@ -266,7 +285,8 @@ export class SceneSynchronizer {
       this.objects.set(id, obj); // type changes rebuild the light object
     }
     obj.name = node.name;
-    if (!obj.userData.spline) obj.visible = node.visible; // splines: see addNode
+    // splines: see addNode. Consumed = a boolean input (hidden + unpickable).
+    if (!obj.userData.spline) obj.visible = node.visible && !this.isConsumed(id);
     this.applyTransform(node, obj);
     if (
       (node.kind === "mesh" || node.kind === "generator") &&
