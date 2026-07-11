@@ -25,6 +25,25 @@ import {
 } from "@/render/helpers/LightHelpers";
 
 /**
+ * True when the light's live shadow-map size no longer matches the requested
+ * resolution — the one shadow setting three's WebGPU backend can't apply in
+ * place (see LightSync.update: the light gets rebuilt so the map render target
+ * is reallocated at the new size).
+ */
+function shadowResolutionChanged(light: Light, data: LightDataDTO): boolean {
+  if (
+    !(
+      light instanceof SpotLight ||
+      light instanceof PointLight ||
+      light instanceof DirectionalLight
+    )
+  ) {
+    return false;
+  }
+  return light.shadow.mapSize.x !== SHADOW_RESOLUTION_PX[data.shadowResolution ?? "normal"];
+}
+
+/**
  * Push a light's shadow-quality settings (resolution / blur / frustum size)
  * onto its three.js shadow. normalBias fixes self-shadow acne; a tight frustum
  * keeps depth precision high. Called from build + update so edits are live.
@@ -41,11 +60,12 @@ function applyShadowSettings(light: Light, data: LightDataDTO): void {
   }
   light.castShadow = data.castShadow ?? true;
   const px = SHADOW_RESOLUTION_PX[data.shadowResolution ?? "normal"];
-  if (light.shadow.mapSize.x !== px) {
-    light.shadow.mapSize.set(px, px);
-    light.shadow.map?.dispose(); // force the renderer to reallocate at the new size
-    light.shadow.map = null;
-  }
+  // Resolution: only ever set here on a fresh light (buildLightObject) — a live
+  // resolution change rebuilds the whole light instead (see LightSync.update),
+  // because three's WebGPU backend won't resize an existing shadow map in place.
+  // So no dispose/realloc dance is needed (and that dance is what produced the
+  // "Destroyed texture used in a submit" warning).
+  light.shadow.mapSize.set(px, px);
   light.shadow.bias = -0.00005;
   light.shadow.normalBias = 0.03;
   light.shadow.radius = Math.max(0, data.shadowBlur ?? 4);
@@ -116,9 +136,14 @@ export class LightSync {
   update(node: SceneNode, obj: Object3D): Object3D {
     const data = node.data?.light as LightDataDTO | undefined;
     if (!data || !(obj instanceof Light)) return obj;
-    if (obj.userData.lightType !== data.type) {
-      // type changed: rebuild the light, keep real children + hierarchy position
-      // (the stale oriented helper is dropped — buildLightObject attaches a fresh one)
+    if (obj.userData.lightType !== data.type || shadowResolutionChanged(obj, data)) {
+      // type OR shadow resolution changed: rebuild the light, keeping real
+      // children + hierarchy position (the stale oriented helper is dropped —
+      // buildLightObject attaches a fresh one). Resolution needs a rebuild
+      // because three's WebGPU shadow node won't resize its map render target
+      // in place — only a fresh light allocates it at the new size (matching
+      // what toggling the light's visibility does by hand). Frustum size and
+      // blur DO apply live, so they stay in the in-place path below.
       const fresh = this.buildLightObject(node);
       fresh.name = node.name;
       fresh.userData.nodeId = node.id;
