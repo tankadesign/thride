@@ -112,6 +112,12 @@ export function evaluateGenerator(
   const inputs = booleanInputs(doc, node.id);
   const key = `bool:${desc.params.op}:${inputs.key}`;
   const entry = perDoc.get(node.id) ?? { key: "", mesh: null };
+  if (inputs.sources.length < 2) {
+    // fewer than two inputs (a child was moved/deleted out): drop the stale
+    // result so the boolean uncouples instead of freezing its last mesh
+    perDoc.set(node.id, { key, mesh: null });
+    return null;
+  }
   if (entry.key === key) return entry.mesh ? { key, mesh: entry.mesh } : null;
   if (entry.pendingKey !== key && inputs.sources.length >= 2) {
     entry.pendingKey = key;

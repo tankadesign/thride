@@ -40,8 +40,15 @@ export const emptySpline = (): SplineData => ({ points: [], closed: false });
  */
 export type SplinePrimitive =
   | { type: "circle"; radius: number }
-  | { type: "nside"; sides: number; radius: number; rounding: number }
-  | { type: "star"; points: number; innerRadius: number; outerRadius: number; rounding: number }
+  | { type: "nside"; sides: number; radius: number; rounding: number; roundCorners: boolean }
+  | {
+      type: "star";
+      points: number;
+      innerRadius: number;
+      outerRadius: number;
+      rounding: number;
+      roundCorners: boolean;
+    }
   | { type: "helix"; radius: number; height: number; turns: number; segments: number };
 
 export type SplinePrimitiveType = SplinePrimitive["type"];
@@ -51,9 +58,16 @@ export const defaultSplinePrimitive = (type: SplinePrimitiveType): SplinePrimiti
     case "circle":
       return { type, radius: 1 };
     case "nside":
-      return { type, sides: 6, radius: 1, rounding: 0 };
+      return { type, sides: 6, radius: 1, rounding: 0, roundCorners: false };
     case "star":
-      return { type, points: 5, innerRadius: 0.5, outerRadius: 1, rounding: 0 };
+      return {
+        type,
+        points: 5,
+        innerRadius: 0.5,
+        outerRadius: 1,
+        rounding: 0,
+        roundCorners: false,
+      };
     case "helix":
       return { type, radius: 1, height: 2, turns: 3, segments: 16 };
   }

@@ -150,8 +150,22 @@ export class LightSync {
       light instanceof DirectionalLight
     ) {
       light.castShadow = data.castShadow ?? true;
-      light.shadow.mapSize.set(1024, 1024);
-      light.shadow.bias = -0.0004;
+      light.shadow.mapSize.set(2048, 2048);
+      // normalBias offsets the sample along the surface normal — the right cure
+      // for the self-shadow acne/banding that a pure depth bias can't fix
+      // without peter-panning. Tiny depth bias + a soft PCF radius on top.
+      light.shadow.bias = -0.00005;
+      light.shadow.normalBias = 0.03;
+      light.shadow.radius = 6;
+      // a tight shadow frustum keeps depth precision high (wide near/far ratios
+      // are a classic banding source). Spot cams re-fit to the cone below.
+      const cam = light.shadow.camera as { near: number; far: number };
+      cam.near = 0.5;
+      cam.far = 80;
+    }
+    if (light instanceof SpotLight) {
+      // match the shadow camera fov to the cone so the map isn't mostly wasted
+      light.shadow.focus = 1;
     }
     if (light instanceof SpotLight || light instanceof DirectionalLight) {
       // three aims spot/directional lights at `.target.position` in world

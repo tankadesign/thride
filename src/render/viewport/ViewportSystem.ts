@@ -8,6 +8,7 @@ import {
   DirectionalLight,
   GridHelper,
   Object3D,
+  PCFSoftShadowMap,
   Raycaster,
   Scene,
   Vector2,
@@ -213,6 +214,8 @@ export class ViewportSystem {
 
   private async init(): Promise<void> {
     const renderer = new WebGPURenderer({ canvas: this.canvas, antialias: true });
+    // soft, percentage-closer-filtered shadows (kills the hard-edge banding)
+    renderer.shadowMap.type = PCFSoftShadowMap;
     await renderer.init();
     if (this.disposed) {
       renderer.dispose();
