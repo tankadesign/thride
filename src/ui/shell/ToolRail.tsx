@@ -1,9 +1,10 @@
-import { useAtomValue } from "jotai";
+import { useAtom, useAtomValue } from "jotai";
 import type { EditMode } from "@/types/core";
 import { ConvertToMeshCommand } from "@/geometry/commands/convert";
 import type { CommandRegistry } from "@/ui/commands/CommandRegistry";
 import { useDocument } from "@/ui/hooks/doc/document";
 import { useSelectionInfo } from "@/ui/hooks/doc/selection";
+import { snapEnabledAtom } from "@/ui/hooks/editor/settings";
 import { weldArmedAtom } from "@/ui/hooks/editor/viewport";
 import {
   IconBevel,
@@ -13,6 +14,7 @@ import {
   IconEdge,
   IconExtrude,
   IconInset,
+  IconMagnet,
   IconPlane,
   IconPoint,
   IconPolygon,
@@ -59,6 +61,7 @@ export function ToolRail({ registry }: { registry: CommandRegistry }) {
   const doc = useDocument();
   const { editMode } = useSelectionInfo();
   const weldArmed = useAtomValue(weldArmedAtom);
+  const [snapEnabled, setSnapEnabled] = useAtom(snapEnabledAtom);
 
   /** Entering a component mode on a primitive converts it first (Spline-style,
    * one undoable "Convert to Mesh" step) so components are editable at once. */
@@ -118,6 +121,17 @@ export function ToolRail({ registry }: { registry: CommandRegistry }) {
           </button>
         </li>
       ))}
+      <li className="pointer-events-none my-1 h-px bg-base-100 p-0" />
+      <li>
+        <button
+          type="button"
+          className={`tooltip tooltip-right px-1.5 ${snapEnabled ? "menu-active text-primary" : ""}`}
+          data-tip="Snap to vertex/edge"
+          onClick={() => setSnapEnabled((s) => !s)}
+        >
+          <IconMagnet />
+        </button>
+      </li>
     </ul>
   );
 }
