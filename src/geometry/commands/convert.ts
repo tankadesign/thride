@@ -22,16 +22,20 @@ export class ConvertToMeshCommand implements Command {
   private readonly mesh: HEMesh;
   private readonly before: Record<string, unknown>;
 
-  /** Throws if the node has no primitive descriptor — check eligibility first. */
-  constructor(doc: Document, nodeId: Uuid) {
+  /**
+   * Converts a primitive node, or — when `prebuilt` is passed (generator
+   * make-editable; the app layer evaluates the generator) — any node.
+   * Throws if neither applies; check eligibility first.
+   */
+  constructor(doc: Document, nodeId: Uuid, prebuilt?: HEMesh) {
     const node = doc.scene.mustGet(nodeId);
     const desc = node.data?.primitive as PrimitiveDescriptor | undefined;
-    if (!desc) throw new Error("ConvertToMeshCommand: node has no primitive");
+    if (!desc && !prebuilt) throw new Error("ConvertToMeshCommand: node has no primitive");
     this.nodeId = nodeId;
     this.label = `Convert ${node.name} to Mesh`;
-    this.before = structuredClone(node.data!);
+    this.before = structuredClone(node.data ?? {});
     this.meshId = uuidv7();
-    this.mesh = buildPrimitive(desc);
+    this.mesh = prebuilt ?? buildPrimitive(desc!);
     this.memoryCost = meshBytes(this.mesh);
   }
 

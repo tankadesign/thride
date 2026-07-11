@@ -8,7 +8,7 @@ import {
 } from "@/core/history/commands/scene";
 import { ConvertToMeshCommand } from "@/geometry/commands/convert";
 import { MeshTopologyCommand } from "@/geometry/commands/topology";
-import type { HEMesh } from "@/geometry/kernel/HEMesh";
+import { HEMesh } from "@/geometry/kernel/HEMesh";
 import { facesForSelection } from "@/geometry/kernel/components";
 import { deleteFaces } from "@/geometry/ops/faceOps";
 import type { OpResult } from "@/geometry/ops/soup";
@@ -17,6 +17,7 @@ import { dissolveVertices } from "@/geometry/ops/weld";
 import { splineStamp } from "@/geometry/splines/eval";
 import { deletePoints as deleteSplinePoints } from "@/geometry/splines/ops";
 import type { SplineData } from "@/types/geometry/spline";
+import { evaluateGenerator, splineExtrudeDescriptor } from "@/generators/graph";
 import { meshRegistry } from "@/geometry/store/meshRegistry";
 import type { PrimitiveType } from "@/types/geometry/primitives";
 import { defaultPrimitive, primitiveLabels } from "@/types/geometry/primitives";
@@ -292,13 +293,31 @@ export function buildCommands(doc: Document, shell: ShellApi): AppCommand[] {
       title: "Convert to Mesh",
       menu: "Edit",
       shortcut: "c",
-      enabled: () => doc.selection.objectIds.some((id) => ConvertToMeshCommand.eligible(doc, id)),
+      enabled: () =>
+        doc.selection.objectIds.some(
+          (id) =>
+            ConvertToMeshCommand.eligible(doc, id) ||
+            doc.scene.get(id)?.data?.generator !== undefined,
+        ),
       run: () => {
-        // convert every selected primitive; already-converted/ineligible nodes are skipped
-        const ids = doc.selection.objectIds.filter((id) => ConvertToMeshCommand.eligible(doc, id));
-        if (ids.length === 0) return;
+        // primitives convert directly; generators bake their evaluated mesh
+        const prims = doc.selection.objectIds.filter((id) =>
+          ConvertToMeshCommand.eligible(doc, id),
+        );
+        const gens = doc.selection.objectIds.filter(
+          (id) => doc.scene.get(id)?.data?.generator !== undefined,
+        );
+        if (prims.length === 0 && gens.length === 0) return;
         doc.history.transact("Convert to Mesh", () => {
-          for (const id of ids) doc.history.run(new ConvertToMeshCommand(doc, id));
+          for (const id of prims) doc.history.run(new ConvertToMeshCommand(doc, id));
+          for (const id of gens) {
+            const result = evaluateGenerator(doc, doc.scene.mustGet(id));
+            if (result) {
+              // deep-copy: the registry takes ownership; the cache may rebuild
+              const baked = HEMesh.fromSnapshot(result.mesh.snapshot());
+              doc.history.run(new ConvertToMeshCommand(doc, id, baked));
+            }
+          }
         });
       },
     },
@@ -369,6 +388,32 @@ export function buildCommands(doc: Document, shell: ShellApi): AppCommand[] {
       icon: <IconPen size={16} />,
       shortcut: "p",
       run: () => shell.getViewport()?.penTool.toggle(),
+    },
+    {
+      // Spline's signature: child spline in, extruded mesh out (live sliders)
+      id: "create.splineExtrude",
+      title: "Spline Extrude",
+      menu: "Create",
+      icon: <IconExtrude size={16} />,
+      run: () => {
+        const selectedSpline = doc.selection.objectIds.find(
+          (id) => doc.scene.get(id)?.kind === "spline",
+        );
+        let genId: Uuid | null = null;
+        doc.history.transact("Create Spline Extrude", () => {
+          const cmd = new CreateNodeCommand(
+            "generator",
+            uniqueSiblingName(doc, null, "Spline Extrude"),
+            null,
+            undefined,
+            { generator: splineExtrudeDescriptor() },
+          );
+          doc.history.run(cmd);
+          genId = cmd.nodeId;
+          if (selectedSpline) doc.history.run(new ReparentNodeCommand(selectedSpline, genId));
+        });
+        if (genId) doc.selection.selectObjects([genId]);
+      },
     },
     {
       id: "create.camera",

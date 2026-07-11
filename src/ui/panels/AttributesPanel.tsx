@@ -3,6 +3,7 @@ import type { ComponentMode, TransformDTO, Uuid } from "@/types/core";
 import type { PrimitiveDescriptor } from "@/types/geometry/primitives";
 import { paramMeta, primitiveDefaults, visibleParams } from "@/types/geometry/primitives";
 import { LIGHT_LABELS, type LightDataDTO, SHADOW_CAPABLE } from "@/types/core/light";
+import type { GeneratorDescriptor } from "@/generators/graph";
 import { ComponentTransformSession } from "@/geometry/commands/meshEdit";
 import { vertexCentroid, vertexExtents, vertsForSelection } from "@/geometry/kernel/components";
 import { meshRegistry } from "@/geometry/store/meshRegistry";
@@ -90,6 +91,7 @@ function NodeAttributes({ id }: { id: Uuid }) {
   const prim = node.data?.primitive as PrimitiveDescriptor | undefined;
   const meshRef = node.data?.mesh as { id: Uuid } | undefined;
   const light = node.data?.light as LightDataDTO | undefined;
+  const generator = node.data?.generator as GeneratorDescriptor | undefined;
 
   return (
     <div className="h-full overflow-auto bg-base-100 text-xs">
@@ -146,6 +148,7 @@ function NodeAttributes({ id }: { id: Uuid }) {
       </fieldset>
 
       {prim ? <PrimitiveParams id={id} prim={prim} /> : null}
+      {generator ? <GeneratorParams id={id} gen={generator} /> : null}
       {meshRef ? <MeshInfo meshId={meshRef.id} /> : null}
       {light ? <LightParams id={id} light={light} /> : null}
       {node.kind === "light" || node.kind === "camera" ? <TargetSelector id={id} /> : null}
@@ -421,6 +424,65 @@ function MeshInfo({ meshId }: { meshId: Uuid }) {
       ) : (
         <span className="text-error">mesh data missing</span>
       )}
+    </fieldset>
+  );
+}
+
+/** Generator parameter sliders (Spline Extrude: live depth/bevel/caps). */
+function GeneratorParams({ id, gen }: { id: Uuid; gen: GeneratorDescriptor }) {
+  const doc = useDocument();
+  const scrub = useRef<{ before: Record<string, unknown> } | null>(null);
+
+  const setParam = (key: string, value: number | boolean, committed: boolean) => {
+    const node = doc.scene.mustGet(id);
+    scrub.current ??= { before: structuredClone(node.data!) };
+    const data = structuredClone(node.data!);
+    (data.generator as unknown as { params: Record<string, unknown> }).params[key] = value;
+    if (committed) {
+      const before = scrub.current.before;
+      scrub.current = null;
+      doc.setNodeData(id, data, true);
+      doc.history.pushWithoutExecute(new SetNodeDataCommand(id, data, before, "Edit Generator"));
+    } else {
+      doc.setNodeData(id, data, true);
+    }
+  };
+
+  const p = gen.params as unknown as Record<string, number | boolean>;
+  const rows: { key: string; label: string; int?: boolean; min?: number; max?: number }[] = [
+    { key: "depth", label: "Depth", min: 0.001 },
+    { key: "bevelSize", label: "Bevel Size", min: 0 },
+    { key: "bevelSegments", label: "Bevel Segs", int: true, min: 1, max: 8 },
+  ];
+  return (
+    <fieldset className="fieldset px-2 py-1.5">
+      <legend className="fieldset-legend py-1 text-[10px] uppercase opacity-60">
+        Spline Extrude
+      </legend>
+      {rows.map((row) => (
+        <div className="grid grid-cols-[64px_1fr] items-center gap-1" key={row.key}>
+          <span className="truncate opacity-60" title={row.label}>
+            {row.label}
+          </span>
+          <NumberDrag
+            value={(p[row.key] as number) ?? 0}
+            step={row.int ? 0.08 : 0.005}
+            integer={row.int}
+            min={row.min}
+            max={row.max}
+            onChange={(v, committed) => setParam(row.key, v, committed)}
+          />
+        </div>
+      ))}
+      <div className="grid grid-cols-[64px_1fr] items-center gap-1">
+        <span className="opacity-60">Caps</span>
+        <input
+          type="checkbox"
+          className="toggle toggle-xs"
+          checked={(p.caps as boolean) ?? true}
+          onChange={(e) => setParam("caps", e.target.checked, true)}
+        />
+      </div>
     </fieldset>
   );
 }

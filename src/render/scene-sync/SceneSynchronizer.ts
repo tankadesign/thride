@@ -29,6 +29,7 @@ import { meshRegistry } from "@/geometry/store/meshRegistry";
 import { RenderMesh } from "@/geometry/sync/RenderMesh";
 import { buildCameraHelper } from "@/render/helpers/CameraHelper";
 import { viewportTheme } from "@/render/theme/viewportTheme";
+import { evaluateGenerator } from "@/generators/graph";
 import { LightSync } from "./LightSync";
 import { SelectionOutline } from "./SelectionOutline";
 import { buildSplineObject, syncSplineGeometry } from "./SplineSync";
@@ -101,8 +102,10 @@ export class SceneSynchronizer {
         this.addNode(id);
         this.onDirty();
       }),
-      doc.events.on("scene:node-removed", ({ id }) => {
+      doc.events.on("scene:node-removed", ({ id, parent }) => {
         this.removeNode(id);
+        // losing a child may change an ancestor generator's input
+        if (parent && this.doc.scene.has(parent)) this.updateNode(parent);
         this.onDirty();
       }),
       doc.events.on("scene:node-changed", ({ id, preview }) => {
@@ -197,7 +200,7 @@ export class SceneSynchronizer {
     if (this.objects.has(id)) return;
     const node = this.doc.scene.mustGet(id);
     let obj: Object3D;
-    if (node.kind === "mesh") obj = this.buildMeshObject(node);
+    if (node.kind === "mesh" || node.kind === "generator") obj = this.buildMeshObject(node);
     else if (node.kind === "spline") obj = buildSplineObject(node);
     else if (node.kind === "light") obj = this.lights.build(node);
     else if (node.kind === "camera") obj = this.buildCameraObject();
@@ -242,7 +245,9 @@ export class SceneSynchronizer {
     if (!obj) return;
     const parent = node.parent ? this.objects.get(node.parent) : undefined;
     (parent ?? this.root).add(obj);
-    // sibling order is irrelevant for rendering; object manager reads the doc
+    // sibling order is irrelevant for rendering; object manager reads the doc.
+    // A node moving under/out of a generator changes that generator's input.
+    this.updateNode(id);
   }
 
   private updateNode(id: Uuid, preview = false): void {
@@ -256,11 +261,20 @@ export class SceneSynchronizer {
     obj.name = node.name;
     obj.visible = node.visible;
     this.applyTransform(node, obj);
-    if (node.kind === "mesh" && obj instanceof Mesh) {
+    if ((node.kind === "mesh" || node.kind === "generator") && obj instanceof Mesh) {
       this.syncGeometry(id, node, obj, preview);
     }
     if (node.kind === "spline" && obj instanceof Line) {
       syncSplineGeometry(node, obj);
+    }
+    // dirty propagation: a change inside a generator's subtree re-evaluates
+    // the generator (pull-based — the memo key decides if work happens)
+    let parent = node.parent;
+    while (parent) {
+      const pNode = this.doc.scene.get(parent);
+      if (!pNode) break;
+      if (pNode.kind === "generator") this.updateNode(parent, preview);
+      parent = pNode.parent;
     }
   }
 
@@ -415,6 +429,10 @@ export class SceneSynchronizer {
   }
 
   private geometrySource(node: SceneNode): { key: string; mesh: HEMesh; live?: boolean } | null {
+    // a converted (made-editable) generator has plain mesh data — falls through
+    if (node.kind === "generator" && node.data?.generator) {
+      return evaluateGenerator(this.doc, node);
+    }
     const meshRef = node.data?.mesh as { id: Uuid } | undefined;
     if (meshRef) {
       const mesh = meshRegistry.get(meshRef.id);
@@ -439,8 +457,9 @@ export class SceneSynchronizer {
     mesh.add(wire);
     this.edgeWires.set(node.id, wire);
     this.syncGeometry(node.id, node, mesh);
-    if (!mesh.geometry.getAttribute("position")) {
-      // node without geometry data: fall back to a unit cube
+    if (node.kind === "mesh" && !mesh.geometry.getAttribute("position")) {
+      // mesh node without geometry data: fall back to a unit cube
+      // (generators legitimately render nothing until they have an input)
       const rm = new RenderMesh();
       const fallback = buildPrimitive({ type: "cube", params: { width: 1, height: 1, depth: 1 } });
       rm.sync(fallback);
