@@ -1,9 +1,6 @@
 import {
-  ACESFilmicToneMapping,
-  AgXToneMapping,
   AmbientLight,
   Box3,
-  NeutralToneMapping,
   NoToneMapping,
   DirectionalLight,
   GridHelper,
@@ -15,6 +12,7 @@ import {
   Vector3,
 } from "three";
 import { WebGPURenderer } from "three/webgpu";
+import { DitherOutput, type OutputToneMapping } from "./ditherOutput";
 import type { Document } from "@/core";
 import type { Uuid } from "@/types/core";
 import type { BuiltinCamera, EditorViewportState } from "@/types/editor";
@@ -101,6 +99,7 @@ export class ViewportSystem {
   modalTool: AmountTool | null = null;
   readonly raycaster = new Raycaster();
   private renderer: WebGPURenderer | null = null;
+  private output: DitherOutput | null = null;
   private readonly scene = new Scene();
   private grid: GridHelper;
   private readonly defaultAmbient: AmbientLight;
@@ -222,6 +221,7 @@ export class ViewportSystem {
       return;
     }
     this.renderer = renderer;
+    this.output = new DitherOutput(renderer);
     this.resize();
     const loop = () => {
       if (this.disposed) return;
@@ -303,6 +303,7 @@ export class ViewportSystem {
     this.resizeObserver.disconnect();
     this.input.dispose();
     this.sync.dispose();
+    this.output?.dispose();
     this.renderer?.dispose();
   }
 
@@ -407,7 +408,14 @@ export class ViewportSystem {
     this.defaultAmbient.visible = showDefaultLights;
     this.defaultKey.visible = showDefaultLights;
     this.defaultFill.visible = showDefaultLights;
+    // pass 1: render every pane into the LINEAR half-float buffer. Tone
+    // mapping is deferred to the composite, where a display-space dither
+    // dissolves the 8-bit banding that plain output quantization causes.
+    const output = this.output!;
+    const pr = renderer.getPixelRatio();
+    renderer.setRenderTarget(output.hdr);
     renderer.setScissorTest(true);
+    renderer.toneMapping = NoToneMapping;
     for (let r = 0; r < this.panes.length; r++) {
       const p = this.panes[r]!;
       const i = logical[r]!;
@@ -419,21 +427,12 @@ export class ViewportSystem {
       const disp = this.editor.paneDisplay(i);
       this.grid.visible = disp.grid;
       renderer.shadowMap.enabled = disp.shading === "pbr" && disp.shadows;
-      // color management: linear pipeline; per-pane output transform (C5)
-      renderer.toneMapping =
-        disp.shading !== "pbr"
-          ? NoToneMapping
-          : disp.toneMapping === "aces"
-            ? ACESFilmicToneMapping
-            : disp.toneMapping === "neutral"
-              ? NeutralToneMapping
-              : AgXToneMapping;
       this.sync.applyShading(disp.shading, disp.backfaces, disp.lines, disp.hiddenLines);
-      // logical pixels: the renderer multiplies by pixelRatio internally.
-      // WebGPU's viewport origin is top-left; WebGL's is bottom-left.
-      const yGL = this.backendName === "WebGPU" ? p.y : this.canvas.clientHeight - p.y - p.h;
-      renderer.setViewport(p.x, yGL, p.w, p.h);
-      renderer.setScissor(p.x, yGL, p.w, p.h);
+      // the HDR target lives in DEVICE pixels (no implicit pixelRatio scale
+      // like the canvas). WebGPU origin is top-left; WebGL bottom-left.
+      const yGL = this.backendName === "WebGPU" ? p.y * pr : output.hdr.height - (p.y + p.h) * pr;
+      renderer.setViewport(p.x * pr, yGL, p.w * pr, p.h * pr);
+      renderer.setScissor(p.x * pr, yGL, p.w * pr, p.h * pr);
       const activePane = i === this.editor.activePane && this.editor.layout === "quad";
       this.scene.background = activePane
         ? viewportTheme.activeBackgroundColor
@@ -451,6 +450,15 @@ export class ViewportSystem {
       axesPerSlot.push(projectAxes(rig));
       await renderer.renderAsync(this.scene, rig.camera);
     }
+    // pass 2: tone-map + dither the HDR buffer onto the canvas. One tone
+    // mapping for the whole canvas — the active pane's (quad panes with mixed
+    // tone-mapping is a rare case; single-pane, the common one, is exact).
+    renderer.setScissorTest(false);
+    renderer.setRenderTarget(null);
+    const activeDisp = this.editor.paneDisplay(this.editor.activePane);
+    const mode: OutputToneMapping = activeDisp.shading === "pbr" ? activeDisp.toneMapping : "none";
+    output.setToneMapping(mode);
+    output.render();
     this.onAxes?.(axesPerSlot);
     this.frames++;
   }
@@ -497,6 +505,8 @@ export class ViewportSystem {
     if (w === 0 || h === 0) return;
     this.renderer.setPixelRatio(window.devicePixelRatio || 1);
     this.renderer.setSize(w, h, true);
+    const pr = this.renderer.getPixelRatio();
+    this.output?.resize(w * pr, h * pr); // HDR target lives in device pixels
     this.invalidate();
   }
 
