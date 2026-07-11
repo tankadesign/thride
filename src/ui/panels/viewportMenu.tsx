@@ -106,7 +106,61 @@ export function buildViewportMenu(doc: Document, vs: ViewportSystem, pane: numbe
         },
         toggle("Shadows", "shadows", disp.shadows, disp.shading !== "pbr"),
         toggle("Backfaces", "backfaces", disp.backfaces),
-        toggle("SSAO", "ssao", disp.ssao, disp.shading !== "pbr"),
+        {
+          label: "Ambient Shadows",
+          icon: disp.ssao ? <IconToggleOn size={16} /> : <IconToggleOff size={16} />,
+          disabled: disp.shading !== "pbr",
+          children: [
+            {
+              label: disp.ssao ? "Enabled" : "Disabled",
+              icon: disp.ssao ? <IconToggleOn size={16} /> : <IconToggleOff size={16} />,
+              run: () => editorState.setPaneDisplay(pane, { ssao: !disp.ssao }),
+            },
+            {
+              label: "Radius",
+              sep: true,
+              children: [0.4, 0.8, 1.2, 2, 3].map(
+                (r): MenuEntry => ({
+                  label: `${r}`,
+                  active: disp.aoRadius === r,
+                  run: () => editorState.setPaneDisplay(pane, { aoRadius: r }),
+                }),
+              ),
+            },
+            {
+              label: "Quality",
+              children: (
+                [
+                  ["Low", 8],
+                  ["Normal", 16],
+                  ["High", 32],
+                ] as const
+              ).map(
+                ([lbl, n]): MenuEntry => ({
+                  label: lbl,
+                  active: disp.aoSamples === n,
+                  run: () => editorState.setPaneDisplay(pane, { aoSamples: n }),
+                }),
+              ),
+            },
+            {
+              label: "Strength",
+              children: (
+                [
+                  ["Subtle", "#5a5a5a"],
+                  ["Normal", "#323232"],
+                  ["Strong", "#000000"],
+                ] as const
+              ).map(
+                ([lbl, hex]): MenuEntry => ({
+                  label: lbl,
+                  active: disp.aoTint.toLowerCase() === hex,
+                  run: () => editorState.setPaneDisplay(pane, { aoTint: hex }),
+                }),
+              ),
+            },
+          ],
+        },
         toggle("Grid", "grid", disp.grid),
         {
           label: "Spline Thickness",

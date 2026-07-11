@@ -45,8 +45,16 @@ export interface PaneDisplay {
   shadows: boolean;
   /** Render backfaces (double-sided). */
   backfaces: boolean;
-  /** PBR only. State is plumbed now; the AO pass itself lands with post-FX (C6). */
+  /** Ambient Shadows (GTAO) on/off. PBR + single-pane only. */
   ssao: boolean;
+  /** GTAO sample radius (world units) — how far creases darken. */
+  aoRadius: number;
+  /** GTAO horizon thickness — hides thin-surface haloing. */
+  aoBias: number;
+  /** Hex color occluded areas darken toward (Spline's "Tint"). */
+  aoTint: string;
+  /** GTAO quality — samples per pixel (more = smoother, slower). */
+  aoSamples: number;
   grid: boolean;
   /** Wireframe overlay on top of PBR/Flat. No effect in Wireframe mode (already all lines). */
   lines: boolean;
@@ -61,6 +69,10 @@ export const defaultPaneDisplay = (): PaneDisplay => ({
   shadows: true,
   backfaces: true,
   ssao: false,
+  aoRadius: 0.8,
+  aoBias: 0.5,
+  aoTint: "#000000",
+  aoSamples: 16,
   grid: true,
   lines: false,
   hiddenLines: false,

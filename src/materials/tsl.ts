@@ -4,4 +4,14 @@
  * file. Grows with the noise library in chunk E2.
  */
 export { normalLocal, positionLocal, uniform } from "three/tsl";
-export { dot, float, fract, renderOutput, screenCoordinate, texture, vec2, vec3 } from "three/tsl";
+export {
+  dot,
+  float,
+  fract,
+  mix,
+  renderOutput,
+  screenCoordinate,
+  texture,
+  vec3,
+  vec2,
+} from "three/tsl";

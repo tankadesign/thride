@@ -16,6 +16,13 @@ import {
 } from "three";
 import type { Uuid } from "@/types/core";
 import { defaultLightData, type LightDataDTO, SHADOW_RESOLUTION_PX } from "@/types/core/light";
+import type { SceneNode } from "@/core";
+import {
+  buildBillboardCircle,
+  buildOrientedLightHelper,
+  isBillboardLightType,
+  updateBillboardHelper,
+} from "@/render/helpers/LightHelpers";
 
 /**
  * Push a light's shadow-quality settings (resolution / blur / frustum size)
@@ -59,13 +66,6 @@ function applyShadowSettings(light: Light, data: LightDataDTO): void {
     c.updateProjectionMatrix();
   }
 }
-import type { SceneNode } from "@/core";
-import {
-  buildBillboardCircle,
-  buildOrientedLightHelper,
-  isBillboardLightType,
-  updateBillboardHelper,
-} from "@/render/helpers/LightHelpers";
 
 /**
  * Light-node projection for the SceneSynchronizer: builds/updates the three
