@@ -5,7 +5,7 @@ import {
   DirectionalLight,
   GridHelper,
   Object3D,
-  PCFSoftShadowMap,
+  PCFShadowMap,
   Raycaster,
   Scene,
   Vector2,
@@ -213,8 +213,10 @@ export class ViewportSystem {
 
   private async init(): Promise<void> {
     const renderer = new WebGPURenderer({ canvas: this.canvas, antialias: true });
-    // soft, percentage-closer-filtered shadows (kills the hard-edge banding)
-    renderer.shadowMap.type = PCFSoftShadowMap;
+    // PCF (Vogel-disk) shadows — soft edges whose softness follows the light's
+    // Blur (shadow.radius). PCFSoft ignores radius, so the Blur control would be
+    // inert under it; PCF reads radius as a live uniform so blur updates live.
+    renderer.shadowMap.type = PCFShadowMap;
     await renderer.init();
     if (this.disposed) {
       renderer.dispose();
