@@ -8,7 +8,7 @@ import { themeColor } from "@/render/scene-sync/themeColor";
  *
  * Two kinds of entry:
  *  - **Semantic** colors resolve live from the daisyUI theme's CSS custom
- *    properties (see `SEMANTIC_SPECS`) so they track the active daisy theme —
+ *    properties (see `semanticSpecs`) so they track the active daisy theme —
  *    e.g. axis X/Y/Z map to `error`/`success`/`info`, selection to `primary`.
  *  - **Custom** viewport colors (`CUSTOM_SPECS`) are fixed values that have no
  *    daisyUI equivalent (surface albedo, grid, backgrounds, light rig…). They
@@ -26,7 +26,7 @@ interface SemanticSpec {
   fallback: string;
 }
 
-const SEMANTIC_SPECS = {
+const semanticSpecs = {
   primary: { cssVar: "--color-primary", fallback: "#ff865b" },
   secondary: { cssVar: "--color-secondary", fallback: "#fd6f9c" },
   accent: { cssVar: "--color-accent", fallback: "#b387fa" },
@@ -37,44 +37,44 @@ const SEMANTIC_SPECS = {
   baseContent: { cssVar: "--color-base-content", fallback: "#9fb9d0" },
 } as const satisfies Record<string, SemanticSpec>;
 
-const CUSTOM_SPECS = {
+const customSpecs = {
   /** Viewport clear color for inactive panes. */
-  backgroundColor: 0x101014,
+  backgroundColor: new Color(0x101014),
   /** Viewport clear color for the active pane (subtly lighter). */
-  activeBackgroundColor: 0x12121a,
+  activeBackgroundColor: new Color(0x12121a),
   /** Grid major (axis-crossing) lines. */
-  gridLineColor: 0x333340,
+  gridLineColor: new Color(0x333340),
   /** Grid minor (cell) lines. */
-  gridCellColor: 0x22222a,
+  gridCellColor: new Color(0x22222a),
   /** Shaded surface albedo (PBR + Flat). */
-  polygonColor: 0xb8b8c0,
+  polygonColor: new Color(0xb8b8c0),
   /** "Lines" overlay edges drawn over shaded surfaces. */
-  lineColor: 0x14151a,
+  lineColor: new Color(0x14151a),
   /** Wireframe-mode edges + component-mode wire overlay. */
-  wireframeColor: 0x8a93a8,
+  wireframeColor: new Color(0x8a93a8),
   /** Component-mode vertex points. */
-  pointColor: 0xd8dce8,
+  pointColor: new Color(0xd8dce8),
   /** Gizmo view-plane center handle. */
-  gizmoCenterColor: 0xdddddd,
+  gizmoCenterColor: new Color(0xdddddd),
   /** Gizmo view-plane X axis handle. */
-  gizmoXColor: 0xee4a55,
+  gizmoXColor: new Color(0xee4a55),
   /** Gizmo view-plane Y axis handle. */
-  gizmoYColor: 0x45db45,
+  gizmoYColor: new Color(0x45db45),
   /** Gizmo view-plane Z axis handle. */
-  gizmoZColor: 0x3253f7,
+  gizmoZColor: new Color(0x3253f7),
   /** Primitive drag handles. */
-  handleColor: 0xffd60a,
+  handleColor: new Color(0xffd60a),
   /** Primitive drag handle while hovered. */
-  handleHoverColor: 0xffffff,
+  handleHoverColor: new Color(0xffffff),
   /** Default studio key + ambient light. */
-  lightKeyColor: 0xffffff,
-  lightAmbientColor: 0xffffff,
+  lightKeyColor: new Color(0xffffff),
+  lightAmbientColor: new Color(0xffffff),
   /** Default studio fill light (cool). */
-  lightFillColor: 0x8899bb,
-} as const satisfies Record<string, number>;
+  lightFillColor: new Color(0x8899bb),
+} as const satisfies Record<string, Color>;
 
-type SemanticKey = keyof typeof SEMANTIC_SPECS;
-type CustomKey = keyof typeof CUSTOM_SPECS;
+type SemanticKey = keyof typeof semanticSpecs;
+type CustomKey = keyof typeof customSpecs;
 
 /** Resolved viewport theme. Fields are live `Color` instances (see module doc). */
 export interface ViewportTheme extends Record<SemanticKey | CustomKey, Color> {
@@ -83,28 +83,25 @@ export interface ViewportTheme extends Record<SemanticKey | CustomKey, Color> {
 }
 
 function resolveSemantic(key: SemanticKey): Color {
-  const spec = SEMANTIC_SPECS[key];
+  const spec = semanticSpecs[key];
   return themeColor(spec.cssVar, spec.fallback);
 }
 
 // Backing store: one Color instance per key, mutated in place by refresh so
 // references handed out through `viewportTheme` stay valid across theme edits.
 const semantic = Object.fromEntries(
-  (Object.keys(SEMANTIC_SPECS) as SemanticKey[]).map((k) => [k, resolveSemantic(k)]),
+  (Object.keys(semanticSpecs) as SemanticKey[]).map((k) => [k, resolveSemantic(k)]),
 ) as Record<SemanticKey, Color>;
-const custom = Object.fromEntries(
-  (Object.keys(CUSTOM_SPECS) as CustomKey[]).map((k) => [k, new Color(CUSTOM_SPECS[k])]),
-) as Record<CustomKey, Color>;
 
 /** The single source of truth for viewport colors. */
 export const viewportTheme: ViewportTheme = {
   ...semantic,
-  ...custom,
+  ...customSpecs,
   gizmo: {
-    x: custom.gizmoXColor,
-    y: custom.gizmoYColor,
-    z: custom.gizmoZColor,
-    center: custom.gizmoCenterColor,
+    x: customSpecs.gizmoXColor,
+    y: customSpecs.gizmoYColor,
+    z: customSpecs.gizmoZColor,
+    center: customSpecs.gizmoCenterColor,
   },
 };
 
@@ -115,7 +112,7 @@ export const viewportTheme: ViewportTheme = {
  * values into already-constructed materials and scene chrome.
  */
 export function refreshViewportTheme(): void {
-  for (const key of Object.keys(SEMANTIC_SPECS) as SemanticKey[]) {
+  for (const key of Object.keys(semanticSpecs) as SemanticKey[]) {
     semantic[key].copy(resolveSemantic(key));
   }
 }
