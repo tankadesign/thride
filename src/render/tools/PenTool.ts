@@ -319,7 +319,11 @@ export class PenTool {
 
   private updatePlanePreview(e: PointerEvent): void {
     const normal = resolvePlaneNormal(this.vs, this.axis).normal;
-    this.plane.setFromNormalAndCoplanarPoint(normal, new Vector3(0, 0, 0));
+    // the surface under the cursor sets the plane's offset along its normal
+    // (hovering a box top raises a Y plane to that height; X/Z equivalent);
+    // empty space falls back to the world-origin plane
+    const surf = this.raycastSurface(e);
+    this.plane.setFromNormalAndCoplanarPoint(normal, surf ?? new Vector3(0, 0, 0));
     const pane = this.vs.paneAt(
       e.clientX - this.vs.canvas.getBoundingClientRect().left,
       e.clientY - this.vs.canvas.getBoundingClientRect().top,
@@ -344,7 +348,9 @@ export class PenTool {
       this.quat.identity();
     } else {
       const normal = resolvePlaneNormal(this.vs, this.axis).normal;
-      this.plane.setFromNormalAndCoplanarPoint(normal, new Vector3(0, 0, 0));
+      // same offset rule as the preview — the click lands where it showed
+      const surf = this.raycastSurface(e);
+      this.plane.setFromNormalAndCoplanarPoint(normal, surf ?? new Vector3(0, 0, 0));
       const pane = this.vs.paneAt(
         e.clientX - this.vs.canvas.getBoundingClientRect().left,
         e.clientY - this.vs.canvas.getBoundingClientRect().top,
