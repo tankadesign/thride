@@ -122,6 +122,7 @@ export class DitherOutput {
     const hdrColor = texture(this.hdr.texture);
     // biome-ignore lint/suspicious/noExplicitAny: TSL node graph — loose by design
     let color: any = hdrColor;
+    this.aoNode?.dispose?.(); // free the previous GTAO pass's render target
     this.aoNode = null;
     if (this.aoCamera && this.aoParams) {
       // GTAO from the linear depth; normals auto-derived (no MRT needed)
