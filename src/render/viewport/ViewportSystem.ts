@@ -455,6 +455,12 @@ export class ViewportSystem {
     // tone-mapping is a rare case; single-pane, the common one, is exact).
     renderer.setScissorTest(false);
     renderer.setRenderTarget(null);
+    // pass 1 left the viewport in DEVICE pixels (render targets aren't scaled by
+    // pixelRatio). The canvas composite IS scaled by pixelRatio, so reset to the
+    // LOGICAL full-canvas size or the quad renders into a 2×-oversized viewport
+    // on retina — showing only a low-res quarter of the frame (and mis-picking).
+    const logicalSize = renderer.getSize(new Vector2());
+    renderer.setViewport(0, 0, logicalSize.x, logicalSize.y);
     const activeDisp = this.editor.paneDisplay(this.editor.activePane);
     const mode: OutputToneMapping = activeDisp.shading === "pbr" ? activeDisp.toneMapping : "none";
     output.setToneMapping(mode);
