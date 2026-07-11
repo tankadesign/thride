@@ -66,7 +66,9 @@ export class RenderMesh {
     const pos = (this.geometry.getAttribute("position") as BufferAttribute).array as Float32Array;
     const nor = (this.geometry.getAttribute("normal") as BufferAttribute).array as Float32Array;
     const uv = (this.geometry.getAttribute("uv") as BufferAttribute).array as Float32Array;
-    const vertexNormals = mesh.computeVertexNormals();
+    // per-corner crease-smoothed normals: flat cube facets, smooth spheres,
+    // and correct normalBias direction (no self-shadow acne on flat faces)
+    const cornerNormals = mesh.computeCornerNormals();
 
     for (let c = 0; c < corners.length; c++) {
       const h = corners[c]!;
@@ -74,9 +76,9 @@ export class RenderMesh {
       pos[c * 3] = mesh.vPos[v * 3]!;
       pos[c * 3 + 1] = mesh.vPos[v * 3 + 1]!;
       pos[c * 3 + 2] = mesh.vPos[v * 3 + 2]!;
-      nor[c * 3] = vertexNormals[v * 3]!;
-      nor[c * 3 + 1] = vertexNormals[v * 3 + 1]!;
-      nor[c * 3 + 2] = vertexNormals[v * 3 + 2]!;
+      nor[c * 3] = cornerNormals[h * 3]!;
+      nor[c * 3 + 1] = cornerNormals[h * 3 + 1]!;
+      nor[c * 3 + 2] = cornerNormals[h * 3 + 2]!;
       uv[c * 2] = mesh.heUV[h * 2]!;
       uv[c * 2 + 1] = mesh.heUV[h * 2 + 1]!;
     }

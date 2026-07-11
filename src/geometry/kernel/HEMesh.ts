@@ -229,6 +229,73 @@ export class HEMesh {
     return normals;
   }
 
+  /**
+   * Per-CORNER (half-edge) normals with crease-angle auto-smoothing: each
+   * corner averages only the faces around its vertex whose normal is within
+   * `creaseDeg` of the corner's own face. Sharp edges (cube 90°) stay flat;
+   * shallow ones (sphere/cylinder segments) smooth. This is also the CORRECT
+   * normal for shadow `normalBias` — a per-vertex-averaged cube normal points
+   * diagonally and can't offset self-shadow acne off the flat faces.
+   * Returned as one xyz per half-edge (index by the triangulation's corner).
+   */
+  computeCornerNormals(creaseDeg = 50): Float32Array {
+    const cosThresh = Math.cos((creaseDeg * Math.PI) / 180);
+    const fnRaw = new Float32Array(this.fCount * 3); // area-weighted (Newell)
+    const fnUnit = new Float32Array(this.fCount * 3); // normalized
+    for (let f = 0; f < this.fCount; f++) {
+      let nx = 0;
+      let ny = 0;
+      let nz = 0;
+      const s = this.fHE[f]!;
+      let h = s;
+      do {
+        const a = this.heVert[h]!;
+        const b = this.heVert[this.heNext[h]!]!;
+        nx +=
+          (this.vPos[a * 3 + 1]! - this.vPos[b * 3 + 1]!) *
+          (this.vPos[a * 3 + 2]! + this.vPos[b * 3 + 2]!);
+        ny +=
+          (this.vPos[a * 3 + 2]! - this.vPos[b * 3 + 2]!) * (this.vPos[a * 3]! + this.vPos[b * 3]!);
+        nz +=
+          (this.vPos[a * 3]! - this.vPos[b * 3]!) * (this.vPos[a * 3 + 1]! + this.vPos[b * 3 + 1]!);
+        h = this.heNext[h]!;
+      } while (h !== s);
+      fnRaw[f * 3] = nx;
+      fnRaw[f * 3 + 1] = ny;
+      fnRaw[f * 3 + 2] = nz;
+      const len = Math.hypot(nx, ny, nz) || 1;
+      fnUnit[f * 3] = nx / len;
+      fnUnit[f * 3 + 1] = ny / len;
+      fnUnit[f * 3 + 2] = nz / len;
+    }
+    // vertex → the half-edges originating there (one per adjacent face)
+    const byVert: number[][] = Array.from({ length: this.vCount }, () => []);
+    for (let h = 0; h < this.heCount; h++) byVert[this.heVert[h]!]!.push(h);
+    const out = new Float32Array(this.heCount * 3);
+    for (let h = 0; h < this.heCount; h++) {
+      const f = this.heFace[h]!;
+      const fx = fnUnit[f * 3]!;
+      const fy = fnUnit[f * 3 + 1]!;
+      const fz = fnUnit[f * 3 + 2]!;
+      let nx = 0;
+      let ny = 0;
+      let nz = 0;
+      for (const h2 of byVert[this.heVert[h]!]!) {
+        const g = this.heFace[h2]!;
+        if (fx * fnUnit[g * 3]! + fy * fnUnit[g * 3 + 1]! + fz * fnUnit[g * 3 + 2]! >= cosThresh) {
+          nx += fnRaw[g * 3]!;
+          ny += fnRaw[g * 3 + 1]!;
+          nz += fnRaw[g * 3 + 2]!;
+        }
+      }
+      const len = Math.hypot(nx, ny, nz) || 1;
+      out[h * 3] = nx / len;
+      out[h * 3 + 1] = ny / len;
+      out[h * 3 + 2] = nz / len;
+    }
+    return out;
+  }
+
   clearDirty(): void {
     this.dirty = 0;
   }
