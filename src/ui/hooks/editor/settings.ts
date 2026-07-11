@@ -23,6 +23,9 @@ export const gridSnapSizeAtom = atomWithStorage("thride.settings.gridSnapSize", 
  */
 export const snapEnabledAtom = atomWithStorage("thride.settings.snapEnabled", false);
 
+/** Spline display thickness in screen pixels (drives the shared Line2 material). */
+export const splineThicknessAtom = atomWithStorage("thride.settings.splineThickness", 1.5);
+
 export function useSettings() {
   const [iconSize, setIconSize] = useAtom(iconSizeAtom);
   const [gridSnapSize, setGridSnapSize] = useAtom(gridSnapSizeAtom);

@@ -130,8 +130,9 @@ export class ViewportSystem {
     this.canvas = canvas;
     this.doc = doc;
     this.editor = editor;
-    // spline nodes are Lines: keep their pick zone tight (world units)
+    // spline nodes are Line2 (wide lines): px pick pad on top of linewidth
     this.raycaster.params.Line = { threshold: 0.08 };
+    (this.raycaster.params as { Line2?: { threshold: number } }).Line2 = { threshold: 6 };
 
     this.scene.background = viewportTheme.backgroundColor.clone();
     this.grid = this.buildGrid();

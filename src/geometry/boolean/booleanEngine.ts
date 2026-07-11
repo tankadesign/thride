@@ -99,7 +99,7 @@ export function trisToHEMesh(tris: TriMeshData): HEMesh | null {
 }
 
 /** Column-major TRS matrix from a TransformDTO (XYZ euler) — no three dep. */
-function composeTRS(t: TransformDTO): number[] {
+export function composeTRS(t: TransformDTO): number[] {
   const [rx, ry, rz] = t.rotation;
   const cx = Math.cos(rx);
   const sx = Math.sin(rx);

@@ -4,12 +4,14 @@ import type { PaneCamera } from "@/types/editor";
 import { useAtomValue } from "jotai";
 import { appStore, useDocument, useSliceVersion } from "@/ui/hooks/doc/document";
 import { openContextMenu } from "@/ui/hooks/editor/shell";
+import { splineThicknessAtom } from "@/ui/hooks/editor/settings";
 import {
   bevelActiveAtom,
   editorState,
   targetRotationBakerAtom,
   useViewportState,
 } from "@/ui/hooks/editor/viewport";
+import { applySplineThickness } from "@/render/scene-sync/SplineSync";
 import { BevelSettings } from "./BevelSettings";
 import { SplinePointPanel } from "./SplinePointPanel";
 import {
@@ -86,8 +88,15 @@ export function ViewportPanel({ onSystem }: Props) {
   const [axes, setAxes] = useState<PaneAxes[]>([]);
   const [system, setSystem] = useState<ViewportSystem | null>(null);
   const bevelActive = useAtomValue(bevelActiveAtom);
+  const splineThickness = useAtomValue(splineThicknessAtom);
   const { layout, maximizedPane, paneCameras, setPaneCamera } = useViewportState();
   useSliceVersion("scene");
+
+  // spline display thickness: applied on boot and whenever the setting changes
+  useEffect(() => {
+    applySplineThickness(splineThickness);
+    system?.invalidate();
+  }, [splineThickness, system]);
 
   useEffect(() => {
     const canvas = canvasRef.current;

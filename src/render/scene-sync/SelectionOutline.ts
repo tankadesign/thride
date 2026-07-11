@@ -60,7 +60,7 @@ export class SelectionOutline {
     for (const id of doc.selection.objectIds) {
       if (this.outlines.has(id)) continue;
       const obj = objects.get(id);
-      if (!(obj instanceof Mesh)) continue;
+      if (!(obj instanceof Mesh) || obj.userData.spline) continue;
       const offset = uniform(0.01);
       const mat = new MeshBasicNodeMaterial();
       mat.color.copy(this.color);

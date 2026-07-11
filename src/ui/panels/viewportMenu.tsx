@@ -1,7 +1,10 @@
 import type { Document } from "@/core";
 import type { BuiltinCamera, PaneDisplay, ShadingMode, ToneMappingMode } from "@/types/editor";
 import type { MenuEntry } from "@/ui/hooks/editor/shell";
+import { appStore } from "@/ui/hooks/doc/document";
+import { splineThicknessAtom } from "@/ui/hooks/editor/settings";
 import { editorState } from "@/ui/hooks/editor/viewport";
+import { applySplineThickness } from "@/render/scene-sync/SplineSync";
 import { IconCamera, IconShading, IconToggleOff, IconToggleOn } from "@/icons";
 import type { ViewportSystem } from "@/render/viewport/ViewportSystem";
 
@@ -105,6 +108,20 @@ export function buildViewportMenu(doc: Document, vs: ViewportSystem, pane: numbe
         toggle("Backfaces", "backfaces", disp.backfaces),
         toggle("SSAO", "ssao", disp.ssao, disp.shading !== "pbr"),
         toggle("Grid", "grid", disp.grid),
+        {
+          label: "Spline Thickness",
+          children: [1, 1.5, 2, 3, 4].map(
+            (px): MenuEntry => ({
+              label: `${px} px`,
+              active: appStore.get(splineThicknessAtom) === px,
+              run: () => {
+                appStore.set(splineThicknessAtom, px);
+                applySplineThickness(px);
+                vs.invalidate();
+              },
+            }),
+          ),
+        },
         toggle("Lines", "lines", disp.lines, disp.shading === "wireframe"),
         toggle(
           "Hidden Lines",

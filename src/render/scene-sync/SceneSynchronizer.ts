@@ -6,7 +6,6 @@ import {
   DoubleSide,
   FrontSide,
   Group,
-  Line,
   LineBasicMaterial,
   LineSegments,
   Matrix4,
@@ -261,11 +260,15 @@ export class SceneSynchronizer {
     obj.name = node.name;
     obj.visible = node.visible;
     this.applyTransform(node, obj);
-    if ((node.kind === "mesh" || node.kind === "generator") && obj instanceof Mesh) {
+    if (
+      (node.kind === "mesh" || node.kind === "generator") &&
+      obj instanceof Mesh &&
+      !obj.userData.spline
+    ) {
       this.syncGeometry(id, node, obj, preview);
     }
-    if (node.kind === "spline" && obj instanceof Line) {
-      syncSplineGeometry(node, obj);
+    if (node.kind === "spline" && obj.userData.spline) {
+      syncSplineGeometry(node, obj as Parameters<typeof syncSplineGeometry>[1]);
     }
     // dirty propagation: a change inside a generator's subtree re-evaluates
     // the generator (pull-based — the memo key decides if work happens)
@@ -352,7 +355,10 @@ export class SceneSynchronizer {
     const mat = mode === "flat" ? FLAT_MAT : mode === "wireframe" ? HIDDEN_MAT : BASE_MAT;
     mat.side = backfaces ? DoubleSide : FrontSide;
     for (const obj of this.objects.values()) {
-      if (obj instanceof Mesh && !obj.userData.outline) obj.material = mat;
+      // Line2 splines extend Mesh — never clobber their wide-line material
+      if (obj instanceof Mesh && !obj.userData.outline && !obj.userData.spline) {
+        obj.material = mat;
+      }
     }
     const wireMode = mode === "wireframe";
     // depthTest off makes edges behind the surface show through. For the Lines

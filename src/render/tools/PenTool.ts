@@ -13,6 +13,7 @@ import {
 } from "three";
 import type { Uuid, Vec3 } from "@/types/core";
 import { CreateNodeCommand, SetNodeDataCommand } from "@/core/history/commands/scene";
+import { Bitset } from "@/core/selection/Bitset";
 import { uniqueSiblingName } from "@/core";
 import { emptySpline, type SplineData, type SplinePointDTO } from "@/types/geometry/spline";
 import { viewportTheme } from "@/render/theme/viewportTheme";
@@ -69,7 +70,12 @@ export class PenTool {
 
     this.rubber = new Line(
       new BufferGeometry(),
-      new LineBasicMaterial({ color: viewportTheme.accent, transparent: true, opacity: 0.6 }),
+      new LineBasicMaterial({
+        color: viewportTheme.accent,
+        transparent: true,
+        opacity: 0.6,
+        depthTest: false, // drawing feedback always on top (projected surfaces)
+      }),
     );
     this.rubber.raycast = () => {};
     this.rubber.frustumCulled = false;
@@ -199,6 +205,7 @@ export class PenTool {
     // stream as preview; ONE command lands at pointer-up (handles included)
     this.doc.setNodeData(this.nodeId!, this.wrap(after), true);
     this.placing = { index: after.points.length - 1, startClient: [e.clientX, e.clientY], before };
+    this.selectPoint(after.points.length - 1);
     this.vs.invalidate();
   }
 
@@ -387,6 +394,11 @@ export class PenTool {
     this.doc.history.run(cmd);
     this.nodeId = cmd.nodeId;
     this.phase = "draw";
+    // the new spline is selected + in point mode right away, so anchors and
+    // tangent handles are visible WHILE drawing (Spline-app behavior)
+    this.doc.selection.selectObjects([cmd.nodeId]);
+    this.doc.selection.setEditMode("point");
+    this.selectPoint(0);
     // lock the preview plane where it was clicked (hidden in projection mode)
     if (!this.projection) {
       this.planePreview.place(hit, this.quat);
@@ -423,6 +435,20 @@ export class PenTool {
     this.doc.history.run(
       new SetNodeDataCommand(this.nodeId!, this.wrap(after), this.wrap(before), label, false),
     );
+  }
+
+  /** Keep the latest point selected while drawing (handles stay visible). */
+  private selectPoint(index: number): void {
+    const data = this.data();
+    if (!data || !this.nodeId) return;
+    const bits = new Bitset();
+    bits.add(index);
+    this.doc.selection.setComponents(this.nodeId, {
+      mode: "point",
+      bits,
+      order: [index],
+      topologyVersion: data.points.length,
+    });
   }
 
   /**

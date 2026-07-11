@@ -5,6 +5,7 @@ import type { PrimitiveDescriptor } from "@/types/geometry/primitives";
 import {
   type BooleanOp,
   booleanEngine,
+  composeTRS,
   hemeshToTris,
   trisToHEMesh,
 } from "@/geometry/boolean/booleanEngine";
@@ -61,10 +62,28 @@ export function evaluateGenerator(
 
   if (desc.type === "splineExtrude") {
     const input = firstChildSpline(doc, node.id);
-    const key = `se:${JSON.stringify(desc.params)}:${input ? JSON.stringify(input) : "∅"}`;
+    const key = `se:${JSON.stringify(desc.params)}:${
+      input ? JSON.stringify(input.data) + JSON.stringify(input.transform) : "∅"
+    }`;
     const hit = perDoc.get(node.id);
     if (hit && hit.key === key) return hit.mesh ? { key, mesh: hit.mesh } : null;
-    const mesh = input ? buildSplineExtrude(input, desc.params) : null;
+    let mesh = input ? buildSplineExtrude(input.data, desc.params) : null;
+    if (mesh && input) {
+      // bake the child spline's LOCAL transform so the extrusion sits exactly
+      // where the spline is drawn (profile plane = the spline's work plane)
+      const m = composeTRS(input.transform);
+      for (let v = 0; v < mesh.vCount; v++) {
+        const x = mesh.vPos[v * 3]!;
+        const y = mesh.vPos[v * 3 + 1]!;
+        const z = mesh.vPos[v * 3 + 2]!;
+        mesh.setPosition(
+          v,
+          m[0]! * x + m[4]! * y + m[8]! * z + m[12]!,
+          m[1]! * x + m[5]! * y + m[9]! * z + m[13]!,
+          m[2]! * x + m[6]! * y + m[10]! * z + m[14]!,
+        );
+      }
+    }
     perDoc.set(node.id, { key, mesh });
     return mesh ? { key, mesh } : null;
   }
@@ -98,12 +117,15 @@ export function evaluateGenerator(
   return entry.mesh ? { key: entry.key, mesh: entry.mesh } : null;
 }
 
-/** The generator's profile input: its first spline child's data (child-local). */
-function firstChildSpline(doc: Document, id: Uuid): SplineData | null {
+/** The generator's profile input: its first spline child (data + transform). */
+function firstChildSpline(
+  doc: Document,
+  id: Uuid,
+): { data: SplineData; transform: SceneNode["transform"] } | null {
   for (const childId of doc.scene.childrenOf(id)) {
     const child = doc.scene.get(childId);
     const data = child?.data?.spline as SplineData | undefined;
-    if (child?.kind === "spline" && data) return data;
+    if (child?.kind === "spline" && data) return { data, transform: child.transform };
   }
   return null;
 }
