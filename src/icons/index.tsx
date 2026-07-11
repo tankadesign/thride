@@ -26,6 +26,7 @@ import {
   OctagonIcon,
   PaintBoardIcon,
   PathfinderMergeIcon,
+  PenTool03Icon,
   PentagonIcon,
   PillIcon,
   PlusSignSquareIcon,
@@ -102,6 +103,7 @@ export const IconSpotlight = makeIcon(SpotlightIcon);
 export const IconBevel = makeIcon(OctagonIcon);
 export const IconDissolve = makeIcon(PathfinderMergeIcon);
 export const IconExtrude = makeIcon(SquareArrowUp01Icon);
+export const IconPen = makeIcon(PenTool03Icon);
 export const IconInset = makeIcon(SquareArrowShrink01Icon);
 export const IconWeld = makeIcon(GitMergeIcon);
 

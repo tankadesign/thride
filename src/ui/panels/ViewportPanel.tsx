@@ -11,6 +11,7 @@ import {
   useViewportState,
 } from "@/ui/hooks/editor/viewport";
 import { BevelSettings } from "./BevelSettings";
+import { SplinePointPanel } from "./SplinePointPanel";
 import {
   type PaneAxes,
   type ViewportStats,
@@ -151,6 +152,7 @@ export function ViewportPanel({ onSystem }: Props) {
     <div className="relative h-full w-full overflow-hidden">
       <canvas ref={canvasRef} className="block h-full w-full" />
       {bevelActive && system ? <BevelSettings vs={system} /> : null}
+      {system ? <SplinePointPanel vs={system} /> : null}
       {slots.map((pane, slot) => (
         <select
           key={pane}

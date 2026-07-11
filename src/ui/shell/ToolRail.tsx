@@ -5,7 +5,7 @@ import type { CommandRegistry } from "@/ui/commands/CommandRegistry";
 import { useDocument } from "@/ui/hooks/doc/document";
 import { useSelectionInfo } from "@/ui/hooks/doc/selection";
 import { snapEnabledAtom } from "@/ui/hooks/editor/settings";
-import { weldArmedAtom } from "@/ui/hooks/editor/viewport";
+import { penActiveAtom, weldArmedAtom } from "@/ui/hooks/editor/viewport";
 import {
   IconBevel,
   IconCube,
@@ -15,6 +15,7 @@ import {
   IconExtrude,
   IconInset,
   IconMagnet,
+  IconPen,
   IconPlane,
   IconPoint,
   IconPolygon,
@@ -45,6 +46,7 @@ const QUICK_CREATE: { cmd: string; icon: React.ReactNode; title: string }[] = [
 const MODE_TOOLS: Partial<
   Record<EditMode, { cmd: string; icon: React.ReactNode; title: string; toggle?: boolean }[]>
 > = {
+  object: [{ cmd: "spline.pen", icon: <IconPen />, title: "Pen (P)", toggle: true }],
   point: [
     { cmd: "mesh.bevel", icon: <IconBevel />, title: "Bevel (B)" },
     { cmd: "mesh.weldTool", icon: <IconWeld />, title: "Weld Tool", toggle: true },
@@ -61,7 +63,13 @@ export function ToolRail({ registry }: { registry: CommandRegistry }) {
   const doc = useDocument();
   const { editMode } = useSelectionInfo();
   const weldArmed = useAtomValue(weldArmedAtom);
+  const penActive = useAtomValue(penActiveAtom);
   const [snapEnabled, setSnapEnabled] = useAtom(snapEnabledAtom);
+  /** Armed state per toggle-style rail tool. */
+  const toggleActive: Record<string, boolean> = {
+    "mesh.weldTool": weldArmed,
+    "spline.pen": penActive,
+  };
 
   /** Entering a component mode on a primitive converts it first (Spline-style,
    * one undoable "Convert to Mesh" step) so components are editable at once. */
@@ -97,7 +105,7 @@ export function ToolRail({ registry }: { registry: CommandRegistry }) {
               <button
                 type="button"
                 className={`tooltip tooltip-right px-1.5 ${
-                  t.toggle && weldArmed ? "menu-active text-primary" : ""
+                  t.toggle && toggleActive[t.cmd] ? "menu-active text-primary" : ""
                 }`}
                 data-tip={t.title}
                 onClick={() => registry.run(t.cmd)}

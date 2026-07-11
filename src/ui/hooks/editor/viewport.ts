@@ -42,6 +42,8 @@ export const weldArmedAtom = atom(false);
 /** Live edge-bevel tool: active flag + its adjustable parameters. */
 export const bevelActiveAtom = atom(false);
 export const bevelParamsAtom = atom<BevelToolParams>(defaultBevelParams());
+/** Spline pen tool active (plane pick / drawing). */
+export const penActiveAtom = atom(false);
 /** Per-logical-pane display settings (viewport context menu → Display). */
 export const paneDisplaysAtom = atom<PaneDisplay[]>([
   defaultPaneDisplay(),
@@ -106,6 +108,14 @@ class EditorStateStore implements EditorViewportState {
 
   setWeldArmed(on: boolean): void {
     appStore.set(weldArmedAtom, on);
+  }
+
+  get penActive(): boolean {
+    return appStore.get(penActiveAtom);
+  }
+
+  setPenActive(on: boolean): void {
+    appStore.set(penActiveAtom, on);
   }
 
   get bevelActive(): boolean {
@@ -177,6 +187,7 @@ class EditorStateStore implements EditorViewportState {
       appStore.sub(gizmoSpaceAtom, cb),
       appStore.sub(weldArmedAtom, cb),
       appStore.sub(bevelActiveAtom, cb),
+      appStore.sub(penActiveAtom, cb),
       appStore.sub(snapEnabledAtom, cb),
       appStore.sub(paneDisplaysAtom, cb),
     ];

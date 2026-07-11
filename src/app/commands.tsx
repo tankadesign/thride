@@ -4,6 +4,7 @@ import {
   CreateNodeCommand,
   RemoveNodeCommand,
   ReparentNodeCommand,
+  SetNodeDataCommand,
 } from "@/core/history/commands/scene";
 import { ConvertToMeshCommand } from "@/geometry/commands/convert";
 import { MeshTopologyCommand } from "@/geometry/commands/topology";
@@ -13,6 +14,9 @@ import { deleteFaces } from "@/geometry/ops/faceOps";
 import type { OpResult } from "@/geometry/ops/soup";
 import { selectAll } from "@/geometry/selection/selectAll";
 import { dissolveVertices } from "@/geometry/ops/weld";
+import { splineStamp } from "@/geometry/splines/eval";
+import { deletePoints as deleteSplinePoints } from "@/geometry/splines/ops";
+import type { SplineData } from "@/types/geometry/spline";
 import { meshRegistry } from "@/geometry/store/meshRegistry";
 import type { PrimitiveType } from "@/types/geometry/primitives";
 import { defaultPrimitive, primitiveLabels } from "@/types/geometry/primitives";
@@ -40,6 +44,7 @@ import {
   IconIcosphere,
   IconInset,
   IconNull,
+  IconPen,
   IconPlane,
   IconPointLight,
   IconPyramid,
@@ -139,6 +144,19 @@ export function buildCommands(doc: Document, shell: ShellApi): AppCommand[] {
         ),
     );
 
+  /** Active SPLINE node + its live point selection (spline point ops). */
+  const splinePointTarget = () => {
+    const active = doc.selection.active;
+    if (!active || !doc.scene.has(active)) return null;
+    const node = doc.scene.mustGet(active);
+    if (node.kind !== "spline") return null;
+    const data = node.data?.spline as SplineData | undefined;
+    if (!data) return null;
+    const sel = doc.selection.componentsFor(active, "point");
+    if (!sel || sel.topologyVersion !== splineStamp(data) || sel.bits.count === 0) return null;
+    return { nodeId: active, nodeData: node.data, data, sel: sel.bits.toArray() };
+  };
+
   /** Active editable mesh + its live component selection for `mode` (topology ops). */
   const componentTarget = (mode: ComponentMode) => {
     const active = doc.selection.active;
@@ -200,6 +218,7 @@ export function buildCommands(doc: Document, shell: ShellApi): AppCommand[] {
       shortcut: "delete",
       enabled: () => {
         const mode = doc.selection.editMode;
+        if (mode === "point" && splinePointTarget() !== null) return true;
         if (mode === "point" || mode === "edge" || mode === "polygon") {
           return componentTarget(mode) !== null;
         }
@@ -208,6 +227,28 @@ export function buildCommands(doc: Document, shell: ShellApi): AppCommand[] {
       run: () => {
         // component modes delete the touched faces; object mode deletes nodes
         const mode = doc.selection.editMode;
+        // spline points delete via spline ops (drop the node below 2 points)
+        if (mode === "point") {
+          const st = splinePointTarget();
+          if (st) {
+            const remaining = st.data.points.length - st.sel.length;
+            if (remaining < 2) {
+              doc.history.run(new RemoveNodeCommand(st.nodeId));
+              return;
+            }
+            const after = deleteSplinePoints(st.data, st.sel);
+            doc.history.run(
+              new SetNodeDataCommand(
+                st.nodeId,
+                { ...st.nodeData, spline: after },
+                { ...st.nodeData, spline: st.data },
+                "Delete Points",
+                false,
+              ),
+            );
+            return;
+          }
+        }
         if (mode === "point" || mode === "edge" || mode === "polygon") {
           const target = componentTarget(mode);
           if (!target) return;
@@ -319,6 +360,15 @@ export function buildCommands(doc: Document, shell: ShellApi): AppCommand[] {
         doc.history.run(cmd);
         doc.selection.selectObjects([cmd.nodeId]);
       },
+    },
+    {
+      // the Spline-style 3D pen: pick a work plane, then draw a bezier spline
+      id: "spline.pen",
+      title: "Pen (Spline)",
+      menu: "Create",
+      icon: <IconPen size={16} />,
+      shortcut: "p",
+      run: () => shell.getViewport()?.penTool.toggle(),
     },
     {
       id: "create.camera",

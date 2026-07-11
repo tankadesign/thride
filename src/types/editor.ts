@@ -84,6 +84,9 @@ export interface EditorViewportState {
   /** Weld tool armed (point mode): vertex drags slide-weld instead of moving. */
   readonly weldArmed: boolean;
   setWeldArmed(on: boolean): void;
+  /** Spline pen tool active (work-plane pick or drawing). */
+  readonly penActive: boolean;
+  setPenActive(on: boolean): void;
   /** Live edge-bevel tool: active flag + adjustable params (C4D-style). */
   readonly bevelActive: boolean;
   readonly bevelParams: BevelToolParams;

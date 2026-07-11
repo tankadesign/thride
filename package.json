@@ -19,6 +19,7 @@
     "dockview-react": "^7.0.2",
     "earcut": "^3.2.3",
     "jotai": "^2.20.1",
+    "manifold-3d": "^3.5.1",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "tailwindcss": "^4.3.2",

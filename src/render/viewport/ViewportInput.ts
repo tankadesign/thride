@@ -1,11 +1,15 @@
-import { Mesh, Raycaster, Vector3 } from "three";
-import type { ComponentMode, Uuid } from "@/types/core";
-import { Bitset } from "@/core/selection/Bitset";
-import { vertsForSelection } from "@/geometry/kernel/components";
+import { Raycaster, Vector3 } from "three";
+import type { Uuid } from "@/types/core";
 import { selectAll } from "@/geometry/selection/selectAll";
-import { meshRegistry } from "@/geometry/store/meshRegistry";
-import { pickComponent } from "@/render/picking/componentPicking";
-import { findSnap, type SnapCandidate, type SnapHit } from "@/render/picking/snapPoint";
+import type { SnapHit } from "@/render/picking/snapPoint";
+import { componentClick } from "./componentClick";
+import {
+  applyCameraNavTick,
+  beginCameraNav,
+  commitCameraNav,
+  updateCameraNav,
+} from "./cameraNavWriteback";
+import { snapPivot, snapScreen } from "./inputSnap";
 import type { ViewportSystem } from "./ViewportSystem";
 
 type NavMode = "orbit" | "pan" | "dolly" | null;
@@ -92,6 +96,18 @@ export class ViewportInput {
       return;
     }
 
+    // Pen tool: LMB locks the plane / places points; RMB finishes.
+    // Alt-nav stays available so you can orbit while drawing.
+    if (vs.penTool.isActive && !e.altKey) {
+      if (e.button === 0) vs.penTool.onPointerDown(e);
+      else if (e.button === 2) {
+        vs.penTool.finish();
+        this.suppressContext = true;
+      }
+      e.preventDefault();
+      return;
+    }
+
     // Live bevel tool: LMB drag scrubs width, a plain click applies, RMB cancels
     if (vs.bevelTool.isActive && !e.altKey) {
       if (e.button === 0) {
@@ -138,7 +154,7 @@ export class ViewportInput {
         }
       }
       this.nav = { mode, pane, lastX: e.clientX, lastY: e.clientY, pivot };
-      vs.beginCameraNav(pane);
+      beginCameraNav(vs, pane);
       vs.onNavMarker?.(marker);
       e.preventDefault();
       return;
@@ -148,7 +164,19 @@ export class ViewportInput {
       // armed weld tool captures point-mode clicks before gizmo/handles:
       // drag a vertex to slide-weld, or fall through to normal selection
       if (vs.doc.selection.editMode === "point" && vs.editor.weldArmed) {
-        if (!vs.weldTool.beginDrag(e, pane)) this.componentClick(e, pane, "point");
+        if (!vs.weldTool.beginDrag(e, pane)) componentClick(this.vs, e, pane, "point");
+        vs.invalidate();
+        return;
+      }
+      // point mode on a spline node: anchors + tangent handles
+      if (vs.splineEdit.context()) {
+        if (!vs.splineEdit.pointerDown(e)) {
+          // empty click clears this spline's point selection
+          const active = vs.doc.selection.active;
+          if (active && !e.shiftKey && !e.metaKey && !e.ctrlKey) {
+            vs.doc.selection.clearComponents(active, "point");
+          }
+        }
         vs.invalidate();
         return;
       }
@@ -165,7 +193,7 @@ export class ViewportInput {
       // component modes lock clicks to the active editable mesh (C4D-style)
       const mode = vs.doc.selection.editMode;
       if (mode === "point" || mode === "edge" || mode === "polygon") {
-        this.componentClick(e, pane, mode);
+        componentClick(this.vs, e, pane, mode);
         vs.invalidate();
         return;
       }
@@ -195,6 +223,14 @@ export class ViewportInput {
       if (this.bevelDrag.moved) vs.bevelTool.onWidthDrag(dy);
       return;
     }
+    if (vs.penTool.isActive && !this.nav) {
+      vs.penTool.onHover(e);
+      return;
+    }
+    if (vs.splineEdit.isDragging) {
+      vs.splineEdit.pointerMove(e);
+      return;
+    }
     if (vs.weldTool.isDragging) {
       vs.weldTool.update(e);
       vs.invalidate();
@@ -219,7 +255,7 @@ export class ViewportInput {
         if (this.nav.pivot) rig.dollyToward(this.nav.pivot, dy * 2.5);
         else rig.dolly(dy * 2.5);
       }
-      vs.updateCameraNav(this.nav.pane, rig);
+      updateCameraNav(vs, this.nav.pane, rig);
       vs.invalidate();
       return;
     }
@@ -241,7 +277,7 @@ export class ViewportInput {
       // this.snapWorld (the callback above) mutates lastSnap — read past the
       // control-flow narrowing from the reset
       const hit = this.lastSnap as SnapHit | null;
-      vs.onSnapMarker?.(hit ? this.snapScreen(hit.world) : null);
+      vs.onSnapMarker?.(hit ? snapScreen(vs, hit.world) : null);
       vs.invalidate();
       return;
     }
@@ -268,6 +304,15 @@ export class ViewportInput {
       if (!moved) vs.bevelTool.commit(); // a plain click applies the bevel
       return;
     }
+    if (vs.penTool.isActive && !this.nav) {
+      vs.penTool.onPointerUp();
+      return;
+    }
+    if (vs.splineEdit.isDragging) {
+      vs.splineEdit.pointerUp();
+      vs.invalidate();
+      return;
+    }
     if (vs.weldTool.isDragging) {
       vs.weldTool.finish();
       vs.invalidate();
@@ -282,7 +327,7 @@ export class ViewportInput {
     }
     if (this.nav) {
       this.nav = null;
-      vs.commitCameraNav();
+      commitCameraNav(vs);
       vs.onNavMarker?.(null);
       return;
     }
@@ -306,7 +351,7 @@ export class ViewportInput {
     const pane = vs.paneAt(e.clientX - rect.left, e.clientY - rect.top);
     const rig = vs.rigFor(pane);
     rig.dolly(e.deltaY * 1.2);
-    vs.applyCameraNavTick(pane, rig);
+    applyCameraNavTick(vs, pane, rig);
     vs.invalidate();
   };
 
@@ -326,53 +371,6 @@ export class ViewportInput {
     const nodeId = this.firstVisibleNode(vs.raycaster.intersectObject(vs.sync.root, true));
     vs.onContextMenuRequest?.({ clientX: me.clientX, clientY: me.clientY, pane, nodeId });
   };
-
-  /** Click-select components of the ACTIVE editable mesh (shift add, mod toggle). */
-  private componentClick(e: PointerEvent, pane: number, mode: ComponentMode): void {
-    const vs = this.vs;
-    const doc = vs.doc;
-    const active = doc.selection.active;
-    if (!active || !doc.scene.has(active)) return;
-    const meshRef = doc.scene.mustGet(active).data?.mesh as { id: Uuid } | undefined;
-    const mesh = meshRef ? meshRegistry.get(meshRef.id) : undefined;
-    const obj = vs.sync.object(active);
-    if (!mesh || !(obj instanceof Mesh)) return; // nothing editable under this mode
-    const rect = vs.canvas.getBoundingClientRect();
-    const hit = pickComponent(mode, {
-      mesh,
-      meshObject: obj,
-      camera: vs.rigFor(pane).camera,
-      pane: vs.paneRect(pane),
-      x: e.clientX - rect.left,
-      y: e.clientY - rect.top,
-      raycaster: vs.raycaster,
-      triFace: vs.sync.renderInfoFor(active)?.triFace ?? null,
-    });
-    const op = e.shiftKey ? "add" : e.metaKey || e.ctrlKey ? "toggle" : "replace";
-    if (hit === null) {
-      // clear only THIS mode's selection — other modes keep their memory
-      if (op === "replace") doc.selection.clearComponents(active, mode);
-      return;
-    }
-    const prev = doc.selection.componentsFor(active, mode);
-    const valid = prev && prev.topologyVersion === mesh.topologyVersion;
-    const bits = valid && op !== "replace" ? prev.bits.clone() : new Bitset();
-    const order = valid && op !== "replace" ? [...prev.order] : [];
-    if (op === "toggle" && bits.has(hit)) {
-      bits.delete(hit);
-      const i = order.indexOf(hit);
-      if (i !== -1) order.splice(i, 1);
-    } else if (!bits.has(hit)) {
-      bits.add(hit);
-      order.push(hit);
-    }
-    doc.selection.setComponents(active, {
-      mode,
-      bits,
-      order,
-      topologyVersion: mesh.topologyVersion,
-    });
-  }
 
   /** A drag/modal is mid-flight — swallow viewport-scoped keys until it ends. */
   private isBusy(): boolean {
@@ -400,67 +398,10 @@ export class ViewportInput {
 
   /** Magnet: snap a moved pivot to the nearest scene vertex/edge (or null). */
   private snapWorld = (world: Vector3): Vector3 | null => {
-    const vs = this.vs;
-    const pane = vs.editor.activePane;
-    const hit = findSnap(
-      world,
-      vs.rigFor(pane).camera,
-      vs.paneRect(pane),
-      this.snapCandidates(),
-      this.snapExclude(),
-    );
-    this.lastSnap = hit;
-    return hit ? hit.world : null;
+    const res = snapPivot(this.vs, world);
+    this.lastSnap = res?.hit ?? null;
+    return res ? res.snapped : null;
   };
-
-  /** Every editable mesh in the scene as a snap target. */
-  private snapCandidates(): SnapCandidate[] {
-    const vs = this.vs;
-    const out: SnapCandidate[] = [];
-    for (const n of vs.doc.scene.toDTO()) {
-      if (n.kind !== "mesh") continue;
-      const ref = (n.data as { mesh?: { id: Uuid } } | undefined)?.mesh;
-      const mesh = ref ? meshRegistry.get(ref.id) : undefined;
-      const object = vs.sync.object(n.id);
-      if (ref && mesh && object) out.push({ meshId: ref.id, mesh, object });
-    }
-    return out;
-  }
-
-  /** Skip the geometry currently being dragged so it can't snap to itself. */
-  private snapExclude(): (meshId: string, v: number) => boolean {
-    const doc = this.vs.doc;
-    const mode = doc.selection.editMode;
-    if (mode === "point" || mode === "edge" || mode === "polygon") {
-      const active = doc.selection.active;
-      const ref = active
-        ? (doc.scene.get(active)?.data?.mesh as { id: Uuid } | undefined)
-        : undefined;
-      const mesh = ref ? meshRegistry.get(ref.id) : undefined;
-      const sel = active && ref ? doc.selection.componentsFor(active, mode) : undefined;
-      if (ref && mesh && sel) {
-        const dragged = new Set(vertsForSelection(mesh, mode, sel.bits));
-        return (mid, v) => mid === ref.id && dragged.has(v);
-      }
-      return () => false;
-    }
-    const selMeshes = new Set<string>();
-    for (const id of doc.selection.objectIds) {
-      const ref = doc.scene.get(id)?.data?.mesh as { id: Uuid } | undefined;
-      if (ref) selMeshes.add(ref.id);
-    }
-    return (mid) => selMeshes.has(mid);
-  }
-
-  /** Project a world snap target to canvas pixels for the DOM marker. */
-  private snapScreen(world: Vector3): { x: number; y: number } | null {
-    const vs = this.vs;
-    const pane = vs.paneRect(vs.editor.activePane);
-    const cam = vs.rigFor(vs.editor.activePane).camera;
-    cam.updateMatrixWorld();
-    const v = world.clone().applyMatrix4(cam.matrixWorldInverse).applyMatrix4(cam.projectionMatrix);
-    return { x: pane.x + ((v.x + 1) / 2) * pane.w, y: pane.y + ((1 - v.y) / 2) * pane.h };
-  }
 
   /** First raycast hit that resolves to a visible node, or null. */
   private firstVisibleNode(hits: ReturnType<Raycaster["intersectObject"]>): Uuid | null {
@@ -473,6 +414,13 @@ export class ViewportInput {
 
   private onKeyDown = (e: KeyboardEvent): void => {
     const vs = this.vs;
+    // Pen tool owns its keys while active (axis picks, finish, backspace)
+    if (vs.penTool.isActive && !this.typingTarget(e)) {
+      if (vs.penTool.handleKey(e)) {
+        e.preventDefault();
+        return;
+      }
+    }
     // Live bevel tool: Enter bakes, Escape cancels
     if (vs.bevelTool.isActive) {
       if (e.key === "Enter") {
@@ -503,6 +451,8 @@ export class ViewportInput {
     } else if (vs.weldTool.isDragging) {
       vs.weldTool.cancel();
       vs.invalidate();
+    } else if (vs.splineEdit.isDragging) {
+      vs.splineEdit.cancel();
     } else if (vs.handles.isDragging) {
       vs.handles.cancelDrag();
       vs.invalidate();

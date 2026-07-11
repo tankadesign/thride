@@ -6,6 +6,7 @@ import {
   DoubleSide,
   FrontSide,
   Group,
+  Line,
   LineBasicMaterial,
   LineSegments,
   Matrix4,
@@ -30,6 +31,7 @@ import { buildCameraHelper } from "@/render/helpers/CameraHelper";
 import { viewportTheme } from "@/render/theme/viewportTheme";
 import { LightSync } from "./LightSync";
 import { SelectionOutline } from "./SelectionOutline";
+import { buildSplineObject, syncSplineGeometry } from "./SplineSync";
 
 // three-mesh-bvh accelerated raycast, wired once for the whole app
 Mesh.prototype.raycast = acceleratedRaycast;
@@ -196,6 +198,7 @@ export class SceneSynchronizer {
     const node = this.doc.scene.mustGet(id);
     let obj: Object3D;
     if (node.kind === "mesh") obj = this.buildMeshObject(node);
+    else if (node.kind === "spline") obj = buildSplineObject(node);
     else if (node.kind === "light") obj = this.lights.build(node);
     else if (node.kind === "camera") obj = this.buildCameraObject();
     else obj = new Group();
@@ -255,6 +258,9 @@ export class SceneSynchronizer {
     this.applyTransform(node, obj);
     if (node.kind === "mesh" && obj instanceof Mesh) {
       this.syncGeometry(id, node, obj, preview);
+    }
+    if (node.kind === "spline" && obj instanceof Line) {
+      syncSplineGeometry(node, obj);
     }
   }
 

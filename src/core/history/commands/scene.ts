@@ -24,6 +24,7 @@ export class CreateNodeCommand implements Command {
     parent: Uuid | null = null,
     index?: number,
     data?: Record<string, unknown>,
+    transform?: TransformDTO,
   ) {
     this.label = `Create ${name}`;
     this.index = index;
@@ -32,7 +33,7 @@ export class CreateNodeCommand implements Command {
       name,
       kind,
       parent,
-      transform: identityTransform(),
+      transform: transform ? structuredClone(transform) : identityTransform(),
       visible: true,
       locked: false,
     };
@@ -172,18 +173,25 @@ export class SetNodeDataCommand implements Command {
   private before: Record<string, unknown> | undefined | null = null;
   private after: Record<string, unknown> | undefined;
   private readonly nodeId: Uuid;
+  private readonly mergeable: boolean;
 
-  /** Pass `before` explicitly when committing an interactive scrub. */
+  /**
+   * Pass `before` explicitly when committing an interactive scrub. Pass
+   * `mergeable: false` for discrete user actions (pen points, tangent ops)
+   * that must stay individual undo steps even inside the merge window.
+   */
   constructor(
     nodeId: Uuid,
     after: Record<string, unknown> | undefined,
     before?: Record<string, unknown>,
     label = "Edit Parameters",
+    mergeable = true,
   ) {
     this.nodeId = nodeId;
     this.after = after ? structuredClone(after) : undefined;
     if (before !== undefined) this.before = structuredClone(before);
     this.label = label;
+    this.mergeable = mergeable;
   }
 
   execute(doc: Document): void {
@@ -200,6 +208,7 @@ export class SetNodeDataCommand implements Command {
 
   tryMerge(next: Command): boolean {
     if (!(next instanceof SetNodeDataCommand) || next.nodeId !== this.nodeId) return false;
+    if (!this.mergeable || !next.mergeable) return false;
     this.after = next.after;
     return true;
   }
