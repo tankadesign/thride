@@ -7,13 +7,58 @@ import {
   HemisphereLight,
   Light,
   Object3D,
+  type OrthographicCamera,
+  type PerspectiveCamera,
   PointLight,
   RectAreaLight,
   SpotLight,
   Vector3,
 } from "three";
 import type { Uuid } from "@/types/core";
-import { defaultLightData, type LightDataDTO, SHADOW_CAPABLE } from "@/types/core/light";
+import { defaultLightData, type LightDataDTO, SHADOW_RESOLUTION_PX } from "@/types/core/light";
+
+/**
+ * Push a light's shadow-quality settings (resolution / blur / frustum size)
+ * onto its three.js shadow. normalBias fixes self-shadow acne; a tight frustum
+ * keeps depth precision high. Called from build + update so edits are live.
+ */
+function applyShadowSettings(light: Light, data: LightDataDTO): void {
+  if (
+    !(
+      light instanceof SpotLight ||
+      light instanceof PointLight ||
+      light instanceof DirectionalLight
+    )
+  ) {
+    return;
+  }
+  light.castShadow = data.castShadow ?? true;
+  const px = SHADOW_RESOLUTION_PX[data.shadowResolution ?? "normal"];
+  if (light.shadow.mapSize.x !== px) {
+    light.shadow.mapSize.set(px, px);
+    light.shadow.map?.dispose(); // force the renderer to reallocate at the new size
+    light.shadow.map = null;
+  }
+  light.shadow.bias = -0.00005;
+  light.shadow.normalBias = 0.03;
+  light.shadow.radius = Math.max(0, data.shadowBlur ?? 4);
+  const size = Math.max(1, data.shadowSize ?? (light instanceof DirectionalLight ? 20 : 60));
+  if (light instanceof DirectionalLight) {
+    const c = light.shadow.camera as OrthographicCamera;
+    c.left = -size;
+    c.right = size;
+    c.top = size;
+    c.bottom = -size;
+    c.near = 0.5;
+    c.far = Math.max(size * 4, 80);
+    c.updateProjectionMatrix();
+  } else {
+    const c = light.shadow.camera as PerspectiveCamera;
+    c.near = 0.5;
+    c.far = size;
+    c.updateProjectionMatrix();
+  }
+}
 import type { SceneNode } from "@/core";
 import {
   buildBillboardCircle,
@@ -87,11 +132,11 @@ export class LightSync {
     }
     obj.color = new Color(data.color);
     obj.intensity = data.intensity;
-    if (SHADOW_CAPABLE.has(data.type)) obj.castShadow = data.castShadow ?? true;
     if (obj instanceof SpotLight) {
       obj.angle = data.angle ?? obj.angle;
       obj.penumbra = data.penumbra ?? obj.penumbra;
     }
+    applyShadowSettings(obj, data);
     if (obj instanceof HemisphereLight && data.groundColor) {
       obj.groundColor = new Color(data.groundColor);
     }
@@ -144,25 +189,7 @@ export class LightSync {
         light = new RectAreaLight(data.color, data.intensity, data.width ?? 2, data.height ?? 2);
         break;
     }
-    if (
-      light instanceof SpotLight ||
-      light instanceof PointLight ||
-      light instanceof DirectionalLight
-    ) {
-      light.castShadow = data.castShadow ?? true;
-      light.shadow.mapSize.set(2048, 2048);
-      // normalBias offsets the sample along the surface normal — the right cure
-      // for the self-shadow acne/banding that a pure depth bias can't fix
-      // without peter-panning. Tiny depth bias + a soft PCF radius on top.
-      light.shadow.bias = -0.00005;
-      light.shadow.normalBias = 0.03;
-      light.shadow.radius = 6;
-      // a tight shadow frustum keeps depth precision high (wide near/far ratios
-      // are a classic banding source). Spot cams re-fit to the cone below.
-      const cam = light.shadow.camera as { near: number; far: number };
-      cam.near = 0.5;
-      cam.far = 80;
-    }
+    applyShadowSettings(light, data);
     if (light instanceof SpotLight) {
       // match the shadow camera fov to the cone so the map isn't mostly wasted
       light.shadow.focus = 1;

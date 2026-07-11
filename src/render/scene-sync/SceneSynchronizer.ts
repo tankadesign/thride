@@ -19,6 +19,7 @@ import {
 } from "three";
 import { computeBoundsTree, disposeBoundsTree, acceleratedRaycast } from "three-mesh-bvh";
 import type { Uuid } from "@/types/core";
+import { type LightDataDTO, SHADOW_CAPABLE } from "@/types/core/light";
 import type { Document, SceneNode } from "@/core";
 import type { PrimitiveDescriptor } from "@/types/geometry/primitives";
 import type { HEMesh } from "@/geometry/kernel/HEMesh";
@@ -85,6 +86,8 @@ export class SceneSynchronizer {
   /** Per mesh node: kernel-edge wireframe (Display > Lines + wireframe shading). */
   private edgeWires = new Map<Uuid, LineSegments>();
   private readonly lights = new LightSync(this.root);
+  /** Last-seen shadow-caster count — drives material recompiles (see below). */
+  private shadowCasterCount = -1;
   private readonly lookMatrix = new Matrix4();
   private readonly lookPos = new Vector3();
   private readonly lookQuat = new Quaternion();
@@ -99,16 +102,19 @@ export class SceneSynchronizer {
     this.unsubs.push(
       doc.events.on("scene:node-added", ({ id }) => {
         this.addNode(id);
+        if (this.doc.scene.get(id)?.kind === "light") this.refreshShadowMaterials();
         this.onDirty();
       }),
       doc.events.on("scene:node-removed", ({ id, parent }) => {
         this.removeNode(id);
+        this.refreshShadowMaterials(); // may have removed the last shadow caster
         // losing a child may change an ancestor generator's input
         if (parent && this.doc.scene.has(parent)) this.updateNode(parent);
         this.onDirty();
       }),
       doc.events.on("scene:node-changed", ({ id, preview }) => {
         this.updateNode(id, preview ?? false);
+        if (this.doc.scene.get(id)?.kind === "light") this.refreshShadowMaterials();
         this.onDirty();
       }),
       doc.events.on("scene:hierarchy-changed", ({ id }) => {
@@ -212,6 +218,26 @@ export class SceneSynchronizer {
     for (const r of this.doc.scene.rootIds()) walk(r);
     this.selectionOutline.clear(); // objects were rebuilt; stale outline children are gone with them
     this.selectionOutline.sync(this.doc, this.objects);
+  }
+
+  /**
+   * three's WebGPU node materials bake shadow-receiving code at compile time
+   * from the scene's shadow-casting lights. Adding the first caster (or
+   * removing the last, or toggling a light's Shadows) at runtime does NOT
+   * recompile them, so cast shadows would silently not appear until a reload.
+   * Recompile the lit material whenever that set's size changes. (No-op — and
+   * so no shader hitch — while scrubbing a light's intensity/color/angle.)
+   */
+  private refreshShadowMaterials(): void {
+    let count = 0;
+    for (const node of this.doc.scene.toDTO()) {
+      const light = node.data?.light as LightDataDTO | undefined;
+      if (light && SHADOW_CAPABLE.has(light.type) && (light.castShadow ?? true)) count++;
+    }
+    if (count !== this.shadowCasterCount) {
+      this.shadowCasterCount = count;
+      BASE_MAT.needsUpdate = true;
+    }
   }
 
   private addNode(id: Uuid): void {

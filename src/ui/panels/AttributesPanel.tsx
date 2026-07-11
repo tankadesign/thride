@@ -2,7 +2,12 @@ import { useEffect, useRef } from "react";
 import type { ComponentMode, TransformDTO, Uuid } from "@/types/core";
 import type { PrimitiveDescriptor } from "@/types/geometry/primitives";
 import { paramMeta, primitiveDefaults, visibleParams } from "@/types/geometry/primitives";
-import { LIGHT_LABELS, type LightDataDTO, SHADOW_CAPABLE } from "@/types/core/light";
+import {
+  LIGHT_LABELS,
+  type LightDataDTO,
+  SHADOW_CAPABLE,
+  type ShadowResolution,
+} from "@/types/core/light";
 import type { GeneratorDescriptor } from "@/generators/graph";
 import type { SplinePrimitive } from "@/types/geometry/spline";
 import { buildSplinePrimitive } from "@/geometry/splines/primitives";
@@ -355,6 +360,26 @@ function LightParams({ id, light }: { id: Uuid; light: LightDataDTO }) {
             onChange={(e) => setLight({ castShadow: e.target.checked }, true)}
           />
         </div>
+      ) : null}
+      {SHADOW_CAPABLE.has(light.type) && (light.castShadow ?? true) ? (
+        <>
+          <div className="grid grid-cols-[64px_1fr] items-center gap-1">
+            <span className="opacity-60">Quality</span>
+            <select
+              className="select select-xs"
+              value={light.shadowResolution ?? "normal"}
+              onChange={(e) =>
+                setLight({ shadowResolution: e.target.value as ShadowResolution }, true)
+              }
+            >
+              <option value="low">Low (1k)</option>
+              <option value="normal">Normal (2k)</option>
+              <option value="high">High (4k)</option>
+            </select>
+          </div>
+          {numeric("Blur", "shadowBlur", 0.1, 20)}
+          {numeric("Size", "shadowSize", 0.5, 400)}
+        </>
       ) : null}
     </fieldset>
   );
