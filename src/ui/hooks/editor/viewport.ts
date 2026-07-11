@@ -7,8 +7,9 @@ import type {
   PaneCamera,
   PaneDisplay,
   ViewportLayout,
+  ViewportSettingsDTO,
 } from "@/types/editor";
-import { defaultBevelParams, defaultPaneDisplay } from "@/types/editor";
+import { defaultBevelParams, defaultPaneDisplay, defaultViewportSettings } from "@/types/editor";
 import { appStore } from "@/ui/hooks/doc/document";
 import { gridSnapSizeAtom, snapEnabledAtom } from "./settings";
 import { paletteOpenAtom } from "./shell";
@@ -51,6 +52,47 @@ export const paneDisplaysAtom = atom<PaneDisplay[]>([
   defaultPaneDisplay(),
   defaultPaneDisplay(),
 ]);
+
+/** Snapshot the persistable viewport settings (layout, cameras, per-pane display). */
+export function captureViewportSettings(): ViewportSettingsDTO {
+  return {
+    layout: appStore.get(layoutAtom),
+    paneCameras: [...appStore.get(paneCamerasAtom)],
+    paneDisplays: appStore.get(paneDisplaysAtom).map((d) => ({ ...d })),
+  };
+}
+
+/**
+ * Load persisted viewport settings into the atoms (on project activation).
+ * Missing fields fall back to defaults, and each pane display is merged over
+ * `defaultPaneDisplay()` so a display field added after a project was saved
+ * doesn't arrive undefined.
+ */
+export function applyViewportSettings(dto: ViewportSettingsDTO | undefined): void {
+  const s = dto ?? defaultViewportSettings();
+  const fallback = defaultViewportSettings();
+  appStore.set(layoutAtom, s.layout ?? fallback.layout);
+  appStore.set(
+    paneCamerasAtom,
+    fallback.paneCameras.map((c, i) => s.paneCameras?.[i] ?? c),
+  );
+  appStore.set(
+    paneDisplaysAtom,
+    fallback.paneDisplays.map((d, i) => ({ ...d, ...(s.paneDisplays?.[i] ?? {}) })),
+  );
+}
+
+/** Subscribe to any persistable viewport-settings change (drives per-project autosave). */
+export function subscribeViewportSettings(cb: () => void): () => void {
+  const unsubs = [
+    appStore.sub(layoutAtom, cb),
+    appStore.sub(paneCamerasAtom, cb),
+    appStore.sub(paneDisplaysAtom, cb),
+  ];
+  return () => {
+    for (const u of unsubs) u();
+  };
+}
 
 export function useViewportState() {
   const [layout, setLayout] = useAtom(layoutAtom);

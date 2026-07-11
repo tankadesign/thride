@@ -1,5 +1,6 @@
 import type { Document } from "@/core";
 import { FORMAT_VERSION, type ThrideDocumentDTO, type Uuid } from "@/types/core";
+import type { ViewportSettingsDTO } from "@/types/editor";
 import { HEMesh, type HEMeshSnapshot } from "@/geometry/kernel/HEMesh";
 import { meshRegistry } from "@/geometry/store/meshRegistry";
 import { type PackedMesh, unpackMesh } from "./meshPack";
@@ -19,6 +20,12 @@ export interface ProjectRecord {
   document: ThrideDocumentDTO;
   /** Kernel meshes referenced by nodes, keyed by mesh id. */
   meshes: Record<string, HEMeshSnapshot>;
+  /**
+   * Per-project viewport/UI settings (layout, pane cameras, per-pane display).
+   * Optional — records saved before this existed hydrate to defaults. Kept
+   * OUT of `document` so the DTO / GLTF export stay free of UI state.
+   */
+  viewport?: ViewportSettingsDTO;
 }
 
 export interface ProjectListing {

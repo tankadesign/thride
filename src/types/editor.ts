@@ -80,6 +80,30 @@ export const defaultPaneDisplay = (): PaneDisplay => ({
 });
 
 /**
+ * Per-project viewport settings persisted in the project record (a sibling of
+ * the document DTO — UI state stays OUT of the document / GLTF by design). This
+ * is the Display-menu state plus the pane layout and camera-type assignments.
+ * Camera orbit position is render-rig state (not these atoms) and is not
+ * included; per-view cameras graduate into the document at H1.
+ */
+export interface ViewportSettingsDTO {
+  layout: ViewportLayout;
+  paneCameras: PaneCamera[];
+  paneDisplays: PaneDisplay[];
+}
+
+export const defaultViewportSettings = (): ViewportSettingsDTO => ({
+  layout: "single",
+  paneCameras: ["persp", "top", "front", "right"],
+  paneDisplays: [
+    defaultPaneDisplay(),
+    defaultPaneDisplay(),
+    defaultPaneDisplay(),
+    defaultPaneDisplay(),
+  ],
+});
+
+/**
  * Contract the render layer uses to read viewport editor state. Implemented
  * by the jotai-backed store in ui/hooks/editor/viewport.ts — render/ must
  * not import ui/, so it depends on this interface only.

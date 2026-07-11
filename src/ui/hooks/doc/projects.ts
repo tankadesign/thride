@@ -1,5 +1,7 @@
 import { atom, useAtomValue } from "jotai";
 import type { Uuid } from "@/types/core";
+import type { ViewportSettingsDTO } from "@/types/editor";
+import { defaultViewportSettings } from "@/types/editor";
 import { Document } from "@/core";
 import { uuidv7 } from "@/core/ids/uuid";
 import { CreateNodeCommand } from "@/core/history/commands/scene";
@@ -12,6 +14,11 @@ import {
   releaseProjectMeshes,
   saveProjectRecord,
 } from "@/io/storage/projectStore";
+import {
+  applyViewportSettings,
+  captureViewportSettings,
+  subscribeViewportSettings,
+} from "@/ui/hooks/editor/viewport";
 import { appStore, docAtom } from "./document";
 
 /**
@@ -26,6 +33,8 @@ export interface ProjectHandle {
   id: Uuid;
   name: string;
   doc: Document;
+  /** Live per-project viewport settings; installed into the atoms when active. */
+  viewport: ViewportSettingsDTO;
 }
 
 export const openProjectsAtom = atom<ProjectHandle[]>([]);
@@ -71,23 +80,28 @@ function persistWorkspace(): void {
 
 // ---- per-project autosave (debounced IndexedDB writes) ----------------------
 
-const autosaves = new Map<Uuid, { stop: () => void; flush: () => void }>();
+const autosaves = new Map<Uuid, { stop: () => void; flush: () => void; schedule: () => void }>();
 
 function startAutosave(p: ProjectHandle): void {
   if (autosaves.has(p.id)) return;
   let timer: ReturnType<typeof setTimeout> | null = null;
   const write = () => {
-    void saveProjectRecord(projectRecordOf(p.id, p.name, p.doc));
+    // spread the pure record and attach UI state at the call site so io/ never
+    // reads viewport atoms; p.viewport is kept current by the viewport sub
+    void saveProjectRecord({ ...projectRecordOf(p.id, p.name, p.doc), viewport: p.viewport });
   };
-  const unsub = p.doc.subscribeSlice("scene", () => {
+  const schedule = () => {
     if (timer !== null) clearTimeout(timer);
     timer = setTimeout(() => {
       timer = null;
       write();
     }, AUTOSAVE_DEBOUNCE_MS);
-  });
+  };
+  // scene edits AND viewport-setting changes both drive the same debounced write
+  const unsub = p.doc.subscribeSlice("scene", schedule);
   autosaves.set(p.id, {
     flush: write,
+    schedule,
     stop: () => {
       if (timer !== null) clearTimeout(timer);
       unsub();
@@ -106,7 +120,27 @@ function installActive(id: Uuid | null): void {
   appStore.set(activeProjectIdAtom, id);
   const active = appStore.get(openProjectsAtom).find((p) => p.id === id);
   appStore.set(docAtom, active ? active.doc : null);
+  // load this project's viewport settings into the (global) atoms. The viewport
+  // sub then writes the same values back to active.viewport — idempotent, so no
+  // suppression is needed. Active id is set first so that write targets `active`.
+  applyViewportSettings(active?.viewport);
   persistWorkspace();
+}
+
+/**
+ * Mirror viewport-setting atom changes back onto the active project handle and
+ * schedule its autosave (scene edits alone would never persist a grid/shading
+ * toggle). Installed once from bootWorkspace, after the initial activate.
+ */
+function startViewportSync(): void {
+  subscribeViewportSettings(() => {
+    const id = appStore.get(activeProjectIdAtom);
+    if (!id) return;
+    const handle = appStore.get(openProjectsAtom).find((p) => p.id === id);
+    if (!handle) return;
+    handle.viewport = captureViewportSettings();
+    autosaves.get(id)?.schedule();
+  });
 }
 
 function openHandle(handle: ProjectHandle, activate: boolean): void {
@@ -137,8 +171,16 @@ function untitledName(): string {
 
 /** New seeded project: stored immediately, opened as the active tab. */
 export async function createProject(): Promise<void> {
-  const handle: ProjectHandle = { id: uuidv7(), name: untitledName(), doc: seededDocument() };
-  await saveProjectRecord(projectRecordOf(handle.id, handle.name, handle.doc));
+  const handle: ProjectHandle = {
+    id: uuidv7(),
+    name: untitledName(),
+    doc: seededDocument(),
+    viewport: defaultViewportSettings(),
+  };
+  await saveProjectRecord({
+    ...projectRecordOf(handle.id, handle.name, handle.doc),
+    viewport: handle.viewport,
+  });
   openHandle(handle, true);
 }
 
@@ -201,7 +243,12 @@ export function bootWorkspace(): Promise<void> {
       if (!dto) continue;
       const doc = new Document();
       doc.loadDTO(dto);
-      handles.push({ id: record.id, name: record.name, doc });
+      handles.push({
+        id: record.id,
+        name: record.name,
+        doc,
+        viewport: record.viewport ?? defaultViewportSettings(),
+      });
     }
     if (handles.length === 0) {
       const legacy = migrateLegacyAutosave(uuidv7(), "Untitled");
@@ -211,13 +258,26 @@ export function bootWorkspace(): Promise<void> {
           await saveProjectRecord(legacy);
           const doc = new Document();
           doc.loadDTO(dto);
-          handles.push({ id: legacy.id, name: legacy.name, doc });
+          handles.push({
+            id: legacy.id,
+            name: legacy.name,
+            doc,
+            viewport: legacy.viewport ?? defaultViewportSettings(),
+          });
         }
       }
     }
     if (handles.length === 0) {
-      const handle: ProjectHandle = { id: uuidv7(), name: "Untitled", doc: seededDocument() };
-      await saveProjectRecord(projectRecordOf(handle.id, handle.name, handle.doc));
+      const handle: ProjectHandle = {
+        id: uuidv7(),
+        name: "Untitled",
+        doc: seededDocument(),
+        viewport: defaultViewportSettings(),
+      };
+      await saveProjectRecord({
+        ...projectRecordOf(handle.id, handle.name, handle.doc),
+        viewport: handle.viewport,
+      });
       handles.push(handle);
     }
     for (const h of handles) openHandle(h, false);
@@ -226,6 +286,9 @@ export function bootWorkspace(): Promise<void> {
         ? session.activeId
         : handles[0]!.id;
     installActive(activeId);
+    // start the viewport sub AFTER the initial activate so boot's own
+    // applyViewportSettings doesn't schedule a redundant first save
+    startViewportSync();
     window.addEventListener("beforeunload", flushAll);
   })();
   return bootPromise;
