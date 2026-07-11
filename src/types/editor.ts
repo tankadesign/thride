@@ -15,6 +15,8 @@ export type ViewportLayout = "single" | "quad";
 export type GizmoSpace = "local" | "world";
 
 export type ShadingMode = "pbr" | "flat" | "wireframe";
+/** Color management: output transform per pane (linear pipeline throughout). */
+export type ToneMappingMode = "agx" | "aces" | "neutral";
 
 /** Chamfer replaces the beveled edge; straight keeps it and adds flanking loops. */
 export type BevelToolMode = "chamfer" | "straight";
@@ -50,6 +52,8 @@ export interface PaneDisplay {
   lines: boolean;
   /** Show edges occluded by surfaces (behind polygons). Requires `lines`. */
   hiddenLines: boolean;
+  /** Output transform (PBR): AgX default, ACES filmic, or neutral. */
+  toneMapping: ToneMappingMode;
 }
 
 export const defaultPaneDisplay = (): PaneDisplay => ({
@@ -60,6 +64,7 @@ export const defaultPaneDisplay = (): PaneDisplay => ({
   grid: true,
   lines: false,
   hiddenLines: false,
+  toneMapping: "agx",
 });
 
 /**

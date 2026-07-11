@@ -433,7 +433,7 @@ function GeneratorParams({ id, gen }: { id: Uuid; gen: GeneratorDescriptor }) {
   const doc = useDocument();
   const scrub = useRef<{ before: Record<string, unknown> } | null>(null);
 
-  const setParam = (key: string, value: number | boolean, committed: boolean) => {
+  const setParam = (key: string, value: number | boolean | string, committed: boolean) => {
     const node = doc.scene.mustGet(id);
     scrub.current ??= { before: structuredClone(node.data!) };
     const data = structuredClone(node.data!);
@@ -448,6 +448,26 @@ function GeneratorParams({ id, gen }: { id: Uuid; gen: GeneratorDescriptor }) {
     }
   };
 
+  if (gen.type === "boolean") {
+    return (
+      <fieldset className="fieldset px-2 py-1.5">
+        <legend className="fieldset-legend py-1 text-[10px] uppercase opacity-60">Boolean</legend>
+        <div className="grid grid-cols-[64px_1fr] items-center gap-1">
+          <span className="opacity-60">Operation</span>
+          <select
+            className="select select-xs"
+            value={gen.params.op}
+            onChange={(e) => setParam("op", e.target.value, true)}
+          >
+            <option value="union">Union (A ∪ B)</option>
+            <option value="subtract">Subtract (A − B)</option>
+            <option value="intersect">Intersect (A ∩ B)</option>
+          </select>
+        </div>
+        <p className="mt-1 text-[10px] opacity-50">First two mesh children are A and B.</p>
+      </fieldset>
+    );
+  }
   const p = gen.params as unknown as Record<string, number | boolean>;
   const rows: { key: string; label: string; int?: boolean; min?: number; max?: number }[] = [
     { key: "depth", label: "Depth", min: 0.001 },

@@ -17,7 +17,7 @@ import { dissolveVertices } from "@/geometry/ops/weld";
 import { splineStamp } from "@/geometry/splines/eval";
 import { deletePoints as deleteSplinePoints } from "@/geometry/splines/ops";
 import type { SplineData } from "@/types/geometry/spline";
-import { evaluateGenerator, splineExtrudeDescriptor } from "@/generators/graph";
+import { booleanDescriptor, evaluateGenerator, splineExtrudeDescriptor } from "@/generators/graph";
 import { meshRegistry } from "@/geometry/store/meshRegistry";
 import type { PrimitiveType } from "@/types/geometry/primitives";
 import { defaultPrimitive, primitiveLabels } from "@/types/geometry/primitives";
@@ -411,6 +411,35 @@ export function buildCommands(doc: Document, shell: ShellApi): AppCommand[] {
           doc.history.run(cmd);
           genId = cmd.nodeId;
           if (selectedSpline) doc.history.run(new ReparentNodeCommand(selectedSpline, genId));
+        });
+        if (genId) doc.selection.selectObjects([genId]);
+      },
+    },
+    {
+      // live boolean generator: first two mesh/primitive children are A ⊛ B
+      id: "create.boolean",
+      title: "Boolean",
+      menu: "Create",
+      icon: <IconCube size={16} />,
+      run: () => {
+        const kids = doc.selection.objectIds
+          .filter((id) => {
+            const n = doc.scene.get(id);
+            return n && (n.data?.mesh !== undefined || n.data?.primitive !== undefined);
+          })
+          .slice(0, 2);
+        let genId: Uuid | null = null;
+        doc.history.transact("Create Boolean", () => {
+          const cmd = new CreateNodeCommand(
+            "generator",
+            uniqueSiblingName(doc, null, "Boolean"),
+            null,
+            undefined,
+            { generator: booleanDescriptor() },
+          );
+          doc.history.run(cmd);
+          genId = cmd.nodeId;
+          for (const id of kids) doc.history.run(new ReparentNodeCommand(id, genId));
         });
         if (genId) doc.selection.selectObjects([genId]);
       },

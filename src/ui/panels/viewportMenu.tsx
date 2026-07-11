@@ -1,5 +1,5 @@
 import type { Document } from "@/core";
-import type { BuiltinCamera, PaneDisplay, ShadingMode } from "@/types/editor";
+import type { BuiltinCamera, PaneDisplay, ShadingMode, ToneMappingMode } from "@/types/editor";
 import type { MenuEntry } from "@/ui/hooks/editor/shell";
 import { editorState } from "@/ui/hooks/editor/viewport";
 import { IconCamera, IconShading, IconToggleOff, IconToggleOn } from "@/icons";
@@ -14,6 +14,12 @@ const CAMERA_ITEMS: { camera: BuiltinCamera; label: string }[] = [
   { camera: "right", label: "Right" },
   { camera: "front", label: "Front" },
   { camera: "rear", label: "Rear" },
+];
+
+const TONE_ITEMS: { mode: ToneMappingMode; label: string }[] = [
+  { mode: "agx", label: "AgX" },
+  { mode: "aces", label: "ACES Filmic" },
+  { mode: "neutral", label: "Neutral" },
 ];
 
 const SHADING_ITEMS: { mode: ShadingMode; label: string }[] = [
@@ -81,6 +87,17 @@ export function buildViewportMenu(doc: Document, vs: ViewportSystem, pane: numbe
               label: s.label,
               active: disp.shading === s.mode,
               run: () => editorState.setPaneDisplay(pane, { shading: s.mode }),
+            }),
+          ),
+        },
+        {
+          label: "Tone Mapping",
+          children: TONE_ITEMS.map(
+            (tm): MenuEntry => ({
+              label: tm.label,
+              active: disp.toneMapping === tm.mode,
+              disabled: disp.shading !== "pbr",
+              run: () => editorState.setPaneDisplay(pane, { toneMapping: tm.mode }),
             }),
           ),
         },

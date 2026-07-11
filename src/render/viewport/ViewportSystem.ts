@@ -1,6 +1,10 @@
 import {
+  ACESFilmicToneMapping,
+  AgXToneMapping,
   AmbientLight,
   Box3,
+  NeutralToneMapping,
+  NoToneMapping,
   DirectionalLight,
   GridHelper,
   Object3D,
@@ -411,6 +415,15 @@ export class ViewportSystem {
       const disp = this.editor.paneDisplay(i);
       this.grid.visible = disp.grid;
       renderer.shadowMap.enabled = disp.shading === "pbr" && disp.shadows;
+      // color management: linear pipeline; per-pane output transform (C5)
+      renderer.toneMapping =
+        disp.shading !== "pbr"
+          ? NoToneMapping
+          : disp.toneMapping === "aces"
+            ? ACESFilmicToneMapping
+            : disp.toneMapping === "neutral"
+              ? NeutralToneMapping
+              : AgXToneMapping;
       this.sync.applyShading(disp.shading, disp.backfaces, disp.lines, disp.hiddenLines);
       // logical pixels: the renderer multiplies by pixelRatio internally.
       // WebGPU's viewport origin is top-left; WebGL's is bottom-left.
