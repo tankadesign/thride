@@ -16,6 +16,7 @@ import {
   Folder01Icon,
   GitMergeIcon,
   GridIcon,
+  HexagonIcon,
   Idea01Icon,
   LayerMask01Icon,
   LayerSendBackwardIcon,
@@ -34,8 +35,10 @@ import {
   Search01Icon,
   Settings02Icon,
   SphereIcon,
+  SpiralsIcon,
   SplinePointerIcon,
   SpotlightIcon,
+  StarIcon,
   SquareArrowShrink01Icon,
   SquareArrowUp01Icon,
   SquareIcon,
@@ -90,6 +93,10 @@ export const IconPyramid = makeIcon(PyramidIcon);
 export const IconSphere = makeIcon(SphereIcon);
 export const IconSpline = makeIcon(ChartSplineIcon);
 export const IconTorus = makeIcon(TorusIcon);
+export const IconCircle = makeIcon(Circle);
+export const IconNSide = makeIcon(HexagonIcon);
+export const IconStar = makeIcon(StarIcon);
+export const IconHelix = makeIcon(SpiralsIcon);
 
 // lights
 export const IconAmbientLight = makeIcon(SunCloud02Icon);

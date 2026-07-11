@@ -16,7 +16,9 @@ import { selectAll } from "@/geometry/selection/selectAll";
 import { dissolveVertices } from "@/geometry/ops/weld";
 import { splineStamp } from "@/geometry/splines/eval";
 import { deletePoints as deleteSplinePoints } from "@/geometry/splines/ops";
-import type { SplineData } from "@/types/geometry/spline";
+import type { SplineData, SplinePrimitiveType } from "@/types/geometry/spline";
+import { defaultSplinePrimitive } from "@/types/geometry/spline";
+import { buildSplinePrimitive } from "@/geometry/splines/primitives";
 import { booleanDescriptor, evaluateGenerator, splineExtrudeDescriptor } from "@/generators/graph";
 import { meshRegistry } from "@/geometry/store/meshRegistry";
 import type { PrimitiveType } from "@/types/geometry/primitives";
@@ -38,7 +40,11 @@ import {
   IconCube,
   IconCylinder,
   IconDirectionalLight,
+  IconCircle,
   IconDisc,
+  IconHelix,
+  IconNSide,
+  IconStar,
   IconDissolve,
   IconExtrude,
   IconHemisphereLight,
@@ -105,6 +111,22 @@ export function buildCommands(doc: Document, shell: ShellApi): AppCommand[] {
     const cmd = new CreateNodeCommand("mesh", name, null, undefined, {
       primitive: defaultPrimitive(type),
     });
+    doc.history.run(cmd);
+    doc.selection.selectObjects([cmd.nodeId]);
+  };
+
+  const createSplinePrimitive = (type: SplinePrimitiveType, label: string) => {
+    const prim = defaultSplinePrimitive(type);
+    const cmd = new CreateNodeCommand(
+      "spline",
+      uniqueSiblingName(doc, null, label),
+      null,
+      undefined,
+      {
+        spline: buildSplinePrimitive(prim),
+        splinePrimitive: prim,
+      },
+    );
     doc.history.run(cmd);
     doc.selection.selectObjects([cmd.nodeId]);
   };
@@ -389,6 +411,25 @@ export function buildCommands(doc: Document, shell: ShellApi): AppCommand[] {
       shortcut: "p",
       run: () => shell.getViewport()?.penTool.toggle(),
     },
+    // parametric curve primitives — spline nodes with a live `splinePrimitive`
+    // recipe (attributes rebuild the points); feed extrude/sweep like any spline
+    ...(
+      [
+        { type: "circle", label: "Circle", icon: <IconCircle size={16} /> },
+        { type: "nside", label: "N-Side", icon: <IconNSide size={16} /> },
+        { type: "star", label: "Star", icon: <IconStar size={16} /> },
+        { type: "helix", label: "Helix", icon: <IconHelix size={16} /> },
+      ] as const
+    ).map(
+      ({ type, label, icon }): AppCommand => ({
+        id: `create.spline.${type}`,
+        title: label,
+        menu: "Create",
+        submenu: "Spline",
+        icon,
+        run: () => createSplinePrimitive(type, label),
+      }),
+    ),
     {
       // Spline's signature: child spline in, extruded mesh out (live sliders)
       id: "create.splineExtrude",

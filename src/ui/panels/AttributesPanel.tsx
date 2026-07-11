@@ -4,6 +4,8 @@ import type { PrimitiveDescriptor } from "@/types/geometry/primitives";
 import { paramMeta, primitiveDefaults, visibleParams } from "@/types/geometry/primitives";
 import { LIGHT_LABELS, type LightDataDTO, SHADOW_CAPABLE } from "@/types/core/light";
 import type { GeneratorDescriptor } from "@/generators/graph";
+import type { SplinePrimitive } from "@/types/geometry/spline";
+import { buildSplinePrimitive } from "@/geometry/splines/primitives";
 import { ComponentTransformSession } from "@/geometry/commands/meshEdit";
 import { vertexCentroid, vertexExtents, vertsForSelection } from "@/geometry/kernel/components";
 import { meshRegistry } from "@/geometry/store/meshRegistry";
@@ -89,6 +91,7 @@ function NodeAttributes({ id }: { id: Uuid }) {
   const t = node.transform;
   const axes = ["X", "Y", "Z"] as const;
   const prim = node.data?.primitive as PrimitiveDescriptor | undefined;
+  const splinePrim = node.data?.splinePrimitive as SplinePrimitive | undefined;
   const meshRef = node.data?.mesh as { id: Uuid } | undefined;
   const light = node.data?.light as LightDataDTO | undefined;
   const generator = node.data?.generator as GeneratorDescriptor | undefined;
@@ -148,6 +151,7 @@ function NodeAttributes({ id }: { id: Uuid }) {
       </fieldset>
 
       {prim ? <PrimitiveParams id={id} prim={prim} /> : null}
+      {splinePrim ? <SplinePrimitiveParams id={id} prim={splinePrim} /> : null}
       {generator ? <GeneratorParams id={id} gen={generator} /> : null}
       {meshRef ? <MeshInfo meshId={meshRef.id} /> : null}
       {light ? <LightParams id={id} light={light} /> : null}
@@ -504,6 +508,84 @@ function GeneratorParams({ id, gen }: { id: Uuid; gen: GeneratorDescriptor }) {
           onChange={(e) => setParam("caps", e.target.checked, true)}
         />
       </div>
+    </fieldset>
+  );
+}
+
+interface SplinePrimRow {
+  key: string;
+  label: string;
+  int?: boolean;
+  min?: number;
+  max?: number;
+  step?: number;
+}
+
+const SPLINE_PRIM_ROWS: Record<SplinePrimitive["type"], SplinePrimRow[]> = {
+  circle: [{ key: "radius", label: "Radius", min: 0.001 }],
+  nside: [
+    { key: "sides", label: "Sides", int: true, min: 2, max: 1000, step: 1 },
+    { key: "radius", label: "Radius", min: 0.001 },
+    { key: "rounding", label: "Rounding", int: true, min: 0, max: 1000, step: 5 },
+  ],
+  star: [
+    { key: "points", label: "Points", int: true, min: 2, max: 1000, step: 1 },
+    { key: "innerRadius", label: "Inner R", min: 0.001 },
+    { key: "outerRadius", label: "Outer R", min: 0.001 },
+    { key: "rounding", label: "Rounding", int: true, min: 0, max: 1000, step: 5 },
+  ],
+  helix: [
+    { key: "radius", label: "Radius", min: 0.001 },
+    { key: "height", label: "Height", min: 0 },
+    { key: "turns", label: "Turns", min: 0.01 },
+    { key: "segments", label: "Seg/Turn", int: true, min: 3, max: 256, step: 0.5 },
+  ],
+};
+
+/** Live editor for a parametric curve primitive — each change rebuilds the spline points. */
+function SplinePrimitiveParams({ id, prim }: { id: Uuid; prim: SplinePrimitive }) {
+  const doc = useDocument();
+  const scrub = useRef<{ before: Record<string, unknown> } | null>(null);
+
+  const setParam = (key: string, value: number, committed: boolean) => {
+    const node = doc.scene.mustGet(id);
+    scrub.current ??= { before: structuredClone(node.data!) };
+    const data = structuredClone(node.data!);
+    const recipe = data.splinePrimitive as unknown as Record<string, number | string>;
+    recipe[key] = value;
+    // rebuild the baked points from the new recipe so every consumer updates
+    data.spline = buildSplinePrimitive(recipe as unknown as SplinePrimitive);
+    if (committed) {
+      const before = scrub.current.before;
+      scrub.current = null;
+      doc.setNodeData(id, data, true);
+      doc.history.pushWithoutExecute(new SetNodeDataCommand(id, data, before, `Edit ${prim.type}`));
+    } else {
+      doc.setNodeData(id, data, true);
+    }
+  };
+
+  const values = prim as unknown as Record<string, number>;
+  return (
+    <fieldset className="fieldset px-2 py-1.5">
+      <legend className="fieldset-legend py-1 text-[10px] uppercase opacity-60">
+        {prim.type} parameters
+      </legend>
+      {SPLINE_PRIM_ROWS[prim.type].map((row) => (
+        <div className="grid grid-cols-[64px_1fr] items-center gap-1" key={row.key}>
+          <span className="truncate opacity-60" title={row.label}>
+            {row.label}
+          </span>
+          <NumberDrag
+            value={values[row.key] ?? 0}
+            step={row.step ?? (row.int ? 0.08 : 0.01)}
+            integer={row.int}
+            min={row.min}
+            max={row.max}
+            onChange={(v, committed) => setParam(row.key, v, committed)}
+          />
+        </div>
+      ))}
     </fieldset>
   );
 }

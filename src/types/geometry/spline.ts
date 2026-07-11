@@ -31,3 +31,30 @@ export interface SplineData {
 }
 
 export const emptySpline = (): SplineData => ({ points: [], closed: false });
+
+/**
+ * Parametric curve recipe stored alongside `spline` on a primitive spline
+ * node (`node.data.splinePrimitive`). Editing a param rebuilds `spline`'s
+ * points; the node stays a first-class spline (renders, feeds extrude/sweep).
+ * `rounding` sliders are 0–1000 and read as a 0–1 fraction (value / 1000).
+ */
+export type SplinePrimitive =
+  | { type: "circle"; radius: number }
+  | { type: "nside"; sides: number; radius: number; rounding: number }
+  | { type: "star"; points: number; innerRadius: number; outerRadius: number; rounding: number }
+  | { type: "helix"; radius: number; height: number; turns: number; segments: number };
+
+export type SplinePrimitiveType = SplinePrimitive["type"];
+
+export const defaultSplinePrimitive = (type: SplinePrimitiveType): SplinePrimitive => {
+  switch (type) {
+    case "circle":
+      return { type, radius: 1 };
+    case "nside":
+      return { type, sides: 6, radius: 1, rounding: 0 };
+    case "star":
+      return { type, points: 5, innerRadius: 0.5, outerRadius: 1, rounding: 0 };
+    case "helix":
+      return { type, radius: 1, height: 2, turns: 3, segments: 16 };
+  }
+};
