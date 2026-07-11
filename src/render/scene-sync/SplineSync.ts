@@ -49,6 +49,10 @@ export function syncSplineGeometry(node: SceneNode, line: Line2): void {
   const positions = sampleSpline(data);
   line.geometry.dispose();
   const geo = new LineGeometry();
-  if (positions.length >= 6) geo.setPositions(Array.from(positions));
+  const drawable = positions.length >= 6;
+  if (drawable) geo.setPositions(Array.from(positions));
   line.geometry = geo;
+  // a LineGeometry without instance data builds an invalid pipeline on
+  // WebGPU and kills the whole render pass — never draw a <2-point spline
+  line.visible = drawable;
 }

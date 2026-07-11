@@ -107,15 +107,16 @@ export function composeTRS(t: TransformDTO): number[] {
   const sy = Math.sin(ry);
   const cz = Math.cos(rz);
   const sz = Math.sin(rz);
-  // R = Rz * Ry * Rx (three.js XYZ euler order convention)
+  // R = Rx * Ry * Rz — matches three.js Euler order "XYZ" (Matrix4
+  // .makeRotationFromEuler), which is how the renderer applies node rotation
   const r00 = cy * cz;
-  const r01 = sx * sy * cz - cx * sz;
-  const r02 = cx * sy * cz + sx * sz;
-  const r10 = cy * sz;
-  const r11 = sx * sy * sz + cx * cz;
-  const r12 = cx * sy * sz - sx * cz;
-  const r20 = -sy;
-  const r21 = sx * cy;
+  const r01 = -cy * sz;
+  const r02 = sy;
+  const r10 = cx * sz + sx * sy * cz;
+  const r11 = cx * cz - sx * sy * sz;
+  const r12 = -sx * cy;
+  const r20 = sx * sz - cx * sy * cz;
+  const r21 = sx * cz + cx * sy * sz;
   const r22 = cx * cy;
   const [sX, sY, sZ] = t.scale;
   return [
