@@ -1,15 +1,11 @@
 import {
-  BufferAttribute,
   BufferGeometry,
   Euler,
   Group,
   Line,
   LineBasicMaterial,
-  MathUtils,
   Mesh,
   MeshBasicMaterial,
-  type OrthographicCamera,
-  type PerspectiveCamera,
   Plane,
   PlaneGeometry,
   Quaternion,
@@ -18,47 +14,39 @@ import {
 import type { Uuid, Vec3 } from "@/types/core";
 import { CreateNodeCommand, SetNodeDataCommand } from "@/core/history/commands/scene";
 import { uniqueSiblingName } from "@/core";
-import type { SplineData, SplinePointDTO } from "@/types/geometry/spline";
-import { emptySpline } from "@/types/geometry/spline";
-import { sampleSpline } from "@/geometry/splines/eval";
+import { emptySpline, type SplineData, type SplinePointDTO } from "@/types/geometry/spline";
 import { viewportTheme } from "@/render/theme/viewportTheme";
 import type { ViewportSystem } from "@/render/viewport/ViewportSystem";
+import {
+  nearFirstAnchor,
+  placeCloseMarker,
+  resolvePlaneNormal,
+  updateRubberBand,
+} from "./penClose";
 import { PenPlanePreview } from "./penPlane";
 
-/** Clicking this close (px) to the first anchor closes the spline. */
-const CLOSE_RADIUS_PX = 12;
 /** Drag farther than this (px) after placing to pull out smooth handles. */
 const DRAG_THRESHOLD_PX = 4;
-
-const AXIS_NORMALS: Vec3[] = [
-  [1, 0, 0],
-  [0, 1, 0],
-  [0, 0, 1],
-];
 
 export type PenPlaneAxis = 0 | 1 | 2 | "auto";
 
 /**
- * Spline-app-style 3D pen. Two phases:
- *
- * 1. **Plane** — a red work-plane preview follows the cursor showing the
- *    orientation you'll draw onto. Orientation is automatic (the world plane
- *    most facing the camera); X / Y / Z force an axis, A returns to auto.
- *    The first click locks the plane, creates the spline node (its transform
- *    IS the plane: local XY = the plane, +Z = its normal) and places point 1.
- * 2. **Draw** — every pointer position is ray∩plane, written as local (x,y,0):
- *    one dimension is locked, so you draw in 2D but in perspective. Click
- *    places a linear point; click-drag pulls out mirrored smooth handles
- *    (Illustrator-style). Click the first point to close. Backspace removes
- *    the last point, Enter/Escape (or the Pen toggle) finishes. Each point is
- *    ONE undo step, so ⌘Z while drawing walks back point by point.
+ * Spline-app-style 3D pen. Phase 1: a red work-plane preview follows the
+ * cursor (auto orientation; X/Y/Z force, A auto); the first click locks it,
+ * creates the spline node (transform IS the plane) and places point 1.
+ * Phase 2: points map to the plane as local (x,y,0) — 2D in perspective. In
+ * PROJECTION mode (S) there is no plane: clicks raycast the scene and points
+ * land on whatever surface they hit, in full 3D. Click = corner, click-drag
+ * = mirrored smooth handles, click the first point to close, Backspace
+ * removes the last point, Enter/Escape finish. One undo step per point.
  */
 export class PenTool {
   readonly group = new Group();
   private readonly vs: ViewportSystem;
   private phase: "off" | "plane" | "draw" = "off";
   private axis: PenPlaneAxis = "auto";
-  private resolvedAxis: 0 | 1 | 2 = 1;
+  /** Projection mode (S): points land on whatever surface the click hits. */
+  private projection = false;
   private nodeId: Uuid | null = null;
   /** Live drag while placing a point (pull out handles). */
   private placing: { index: number; startClient: [number, number]; before: SplineData } | null =
@@ -115,9 +103,11 @@ export class PenTool {
   begin(): void {
     this.phase = "plane";
     this.axis = "auto";
+    this.projection = false;
     this.nodeId = null;
     this.group.visible = true;
     this.rubber.visible = false;
+    this.planePreview.group.visible = true;
     this.planePreview.setPicking();
     this.vs.editor.setPenActive(true);
     this.vs.canvas.style.cursor = "crosshair";
@@ -125,9 +115,10 @@ export class PenTool {
   }
 
   /**
-   * Pen-owned keys: X/Y/Z force the work-plane axis, A auto, Backspace
-   * removes the last point, Enter/Escape finish. Returns true when consumed
-   * ('a' must not select-all while the pen owns the viewport).
+   * Pen-owned keys: X/Y/Z force the work-plane axis, A auto, S toggles
+   * surface-projection mode, Backspace removes the last point, Enter/Escape
+   * finish. Returns true when consumed ('a' must not select-all while the
+   * pen owns the viewport).
    */
   handleKey(e: KeyboardEvent): boolean {
     const k = e.key.toLowerCase();
@@ -135,6 +126,11 @@ export class PenTool {
       this.finish();
     } else if (k === "backspace" && this.isDrawing) {
       this.removeLastPoint();
+    } else if (k === "s" && this.phase === "plane") {
+      // projection mode: no work plane — clicks land on scene surfaces
+      this.projection = !this.projection;
+      this.planePreview.group.visible = !this.projection;
+      this.vs.invalidate();
     } else if (k === "x" || k === "y" || k === "z") {
       this.setAxis(k === "x" ? 0 : k === "y" ? 1 : 2);
     } else if (k === "a") {
@@ -155,7 +151,7 @@ export class PenTool {
   /** Plane-phase hover: orient + position the red preview under the cursor. */
   onHover(e: PointerEvent): void {
     if (this.phase === "plane") {
-      this.updatePlanePreview(e);
+      if (!this.projection) this.updatePlanePreview(e);
       return;
     }
     if (this.phase === "draw") {
@@ -194,7 +190,8 @@ export class PenTool {
     const before = structuredClone(data);
     const after = structuredClone(data);
     after.points.push({
-      position: [local.x, local.y, 0],
+      // plane mode locks z to 0; projection keeps the full surface hit
+      position: [local.x, local.y, this.projection ? local.z : 0],
       inHandle: [0, 0, 0],
       outHandle: [0, 0, 0],
       mode: "linear",
@@ -215,17 +212,37 @@ export class PenTool {
       e.clientY - placing.startClient[1],
     );
     if (moved < DRAG_THRESHOLD_PX) return;
-    const local = this.pointerToLocal(e);
-    if (!local) return;
     const after = structuredClone(data);
     const p = after.points[placing.index]!;
+    // projection: handles pull on a camera-parallel plane through the anchor
+    // (the cursor may leave the surface mid-drag); plane mode uses the work plane
+    const local = this.projection ? this.handleDragLocal(e, p.position) : this.pointerToLocal(e);
+    if (!local) return;
     const dx = local.x - p.position[0];
     const dy = local.y - p.position[1];
-    p.outHandle = [dx, dy, 0];
-    p.inHandle = [-dx, -dy, 0];
+    const dz = this.projection ? local.z - p.position[2] : 0;
+    p.outHandle = [dx, dy, dz];
+    p.inHandle = [-dx, -dy, -dz];
     p.mode = "smooth";
     this.doc.setNodeData(this.nodeId!, this.wrap(after), true);
     this.vs.invalidate();
+  }
+
+  /** Cursor on the camera-parallel plane through `anchor` (node-local in/out). */
+  private handleDragLocal(e: PointerEvent, anchor: Vec3): Vector3 | null {
+    const obj = this.nodeId ? this.vs.sync.object(this.nodeId) : undefined;
+    if (!obj) return null;
+    obj.updateMatrixWorld();
+    const rect = this.vs.canvas.getBoundingClientRect();
+    const pane = this.vs.paneAt(e.clientX - rect.left, e.clientY - rect.top);
+    this.vs.setRayFromEvent(e, pane);
+    const anchorWorld = new Vector3(...anchor).applyMatrix4(obj.matrixWorld);
+    const camDir = new Vector3();
+    this.vs.rigFor(pane).camera.getWorldDirection(camDir);
+    this.plane.setFromNormalAndCoplanarPoint(camDir, anchorWorld);
+    const hit = new Vector3();
+    if (!this.vs.raycaster.ray.intersectPlane(this.plane, hit)) return null;
+    return obj.worldToLocal(hit);
   }
 
   /** Pointer up: commit the placed point (with any pulled handles) as ONE step. */
@@ -300,23 +317,8 @@ export class PenTool {
 
   // ---- plane handling -------------------------------------------------------
 
-  /** The world plane most facing the camera (or the forced axis). */
-  private currentNormal(): Vector3 {
-    if (this.axis !== "auto") {
-      this.resolvedAxis = this.axis;
-    } else {
-      const camDir = new Vector3();
-      this.vs.rigFor(this.vs.editor.activePane).camera.getWorldDirection(camDir);
-      const ax = Math.abs(camDir.x);
-      const ay = Math.abs(camDir.y);
-      const az = Math.abs(camDir.z);
-      this.resolvedAxis = ay >= ax && ay >= az ? 1 : ax >= az ? 0 : 2;
-    }
-    return new Vector3(...AXIS_NORMALS[this.resolvedAxis]!);
-  }
-
   private updatePlanePreview(e: PointerEvent): void {
-    const normal = this.currentNormal();
+    const normal = resolvePlaneNormal(this.vs, this.axis).normal;
     this.plane.setFromNormalAndCoplanarPoint(normal, new Vector3(0, 0, 0));
     const pane = this.vs.paneAt(
       e.clientX - this.vs.canvas.getBoundingClientRect().left,
@@ -330,18 +332,29 @@ export class PenTool {
     this.vs.invalidate();
   }
 
-  /** First click: lock the plane, create the spline node, place point 1. */
+  /** First click: lock the plane (or hit a surface), create the node, place point 1. */
   private lockPlaneAndStart(e: PointerEvent): void {
-    const normal = this.currentNormal();
-    this.plane.setFromNormalAndCoplanarPoint(normal, new Vector3(0, 0, 0));
-    const pane = this.vs.paneAt(
-      e.clientX - this.vs.canvas.getBoundingClientRect().left,
-      e.clientY - this.vs.canvas.getBoundingClientRect().top,
-    );
-    this.vs.setRayFromEvent(e, pane);
-    const hit = new Vector3();
-    if (!this.vs.raycaster.ray.intersectPlane(this.plane, hit)) return;
-    this.quat.setFromUnitVectors(new Vector3(0, 0, 1), normal);
+    let hit: Vector3;
+    if (this.projection) {
+      // projection: the node anchors at the first surface hit, axis-aligned;
+      // points carry full 3D offsets from there
+      const surf = this.raycastSurface(e);
+      if (!surf) return;
+      hit = surf;
+      this.quat.identity();
+    } else {
+      const normal = resolvePlaneNormal(this.vs, this.axis).normal;
+      this.plane.setFromNormalAndCoplanarPoint(normal, new Vector3(0, 0, 0));
+      const pane = this.vs.paneAt(
+        e.clientX - this.vs.canvas.getBoundingClientRect().left,
+        e.clientY - this.vs.canvas.getBoundingClientRect().top,
+      );
+      this.vs.setRayFromEvent(e, pane);
+      const planeHit = new Vector3();
+      if (!this.vs.raycaster.ray.intersectPlane(this.plane, planeHit)) return;
+      hit = planeHit;
+      this.quat.setFromUnitVectors(new Vector3(0, 0, 1), normal);
+    }
 
     // node transform IS the work plane: origin at the first click, +Z normal
     const rot = eulerFromQuat(this.quat);
@@ -368,9 +381,11 @@ export class PenTool {
     this.doc.history.run(cmd);
     this.nodeId = cmd.nodeId;
     this.phase = "draw";
-    // lock the preview plane where it was clicked
-    this.planePreview.place(hit, this.quat);
-    this.planePreview.setLocked();
+    // lock the preview plane where it was clicked (hidden in projection mode)
+    if (!this.projection) {
+      this.planePreview.place(hit, this.quat);
+      this.planePreview.setLocked();
+    }
     // dragging right away pulls handles out of point 0
     this.placing = {
       index: 0,
@@ -404,15 +419,23 @@ export class PenTool {
     );
   }
 
-  /** Cursor ray ∩ the locked work plane, in node-local plane coords. */
+  /**
+   * Cursor → node-local point. Plane mode: ray ∩ the locked work plane with
+   * z=0 (the locked dimension). Projection mode: ray ∩ the nearest visible
+   * surface — the point lands wherever the click hits, in full 3D.
+   */
   private pointerToLocal(e: PointerEvent): Vector3 | null {
     if (!this.nodeId) return null;
     const obj = this.vs.sync.object(this.nodeId);
     if (!obj) return null;
+    obj.updateMatrixWorld();
+    if (this.projection) {
+      const surf = this.raycastSurface(e);
+      return surf ? obj.worldToLocal(surf) : null;
+    }
     const rect = this.vs.canvas.getBoundingClientRect();
     const pane = this.vs.paneAt(e.clientX - rect.left, e.clientY - rect.top);
     this.vs.setRayFromEvent(e, pane);
-    obj.updateMatrixWorld();
     const normal = new Vector3(0, 0, 1).applyQuaternion(obj.quaternion).normalize();
     this.plane.setFromNormalAndCoplanarPoint(normal, obj.position);
     const hit = new Vector3();
@@ -422,55 +445,36 @@ export class PenTool {
     return local;
   }
 
+  /** Nearest visible MESH surface under the cursor (never the pen's spline). */
+  private raycastSurface(e: PointerEvent): Vector3 | null {
+    const rect = this.vs.canvas.getBoundingClientRect();
+    const pane = this.vs.paneAt(e.clientX - rect.left, e.clientY - rect.top);
+    this.vs.setRayFromEvent(e, pane);
+    for (const h of this.vs.raycaster.intersectObject(this.vs.sync.root, true)) {
+      if (!(h.object instanceof Mesh)) continue; // lines/helpers aren't surfaces
+      const nodeId = this.vs.sync.visibleNodeIdOf(h.object);
+      if (!nodeId || nodeId === this.nodeId) continue;
+      return h.point.clone();
+    }
+    return null;
+  }
+
   /** Rubber band: the segment that WOULD be added if you clicked now. */
   private updateRubber(): void {
     const data = this.data();
-    if (!data || data.points.length === 0 || !this.hoverLocal || this.placing) {
+    const obj = this.nodeId ? this.vs.sync.object(this.nodeId) : undefined;
+    if (!data || data.points.length === 0 || !this.hoverLocal || this.placing || !obj) {
       this.rubber.visible = false;
       return;
     }
-    const last = data.points[data.points.length - 1]!;
-    const ghost: SplineData = {
-      closed: false,
-      points: [
-        last,
-        {
-          position: [this.hoverLocal.x, this.hoverLocal.y, 0],
-          inHandle: [0, 0, 0],
-          outHandle: [0, 0, 0],
-          mode: "linear",
-        },
-      ],
-    };
-    const flat = sampleSpline(ghost, 16);
-    this.rubber.geometry.dispose();
-    this.rubber.geometry = new BufferGeometry();
-    this.rubber.geometry.setAttribute("position", new BufferAttribute(flat, 3));
-    const obj = this.vs.sync.object(this.nodeId!);
-    if (obj) {
-      this.rubber.position.copy(obj.position);
-      this.rubber.quaternion.copy(obj.quaternion);
-    }
-    this.rubber.visible = true;
+    updateRubberBand(this.rubber, obj, data, this.hoverLocal);
   }
 
   /** Screen distance from the cursor to the first anchor (close affordance). */
   private nearFirstAnchor(e: PointerEvent): boolean {
     const data = this.data();
     const obj = this.nodeId ? this.vs.sync.object(this.nodeId) : undefined;
-    if (!data || data.points.length === 0 || !obj) return false;
-    const rect = this.vs.canvas.getBoundingClientRect();
-    const pane = this.vs.paneRect(this.vs.editor.activePane);
-    const cam = this.vs.rigFor(this.vs.editor.activePane).camera;
-    cam.updateMatrixWorld();
-    obj.updateMatrixWorld();
-    const w = new Vector3(...data.points[0]!.position).applyMatrix4(obj.matrixWorld);
-    const v = w.clone().applyMatrix4(cam.matrixWorldInverse);
-    if ((cam as PerspectiveCamera).isPerspectiveCamera && v.z >= -1e-6) return false;
-    v.applyMatrix4(cam.projectionMatrix);
-    const sx = pane.x + ((v.x + 1) / 2) * pane.w;
-    const sy = pane.y + ((1 - v.y) / 2) * pane.h;
-    return Math.hypot(sx - (e.clientX - rect.left), sy - (e.clientY - rect.top)) <= CLOSE_RADIUS_PX;
+    return !!data && !!obj && nearFirstAnchor(this.vs, obj, data, e);
   }
 
   /** Show the green "click to close" marker over the first anchor. */
@@ -479,20 +483,7 @@ export class PenTool {
     const obj = this.nodeId ? this.vs.sync.object(this.nodeId) : undefined;
     const show = !!data && data.points.length >= 3 && !!obj && this.nearFirstAnchor(e);
     this.closeMarker.visible = show;
-    if (!show || !obj || !data) return;
-    obj.updateMatrixWorld();
-    const w = new Vector3(...data.points[0]!.position).applyMatrix4(obj.matrixWorld);
-    const cam = this.vs.rigFor(this.vs.editor.activePane).camera;
-    const paneH = Math.max(1, this.vs.paneRect(this.vs.editor.activePane).h);
-    const ortho = cam as OrthographicCamera;
-    const persp = cam as PerspectiveCamera;
-    const perPixel = ortho.isOrthographicCamera
-      ? (ortho.top - ortho.bottom) / paneH
-      : (2 * cam.position.distanceTo(w) * Math.tan(MathUtils.degToRad(persp.fov / 2))) / paneH;
-    const q = new Quaternion();
-    cam.getWorldQuaternion(q);
-    this.closeMarker.matrixAutoUpdate = false;
-    this.closeMarker.matrix.compose(w, q, new Vector3().setScalar(Math.max(1e-6, 12 * perPixel)));
+    if (show && obj && data) placeCloseMarker(this.vs, this.closeMarker, obj, data);
   }
 }
 

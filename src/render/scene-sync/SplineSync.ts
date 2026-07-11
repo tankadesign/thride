@@ -5,9 +5,11 @@ import { sampleSpline } from "@/geometry/splines/eval";
 import { viewportTheme } from "@/render/theme/viewportTheme";
 
 // Splines render in the accent color — distinct from mesh wires and helpers.
+// depthTest off: splines are control objects and draw on top of shading
+// (C4D-style) — vital for projected splines lying exactly ON a surface.
 // Closed splines duplicate the final sample instead of using LineLoop (which
 // doesn't render on the WebGPU backend).
-const SPLINE_MAT = new LineBasicMaterial({ color: viewportTheme.accent });
+const SPLINE_MAT = new LineBasicMaterial({ color: viewportTheme.accent, depthTest: false });
 
 /** Re-apply theme colors to the shared spline material. */
 export function applySplineTheme(): void {
@@ -24,7 +26,7 @@ export function applySplineTheme(): void {
 export function buildSplineObject(node: SceneNode): Line {
   const line = new Line(new BufferGeometry(), SPLINE_MAT);
   line.frustumCulled = false; // WebGPU mis-culls Line objects (see helpers)
-  line.renderOrder = 1;
+  line.renderOrder = 3; // above surfaces + edge wires (control object)
   syncSplineGeometry(node, line);
   return line;
 }
