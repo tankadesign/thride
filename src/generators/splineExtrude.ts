@@ -4,6 +4,7 @@ import { sampleSpline2D } from "@/geometry/splines/eval";
 
 export interface SplineExtrudeParams {
   depth: number;
+  heightSegments: number;
   bevelSize: number;
   bevelSegments: number;
   caps: boolean;
@@ -11,6 +12,7 @@ export interface SplineExtrudeParams {
 
 export const defaultSplineExtrudeParams = (): SplineExtrudeParams => ({
   depth: 0.5,
+  heightSegments: 1,
   bevelSize: 0,
   bevelSegments: 2,
   caps: true,
@@ -32,8 +34,10 @@ export function buildSplineExtrude(spline: SplineData, params: SplineExtrudePara
   const profile = dedupe(sampleSpline2D(spline, 24));
   if (profile.length < (spline.closed ? 3 : 2)) return null;
   const depth = Math.max(1e-4, params.depth);
+  // ?? 1 keeps projects saved before height segments existed valid
+  const heightSegs = Math.max(1, Math.round(params.heightSegments ?? 1));
 
-  if (!spline.closed) return buildRibbon(profile, depth);
+  if (!spline.closed) return buildRibbon(profile, depth, heightSegs);
 
   if (area(profile) < 0) profile.reverse(); // CCW so inward offsets shrink
 
@@ -44,16 +48,21 @@ export function buildSplineExtrude(spline: SplineData, params: SplineExtrudePara
   // ring stack bottom→top: [inset, z][]
   const rings: [number, number][] = [];
   if (b > 0) {
+    // bottom quarter-arc: z 0→b
     for (let k = 0; k <= segs; k++) {
       const phi = (k / segs) * (Math.PI / 2);
       rings.push([b * (1 - Math.sin(phi)), b * (1 - Math.cos(phi))]);
     }
+    // straight wall between the arcs, split into heightSegs (interior rings)
+    const wall = depth - 2 * b;
+    for (let k = 1; k < heightSegs; k++) rings.push([0, b + (k / heightSegs) * wall]);
+    // top quarter-arc: z depth-b→depth
     for (let k = segs; k >= 0; k--) {
       const phi = (k / segs) * (Math.PI / 2);
       rings.push([b * (1 - Math.sin(phi)), depth - b * (1 - Math.cos(phi))]);
     }
   } else {
-    rings.push([0, 0], [0, depth]);
+    for (let k = 0; k <= heightSegs; k++) rings.push([0, (k / heightSegs) * depth]);
   }
 
   const n = profile.length;
@@ -85,14 +94,21 @@ export function buildSplineExtrude(spline: SplineData, params: SplineExtrudePara
   }
 }
 
-/** Open profile: a simple two-ring ribbon (open boundaries, no caps). */
-function buildRibbon(profile: P2[], depth: number): HEMesh | null {
+/** Open profile: a ribbon of heightSegs stacked rings (open, no caps). */
+function buildRibbon(profile: P2[], depth: number, heightSegs: number): HEMesh | null {
   const n = profile.length;
   const positions: number[] = [];
-  for (const z of [0, depth]) for (const p of profile) positions.push(p.x, p.y, z);
+  for (let r = 0; r <= heightSegs; r++) {
+    const z = (r / heightSegs) * depth;
+    for (const p of profile) positions.push(p.x, p.y, z);
+  }
   const faces: number[][] = [];
-  for (let i = 0; i < n - 1; i++) {
-    faces.push([i, i + 1, n + i + 1, n + i]);
+  for (let r = 0; r < heightSegs; r++) {
+    const lo = r * n;
+    const hi = (r + 1) * n;
+    for (let i = 0; i < n - 1; i++) {
+      faces.push([lo + i, lo + i + 1, hi + i + 1, hi + i]);
+    }
   }
   const faceUVs = faces.map(() => [0, 0, 1, 0, 1, 1, 0, 1]);
   try {

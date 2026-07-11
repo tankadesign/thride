@@ -471,6 +471,7 @@ function GeneratorParams({ id, gen }: { id: Uuid; gen: GeneratorDescriptor }) {
   const p = gen.params as unknown as Record<string, number | boolean>;
   const rows: { key: string; label: string; int?: boolean; min?: number; max?: number }[] = [
     { key: "depth", label: "Depth", min: 0.001 },
+    { key: "heightSegments", label: "Height Segs", int: true, min: 1, max: 64 },
     { key: "bevelSize", label: "Bevel Size", min: 0 },
     { key: "bevelSegments", label: "Bevel Segs", int: true, min: 1, max: 8 },
   ];

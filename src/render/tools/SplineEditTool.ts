@@ -22,18 +22,26 @@ interface DragState {
   index: number;
   startLocal: Vector3;
   before: SplineData;
+  /** Camera-facing drag plane (world space), fixed for the drag's duration. */
+  plane: Plane;
   /** ⌘/Ctrl at drag start breaks the tangent link (Alt belongs to nav). */
   breakLink: boolean;
   moved: boolean;
 }
 
 /**
- * Point-mode editing for spline nodes: anchor/handle picking, plane-locked
- * drags (all movement happens in the spline's work plane — local z stays 0),
+ * Point-mode editing for spline nodes: anchor/handle picking, full-3D drags,
  * and C4D-grade tangent behavior — smooth points mirror handle DIRECTION
  * while keeping each side's length, broken points move independently,
  * ⌘/Ctrl-dragging a handle breaks the link (Alt is nav), dragging a handle
  * out of a linear point promotes it to smooth. One undo step per drag.
+ *
+ * Drags ride a CAMERA-FACING plane through the grabbed element (captured at
+ * pointerDown), not the spline's work plane. Face-on this is identical to
+ * planar editing (z never moves); from an edge-on view — e.g. dragging a
+ * point of a vertical work plane while looking down the Top view — it lets
+ * the point move in depth instead of degenerating (the work plane is
+ * parallel to the ray there, so a work-plane drag can't be solved at all).
  */
 export class SplineEditTool {
   private readonly vs: ViewportSystem;
@@ -162,12 +170,24 @@ export class SplineEditTool {
       if (op === "toggle" && !nextSel.has(hit.index)) return true; // deselected — no drag
     }
 
-    const startLocal = this.pointerToLocal(e, ctx.nodeId);
+    // capture the drag plane through the grabbed element's world position
+    const grabbed = ctx.data.points[hit.index];
+    if (!grabbed) return true;
+    const grabLocal: [number, number, number] =
+      hit.kind === "anchor"
+        ? grabbed.position
+        : hit.kind === "in"
+          ? add(grabbed.position, grabbed.inHandle)
+          : add(grabbed.position, grabbed.outHandle);
+    const plane = this.cameraPlane(e, ctx.nodeId, grabLocal);
+    if (!plane) return true;
+    const startLocal = this.rayToLocal(e, ctx.nodeId, plane);
     if (!startLocal) return true;
     this.drag = {
       kind: hit.kind,
       index: hit.index,
       startLocal,
+      plane,
       before: structuredClone(ctx.data),
       breakLink: hit.kind !== "anchor" && (e.metaKey || e.ctrlKey),
       moved: false,
@@ -180,29 +200,31 @@ export class SplineEditTool {
     const drag = this.drag;
     const ctx = this.context();
     if (!drag || !ctx) return false;
-    const local = this.pointerToLocal(e, ctx.nodeId);
+    const local = this.rayToLocal(e, ctx.nodeId, drag.plane);
     if (!local) return true;
     const dx = local.x - drag.startLocal.x;
     const dy = local.y - drag.startLocal.y;
-    if (!drag.moved && Math.hypot(dx, dy) < 1e-6) return true;
+    const dz = local.z - drag.startLocal.z;
+    if (!drag.moved && Math.hypot(dx, dy, dz) < 1e-6) return true;
     drag.moved = true;
 
     const after = structuredClone(drag.before);
     if (drag.kind === "anchor") {
-      // move every selected anchor by the same in-plane delta
+      // move every selected anchor by the same 3D delta
       const sel = this.selectedIndices(ctx);
       const move = sel.includes(drag.index) ? sel : [drag.index];
       for (const i of move) {
         const p = after.points[i];
         if (!p) continue;
-        p.position = [p.position[0] + dx, p.position[1] + dy, p.position[2]];
+        p.position = [p.position[0] + dx, p.position[1] + dy, p.position[2] + dz];
       }
     } else {
       const p = after.points[drag.index];
       if (!p) return true;
       const hx = local.x - p.position[0];
       const hy = local.y - p.position[1];
-      const dragged: [number, number, number] = [hx, hy, 0];
+      const hz = local.z - p.position[2];
+      const dragged: [number, number, number] = [hx, hy, hz];
       const isIn = drag.kind === "in";
       if (drag.breakLink) p.mode = "broken";
       if (p.mode === "linear") p.mode = "smooth"; // pulling a handle out of a corner
@@ -210,13 +232,14 @@ export class SplineEditTool {
       else p.outHandle = dragged;
       if (p.mode === "smooth") {
         // mirror DIRECTION onto the opposite handle, keep its own length
-        const len = Math.hypot(hx, hy) || 1;
+        const len = Math.hypot(hx, hy, hz) || 1;
         const ox = -hx / len;
         const oy = -hy / len;
+        const oz = -hz / len;
         const opp = isIn ? p.outHandle : p.inHandle;
         let oppLen = Math.hypot(opp[0], opp[1], opp[2]);
-        if (oppLen < 1e-9) oppLen = Math.hypot(hx, hy); // fresh promotion: mirror fully
-        const mirrored: [number, number, number] = [ox * oppLen, oy * oppLen, 0];
+        if (oppLen < 1e-9) oppLen = len; // fresh promotion: mirror fully
+        const mirrored: [number, number, number] = [ox * oppLen, oy * oppLen, oz * oppLen];
         if (isIn) p.outHandle = mirrored;
         else p.inHandle = mirrored;
       }
@@ -278,20 +301,38 @@ export class SplineEditTool {
     this.vs.invalidate();
   }
 
-  /** Cursor ray ∩ the spline's work plane, in node-local coords (z=0). */
-  private pointerToLocal(e: PointerEvent, nodeId: Uuid): Vector3 | null {
+  /** Camera-facing plane (world space) through a node-local point. */
+  private cameraPlane(
+    e: PointerEvent,
+    nodeId: Uuid,
+    localPoint: [number, number, number],
+  ): Plane | null {
+    const obj = this.vs.sync.object(nodeId);
+    if (!obj) return null;
+    obj.updateMatrixWorld();
+    const rect = this.vs.canvas.getBoundingClientRect();
+    const pane = this.vs.paneAt(e.clientX - rect.left, e.clientY - rect.top);
+    const world = new Vector3(...localPoint).applyMatrix4(obj.matrixWorld);
+    const camDir = new Vector3();
+    this.vs.rigFor(pane).camera.getWorldDirection(camDir);
+    return this.plane.setFromNormalAndCoplanarPoint(camDir, world).clone();
+  }
+
+  /** Cursor ray ∩ a fixed world plane, in node-local coords (full 3D). */
+  private rayToLocal(e: PointerEvent, nodeId: Uuid, plane: Plane): Vector3 | null {
     const obj = this.vs.sync.object(nodeId);
     if (!obj) return null;
     const rect = this.vs.canvas.getBoundingClientRect();
     const pane = this.vs.paneAt(e.clientX - rect.left, e.clientY - rect.top);
     this.vs.setRayFromEvent(e, pane);
-    obj.updateMatrixWorld();
-    const normal = new Vector3(0, 0, 1).applyQuaternion(obj.quaternion).normalize();
-    this.plane.setFromNormalAndCoplanarPoint(normal, obj.position);
     const hit = new Vector3();
-    if (!this.vs.raycaster.ray.intersectPlane(this.plane, hit)) return null;
-    const local = obj.worldToLocal(hit.clone());
-    local.z = 0;
-    return local;
+    if (!this.vs.raycaster.ray.intersectPlane(plane, hit)) return null;
+    obj.updateMatrixWorld();
+    return obj.worldToLocal(hit);
   }
+}
+
+/** Add a relative handle offset to a point position (component-wise). */
+function add(a: [number, number, number], b: [number, number, number]): [number, number, number] {
+  return [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
 }
