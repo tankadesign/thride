@@ -19,7 +19,12 @@ import { deletePoints as deleteSplinePoints } from "@/geometry/splines/ops";
 import type { SplineData, SplinePrimitiveType } from "@/types/geometry/spline";
 import { defaultSplinePrimitive } from "@/types/geometry/spline";
 import { buildSplinePrimitive } from "@/geometry/splines/primitives";
-import { booleanDescriptor, evaluateGenerator, splineExtrudeDescriptor } from "@/generators/graph";
+import {
+  booleanDescriptor,
+  evaluateGenerator,
+  splineExtrudeDescriptor,
+  sweepDescriptor,
+} from "@/generators/graph";
 import { meshRegistry } from "@/geometry/store/meshRegistry";
 import type { PrimitiveType } from "@/types/geometry/primitives";
 import { defaultPrimitive, primitiveLabels } from "@/types/geometry/primitives";
@@ -57,6 +62,7 @@ import {
   IconPyramid,
   IconSphere,
   IconSpotlight,
+  IconSweep,
   IconTorus,
   IconCapsule,
   IconWeld,
@@ -452,6 +458,35 @@ export function buildCommands(doc: Document, shell: ShellApi): AppCommand[] {
           doc.history.run(cmd);
           genId = cmd.nodeId;
           if (selectedSpline) doc.history.run(new ReparentNodeCommand(selectedSpline, genId));
+        });
+        if (genId) doc.selection.selectObjects([genId]);
+      },
+    },
+    {
+      // C4D-style sweep: profile + path spline children → swept tube
+      id: "create.sweep",
+      title: "Sweep",
+      menu: "Create",
+      icon: <IconSweep size={16} />,
+      run: () => {
+        // selection order is profile-first, path-second (like C4D)
+        const splines = doc.selection.objectIds.filter(
+          (id) => doc.scene.get(id)?.kind === "spline",
+        );
+        let genId: Uuid | null = null;
+        doc.history.transact("Create Sweep", () => {
+          const cmd = new CreateNodeCommand(
+            "generator",
+            uniqueSiblingName(doc, null, "Sweep"),
+            null,
+            undefined,
+            { generator: sweepDescriptor() },
+          );
+          doc.history.run(cmd);
+          genId = cmd.nodeId;
+          for (const id of splines.slice(0, 2)) {
+            doc.history.run(new ReparentNodeCommand(id, genId));
+          }
         });
         if (genId) doc.selection.selectObjects([genId]);
       },

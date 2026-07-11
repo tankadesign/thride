@@ -30,6 +30,7 @@ import {
   PenTool03Icon,
   PentagonIcon,
   PillIcon,
+  PipelineIcon,
   PlusSignSquareIcon,
   PyramidIcon,
   Search01Icon,
@@ -97,6 +98,7 @@ export const IconCircle = makeIcon(Circle);
 export const IconNSide = makeIcon(HexagonIcon);
 export const IconStar = makeIcon(StarIcon);
 export const IconHelix = makeIcon(SpiralsIcon);
+export const IconSweep = makeIcon(PipelineIcon);
 
 // lights
 export const IconAmbientLight = makeIcon(SunCloud02Icon);

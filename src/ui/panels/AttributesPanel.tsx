@@ -472,6 +472,35 @@ function GeneratorParams({ id, gen }: { id: Uuid; gen: GeneratorDescriptor }) {
       </fieldset>
     );
   }
+
+  if (gen.type === "sweep") {
+    const sp = gen.params as unknown as Record<string, number>;
+    const sweepRows = [
+      { key: "pathSegments", label: "Path Segs", min: 2, max: 512 },
+      { key: "profileSegments", label: "Profile Segs", min: 3, max: 256 },
+    ];
+    return (
+      <fieldset className="fieldset px-2 py-1.5">
+        <legend className="fieldset-legend py-1 text-[10px] uppercase opacity-60">Sweep</legend>
+        {sweepRows.map((row) => (
+          <div className="grid grid-cols-[64px_1fr] items-center gap-1" key={row.key}>
+            <span className="truncate opacity-60" title={row.label}>
+              {row.label}
+            </span>
+            <NumberDrag
+              value={sp[row.key] ?? 0}
+              step={1}
+              integer
+              min={row.min}
+              max={row.max}
+              onChange={(v, committed) => setParam(row.key, v, committed)}
+            />
+          </div>
+        ))}
+        <p className="mt-1 text-[10px] opacity-50">Children: 1st = profile, 2nd = path.</p>
+      </fieldset>
+    );
+  }
   const p = gen.params as unknown as Record<string, number | boolean>;
   const rows: { key: string; label: string; int?: boolean; min?: number; max?: number }[] = [
     { key: "depth", label: "Depth", min: 0.001 },

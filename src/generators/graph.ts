@@ -12,20 +12,28 @@ import {
 import type { HEMesh } from "@/geometry/kernel/HEMesh";
 import { buildPrimitive } from "@/geometry/primitives";
 import { meshRegistry } from "@/geometry/store/meshRegistry";
+import { sampleSpline3D } from "@/geometry/splines/eval";
 import {
   buildSplineExtrude,
   defaultSplineExtrudeParams,
   type SplineExtrudeParams,
 } from "./splineExtrude";
+import { buildSweep, defaultSweepParams, type SweepCurve, type SweepParams } from "./sweep";
 
 /** Document payload of a generator node (`node.data.generator`). */
 export type GeneratorDescriptor =
   | { type: "splineExtrude"; params: SplineExtrudeParams }
+  | { type: "sweep"; params: SweepParams }
   | { type: "boolean"; params: { op: BooleanOp } };
 
 export const splineExtrudeDescriptor = (): GeneratorDescriptor => ({
   type: "splineExtrude",
   params: defaultSplineExtrudeParams(),
+});
+
+export const sweepDescriptor = (): GeneratorDescriptor => ({
+  type: "sweep",
+  params: defaultSweepParams(),
 });
 
 export const booleanDescriptor = (): GeneratorDescriptor => ({
@@ -88,6 +96,18 @@ export function evaluateGenerator(
     return mesh ? { key, mesh } : null;
   }
 
+  if (desc.type === "sweep") {
+    // two ordered spline children: [0] = profile, [1] = path
+    const inputs = sweepInputs(doc, node.id);
+    const key = `sw:${JSON.stringify(desc.params)}:${inputs.key}`;
+    const hit = perDoc.get(node.id);
+    if (hit && hit.key === key) return hit.mesh ? { key, mesh: hit.mesh } : null;
+    const mesh =
+      inputs.profile && inputs.path ? buildSweep(inputs.profile, inputs.path, desc.params) : null;
+    perDoc.set(node.id, { key, mesh });
+    return mesh ? { key, mesh } : null;
+  }
+
   // boolean: async — return the cached result, kick a worker job when stale
   const inputs = booleanInputs(doc, node.id);
   const key = `bool:${desc.params.op}:${inputs.key}`;
@@ -128,6 +148,37 @@ function firstChildSpline(
     if (child?.kind === "spline" && data) return { data, transform: child.transform };
   }
   return null;
+}
+
+/**
+ * Sweep inputs: the first two spline children in object-manager order —
+ * [0] profile, [1] path — each sampled to a polyline and baked into the
+ * child's world transform so both live in the sweep's local space. The key
+ * covers both children's data + transforms (a path edit must recompute).
+ */
+function sweepInputs(doc: Document, id: Uuid) {
+  const splines: { data: SplineData; transform: SceneNode["transform"] }[] = [];
+  for (const childId of doc.scene.childrenOf(id)) {
+    if (splines.length >= 2) break;
+    const child = doc.scene.get(childId);
+    const data = child?.data?.spline as SplineData | undefined;
+    if (child?.kind === "spline" && data) splines.push({ data, transform: child.transform });
+  }
+  const bake = (s: { data: SplineData; transform: SceneNode["transform"] }): SweepCurve => {
+    const m = composeTRS(s.transform);
+    const points = sampleSpline3D(s.data).map((p): [number, number, number] => [
+      m[0]! * p[0] + m[4]! * p[1] + m[8]! * p[2] + m[12]!,
+      m[1]! * p[0] + m[5]! * p[1] + m[9]! * p[2] + m[13]!,
+      m[2]! * p[0] + m[6]! * p[1] + m[10]! * p[2] + m[14]!,
+    ]);
+    return { points, closed: s.data.closed };
+  };
+  const key = splines.map((s) => JSON.stringify(s.data) + JSON.stringify(s.transform)).join("|");
+  return {
+    profile: splines[0] ? bake(splines[0]) : null,
+    path: splines[1] ? bake(splines[1]) : null,
+    key: key || "∅",
+  };
 }
 
 /**
