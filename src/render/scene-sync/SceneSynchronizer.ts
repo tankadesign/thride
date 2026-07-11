@@ -244,11 +244,17 @@ export class SceneSynchronizer {
     const obj = this.objects.get(id);
     const node = this.doc.scene.mustGet(id);
     if (!obj) return;
+    // the node the child is LEAVING (its old three parent still holds it here);
+    // that generator loses an input and must re-evaluate to shed the old mesh
+    const oldParentId = obj.parent?.userData.nodeId as Uuid | undefined;
     const parent = node.parent ? this.objects.get(node.parent) : undefined;
     (parent ?? this.root).add(obj);
     // sibling order is irrelevant for rendering; object manager reads the doc.
     // A node moving under/out of a generator changes that generator's input.
     this.updateNode(id);
+    if (oldParentId && oldParentId !== node.parent && this.doc.scene.has(oldParentId)) {
+      this.updateNode(oldParentId);
+    }
   }
 
   private updateNode(id: Uuid, preview = false): void {
@@ -375,7 +381,12 @@ export class SceneSynchronizer {
   /** Resolve the node's geometry source (editable mesh or primitive) into its Mesh. */
   private syncGeometry(id: Uuid, node: SceneNode, obj: Mesh, preview = false): void {
     const source = this.geometrySource(node);
-    if (!source) return;
+    if (!source) {
+      // a generator whose input vanished (its spline/mesh child was moved out)
+      // must render nothing — drop the stale mesh instead of freezing it
+      if (node.kind === "generator") this.clearGeometry(id, obj);
+      return;
+    }
     let entry = this.renderMeshes.get(id);
     const keyChanged = !entry || entry.key !== source.key;
     // live registry meshes are edited in place (component drags): same key,
@@ -402,6 +413,26 @@ export class SceneSynchronizer {
     obj.geometry = rm.geometry;
     this.selectionOutline.updateGeometry(id, rm.geometry);
     this.rebuildEdgeWire(id, source.mesh);
+  }
+
+  /** Drop a node's render geometry (generator input removed → renders empty). */
+  private clearGeometry(id: Uuid, obj: Mesh): void {
+    // an attribute-less geometry still makes WebGPU build a pipeline that fails
+    // validation (the material's shader expects normal/uv slots), which aborts
+    // the whole frame — hide the object rather than submit empty geometry.
+    // updateNode restores visibility when the generator gets an input again.
+    obj.visible = false;
+    const entry = this.renderMeshes.get(id);
+    if (!entry) return; // geometry never built (fresh childless generator)
+    entry.rm.dispose();
+    this.renderMeshes.delete(id);
+    obj.geometry = new BufferGeometry();
+    this.selectionOutline.updateGeometry(id, obj.geometry);
+    const wire = this.edgeWires.get(id);
+    if (wire) {
+      wire.geometry.dispose();
+      wire.geometry = new BufferGeometry();
+    }
   }
 
   /** Kernel-edge line buffer for a mesh node (local coords — child of the mesh). */
