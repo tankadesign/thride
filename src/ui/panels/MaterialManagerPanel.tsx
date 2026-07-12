@@ -16,7 +16,11 @@ import {
   MATERIAL_TYPES,
 } from "@/types/core";
 import { useDocument, useSliceVersion } from "@/ui/hooks/doc/document";
-import { selectedMaterialAtom, useMaterialThumbnail } from "@/ui/hooks/editor/materials";
+import {
+  MATERIAL_DND_MIME,
+  selectedMaterialAtom,
+  useMaterialThumbnail,
+} from "@/ui/hooks/editor/materials";
 import { NumberDrag } from "@/ui/widgets/NumberDrag";
 
 function uniqueMaterialName(doc: Document): string {
@@ -209,7 +213,12 @@ function MaterialCard({
     <button
       type="button"
       onClick={onSelect}
-      title={typeLabel}
+      title={`${typeLabel} — drag onto an object to assign`}
+      draggable
+      onDragStart={(e) => {
+        e.dataTransfer.setData(MATERIAL_DND_MIME, dto.id);
+        e.dataTransfer.effectAllowed = "copy";
+      }}
       className={`flex cursor-pointer flex-col items-stretch gap-1 rounded-md border p-1 text-left transition-colors ${
         selected ? "border-primary bg-primary/10" : "border-base-200 hover:border-base-content/25"
       }`}

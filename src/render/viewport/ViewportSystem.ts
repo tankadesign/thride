@@ -351,6 +351,18 @@ export class ViewportSystem {
     return rig;
   }
 
+  /** Uuid of the visible mesh node under the cursor (for material drag-drop), or null. */
+  pickNode(e: MouseEvent): Uuid | null {
+    const rect = this.canvas.getBoundingClientRect();
+    const pane = this.paneAt(e.clientX - rect.left, e.clientY - rect.top);
+    this.setRayFromEvent(e, pane);
+    for (const h of this.raycaster.intersectObject(this.sync.root, true)) {
+      const id = this.sync.visibleNodeIdOf(h.object);
+      if (id) return id;
+    }
+    return null;
+  }
+
   rigFor(pane: number): CameraRig {
     const cam = this.editor.paneCamera(pane);
     const isBuiltin = (BUILTINS as string[]).includes(cam);

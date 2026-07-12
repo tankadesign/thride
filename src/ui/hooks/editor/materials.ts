@@ -6,6 +6,9 @@ import { MaterialThumbnails } from "@/render/thumbnails/materialThumbnails";
 /** Material selected in the Material Manager (ephemeral UI state). */
 export const selectedMaterialAtom = atom<Uuid | null>(null);
 
+/** dataTransfer type carrying a material id when dragging a swatch onto an object. */
+export const MATERIAL_DND_MIME = "application/x-thride-material";
+
 // One offscreen preview renderer, created lazily. Renders are SERIALIZED (the
 // renderer reuses a single sphere) and cached by visual params so identical or
 // unchanged materials never re-render.

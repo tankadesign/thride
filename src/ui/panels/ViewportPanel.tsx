@@ -2,7 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import type { Uuid } from "@/types/core";
 import type { PaneCamera } from "@/types/editor";
 import { useAtomValue } from "jotai";
+import { SetNodeDataCommand } from "@/core";
 import { appStore, useDocument, useSliceVersion } from "@/ui/hooks/doc/document";
+import { MATERIAL_DND_MIME } from "@/ui/hooks/editor/materials";
 import { openContextMenu } from "@/ui/hooks/editor/shell";
 import { splineThicknessAtom } from "@/ui/hooks/editor/settings";
 import {
@@ -155,8 +157,31 @@ export function ViewportPanel({ onSystem }: Props) {
       ? { right: slot % 2 === 0 ? "calc(50% + 3px)" : 2, top: slot < 2 ? 2 : "calc(50% + 3px)" }
       : { right: 2, top: 2 };
 
+  // drag a material swatch from the Material Manager onto a mesh to assign it
+  const onMaterialDragOver = (e: React.DragEvent) => {
+    if (e.dataTransfer.types.includes(MATERIAL_DND_MIME)) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "copy";
+    }
+  };
+  const onMaterialDrop = (e: React.DragEvent) => {
+    const matId = e.dataTransfer.getData(MATERIAL_DND_MIME);
+    if (!matId || !system) return;
+    e.preventDefault();
+    const nodeId = system.pickNode(e.nativeEvent);
+    const node = nodeId ? doc.scene.get(nodeId) : null;
+    if (!node) return;
+    const before = structuredClone(node.data ?? {});
+    const after = { ...before, material: matId };
+    doc.history.run(new SetNodeDataCommand(node.id, after, before, "Assign Material"));
+  };
+
   return (
-    <div className="relative h-full w-full overflow-hidden">
+    <div
+      className="relative h-full w-full overflow-hidden"
+      onDragOver={onMaterialDragOver}
+      onDrop={onMaterialDrop}
+    >
       <canvas ref={canvasRef} className="block h-full w-full" />
       {bevelActive && system ? <BevelSettings vs={system} /> : null}
       {system ? <SplinePointPanel vs={system} /> : null}
