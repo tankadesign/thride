@@ -1,3 +1,4 @@
+import type { MaterialDTO } from "./material";
 import type { SceneNodeDTO } from "./scene";
 
 /** Semver of the FILE FORMAT (not the app). Bump per PLAN.md migration rules. */
@@ -14,4 +15,7 @@ export interface ThrideDocumentDTO {
   formatVersion: string;
   /** Flat node list; parents always precede descendants (DFS order). */
   nodes: SceneNodeDTO[];
+  /** Material library; nodes reference entries by id via `data.material`.
+   *  Optional + additive — pre-material files load with an empty library. */
+  materials?: MaterialDTO[];
 }

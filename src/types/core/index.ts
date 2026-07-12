@@ -4,5 +4,7 @@ export type { NodeKind, TransformDTO, SceneNodeDTO } from "./scene";
 export { identityTransform } from "./scene";
 export type { ThrideDocumentDTO } from "./document";
 export { FORMAT_VERSION } from "./document";
+export type { MaterialDTO, MaterialType } from "./material";
+export { MATERIAL_TYPES, HAS_PBR, HAS_COLOR, HAS_EMISSIVE, defaultMaterialData } from "./material";
 export type { SliceId, DocEventMap } from "./events";
 export type { EditMode, ComponentMode } from "./selection";

@@ -1,5 +1,6 @@
 import type {
   DocEventMap,
+  MaterialDTO,
   NodeKind,
   SceneNodeDTO,
   SliceId,
@@ -12,6 +13,7 @@ import { EventBus } from "@/core/events/EventBus";
 import { History } from "@/core/history/History";
 import { Selection } from "@/core/selection/Selection";
 import { SessionRunner } from "@/core/session/InteractiveSession";
+import { MaterialStore } from "./MaterialStore";
 import { SceneNode } from "./SceneNode";
 import { SceneStore } from "./SceneStore";
 
@@ -26,6 +28,7 @@ import { SceneStore } from "./SceneStore";
  */
 export class Document {
   scene = new SceneStore();
+  materials = new MaterialStore();
   readonly events = new EventBus<DocEventMap>();
   readonly history = new History(this, () => {
     this.bump("history");
@@ -154,20 +157,45 @@ export class Document {
     this.events.emit("scene:node-changed", { id: node.id });
   }
 
+  // ---- material mutations ----------------------------------------------
+
+  /** Add (or replace) a library material. Commands call this; UI goes via history. */
+  addMaterial(mat: MaterialDTO): void {
+    this.materials.set(mat);
+    this.bump("materials");
+    this.events.emit("material:added", { id: mat.id });
+  }
+
+  /** Replace a material's data in place; `preview` marks scrub updates. */
+  updateMaterial(mat: MaterialDTO, preview = false): void {
+    this.materials.set(mat);
+    this.bump("materials");
+    this.events.emit("material:changed", { id: mat.id, preview });
+  }
+
+  removeMaterial(id: Uuid): void {
+    this.materials.delete(id);
+    this.bump("materials");
+    this.events.emit("material:removed", { id });
+  }
+
   // ---- serialization ---------------------------------------------------
 
   toDTO(): ThrideDocumentDTO {
     return {
       formatVersion: FORMAT_VERSION,
       nodes: this.scene.toDTO(),
+      materials: this.materials.toDTO(),
     };
   }
 
   /** Replace all content from a DTO (open file). Clears undo history, emits document:reset. */
   loadDTO(dto: ThrideDocumentDTO): void {
     this.scene = SceneStore.fromDTO(dto.nodes);
+    this.materials = MaterialStore.fromDTO(dto.materials);
     this.history.clear();
     this.bump("scene");
+    this.bump("materials");
     this.bump("selection");
     this.events.emit("document:reset", {});
   }

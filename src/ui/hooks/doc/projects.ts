@@ -97,14 +97,18 @@ function startAutosave(p: ProjectHandle): void {
       write();
     }, AUTOSAVE_DEBOUNCE_MS);
   };
-  // scene edits AND viewport-setting changes both drive the same debounced write
-  const unsub = p.doc.subscribeSlice("scene", schedule);
+  // scene edits, material-library edits, AND viewport-setting changes all drive
+  // the same debounced write (a pure material edit bumps only the material slice)
+  const unsubs = [
+    p.doc.subscribeSlice("scene", schedule),
+    p.doc.subscribeSlice("materials", schedule),
+  ];
   autosaves.set(p.id, {
     flush: write,
     schedule,
     stop: () => {
       if (timer !== null) clearTimeout(timer);
-      unsub();
+      for (const u of unsubs) u();
       autosaves.delete(p.id);
     },
   });

@@ -31,6 +31,7 @@ import { buildCameraHelper } from "@/render/helpers/CameraHelper";
 import { viewportTheme } from "@/render/theme/viewportTheme";
 import { evaluateGenerator } from "@/generators/graph";
 import { LightSync } from "./LightSync";
+import { MaterialSync } from "./MaterialSync";
 import { SelectionOutline } from "./SelectionOutline";
 import { buildSplineObject, syncSplineGeometry } from "./SplineSync";
 
@@ -86,6 +87,8 @@ export class SceneSynchronizer {
   /** Per mesh node: kernel-edge wireframe (Display > Lines + wireframe shading). */
   private edgeWires = new Map<Uuid, LineSegments>();
   private readonly lights = new LightSync(this.root);
+  /** Library-material cache; resolves per-mesh materials in the PBR shading path. */
+  private materials!: MaterialSync;
   /** Last-seen shadow-caster count — drives material recompiles (see below). */
   private shadowCasterCount = -1;
   private readonly lookMatrix = new Matrix4();
@@ -98,6 +101,7 @@ export class SceneSynchronizer {
   constructor(doc: Document, onDirty: () => void) {
     this.doc = doc;
     this.onDirty = onDirty;
+    this.materials = new MaterialSync(doc, BASE_MAT);
     this.root.name = "thride-document";
     this.unsubs.push(
       doc.events.on("scene:node-added", ({ id }) => {
@@ -126,7 +130,17 @@ export class SceneSynchronizer {
         this.onDirty();
       }),
       doc.events.on("document:reset", () => {
+        this.materials.clear();
         this.rebuildAll();
+        this.onDirty();
+      }),
+      doc.events.on("material:added", () => this.onDirty()),
+      doc.events.on("material:changed", ({ id }) => {
+        this.materials.onChanged(id);
+        this.onDirty();
+      }),
+      doc.events.on("material:removed", ({ id }) => {
+        this.materials.onRemoved(id);
         this.onDirty();
       }),
     );
@@ -405,13 +419,22 @@ export class SceneSynchronizer {
     lines: boolean,
     hiddenLines: boolean,
   ): void {
-    // wireframe mode: hidden surface (still raycastable for picking) + edges
-    const mat = mode === "flat" ? FLAT_MAT : mode === "wireframe" ? HIDDEN_MAT : BASE_MAT;
-    mat.side = backfaces ? DoubleSide : FrontSide;
-    for (const obj of this.objects.values()) {
+    const side = backfaces ? DoubleSide : FrontSide;
+    // flat/wireframe force one global override material; PBR resolves each mesh's
+    // assigned library material (or the default). wireframe = hidden surface
+    // (still raycastable for picking) + edges.
+    const override = mode === "flat" ? FLAT_MAT : mode === "wireframe" ? HIDDEN_MAT : null;
+    if (override) override.side = side;
+    for (const [id, obj] of this.objects) {
       // Line2 splines extend Mesh — never clobber their wide-line material
-      if (obj instanceof Mesh && !obj.userData.outline && !obj.userData.spline) {
-        obj.material = mat;
+      if (!(obj instanceof Mesh) || obj.userData.outline || obj.userData.spline) continue;
+      if (override) {
+        obj.material = override;
+      } else {
+        const matId = this.doc.scene.get(id)?.data?.material as Uuid | undefined;
+        const m = this.materials.resolve(matId);
+        m.side = side; // shared material: per-pane side is last-pane-wins (pre-existing)
+        obj.material = m;
       }
     }
     const wireMode = mode === "wireframe";

@@ -31,4 +31,10 @@ export type DocEventMap = {
   "history:changed": { canUndo: boolean; canRedo: boolean };
   /** Object or component selection, or edit mode, changed. */
   "selection:changed": Record<string, never>;
+  /** A material was added to the library. */
+  "material:added": { id: Uuid };
+  /** A material's params/name changed; `preview` marks scrub updates. */
+  "material:changed": { id: Uuid; preview?: boolean };
+  /** A material was removed from the library. */
+  "material:removed": { id: Uuid };
 };

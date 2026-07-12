@@ -64,8 +64,8 @@ export function defaultLightData(type: LightType): LightDataDTO {
         color: "#ffffff",
         intensity: 30,
         castShadow: true,
-        shadowResolution: "normal",
-        shadowBlur: 4,
+        shadowResolution: "high",
+        shadowBlur: 6,
         shadowSize: 60,
       };
     case "directional":
@@ -74,9 +74,9 @@ export function defaultLightData(type: LightType): LightDataDTO {
         color: "#ffffff",
         intensity: 2.5,
         castShadow: true,
-        shadowResolution: "normal",
-        shadowBlur: 4,
-        shadowSize: 20,
+        shadowResolution: "high",
+        shadowBlur: 11,
+        shadowSize: 5,
       };
     case "ambient":
       return { type, color: "#ffffff", intensity: 0.4 };
