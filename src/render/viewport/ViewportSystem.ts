@@ -418,6 +418,14 @@ export class ViewportSystem {
     renderer.setRenderTarget(output.hdr);
     renderer.setScissorTest(true);
     renderer.toneMapping = NoToneMapping;
+    // Every pane renders into the SAME hdr target. In WebGPU a render pass's
+    // clear (loadOp) wipes the WHOLE attachment — scissor never limits it — so
+    // clearing per pane erases the panes already drawn, leaving only the last
+    // (the 4-up "only one view renders" bug). Clear the whole target ONCE on the
+    // first pane; the rest preserve. A background COLOR forces a clear even when
+    // autoClear is false (three's forceClear), so ONLY the first pane gets one —
+    // later panes use a null background so their loadOp is Load and they keep the
+    // already-drawn panes. (A per-pane active tint can't survive this.)
     for (let r = 0; r < this.panes.length; r++) {
       const p = this.panes[r]!;
       const i = logical[r]!;
@@ -433,12 +441,18 @@ export class ViewportSystem {
       // the HDR target lives in DEVICE pixels (no implicit pixelRatio scale
       // like the canvas). WebGPU origin is top-left; WebGL bottom-left.
       const yGL = this.backendName === "WebGPU" ? p.y * pr : output.hdr.height - (p.y + p.h) * pr;
-      renderer.setViewport(p.x * pr, yGL, p.w * pr, p.h * pr);
-      renderer.setScissor(p.x * pr, yGL, p.w * pr, p.h * pr);
-      const activePane = i === this.editor.activePane && this.editor.layout === "quad";
-      this.scene.background = activePane
-        ? viewportTheme.activeBackgroundColor
-        : viewportTheme.backgroundColor;
+      // three reads the viewport/scissor from the RENDER TARGET (not from
+      // renderer.setViewport/setScissor) when drawing into one — with the
+      // target's own pixelRatio of 1. So per-pane sub-rects MUST live on
+      // output.hdr, or every pane fills the whole target and only the last
+      // survives (the 4-up "only one view renders" bug). scissorTest stays on
+      // the renderer (that flag IS read from it).
+      output.hdr.viewport.set(p.x * pr, yGL, p.w * pr, p.h * pr);
+      output.hdr.scissor.set(p.x * pr, yGL, p.w * pr, p.h * pr);
+      // first pane clears the whole hdr (color+depth); later panes preserve it —
+      // null background so a Color doesn't force-clear their region
+      this.scene.background = r === 0 ? viewportTheme.backgroundColor : null;
+      renderer.autoClear = r === 0;
       const activeObj = this.activeObject();
       // the extrude/inset modal and the live bevel drive their own drag — hide
       // the gizmo so it doesn't fight them
@@ -452,6 +466,7 @@ export class ViewportSystem {
       axesPerSlot.push(projectAxes(rig));
       await renderer.renderAsync(this.scene, rig.camera);
     }
+    renderer.autoClear = true; // restore for the composite pass / next frame
     // pass 2: tone-map + dither the HDR buffer onto the canvas. One tone
     // mapping for the whole canvas — the active pane's (quad panes with mixed
     // tone-mapping is a rare case; single-pane, the common one, is exact).
