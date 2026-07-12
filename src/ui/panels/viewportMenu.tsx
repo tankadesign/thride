@@ -4,7 +4,6 @@ import type { MenuEntry } from "@/ui/hooks/editor/shell";
 import { appStore } from "@/ui/hooks/doc/document";
 import { splineThicknessAtom } from "@/ui/hooks/editor/settings";
 import { editorState } from "@/ui/hooks/editor/viewport";
-import { applySplineThickness } from "@/render/scene-sync/SplineSync";
 import { IconCamera, IconShading, IconToggleOff, IconToggleOn } from "@/icons";
 import type { ViewportSystem } from "@/render/viewport/ViewportSystem";
 
@@ -170,8 +169,7 @@ export function buildViewportMenu(doc: Document, vs: ViewportSystem, pane: numbe
               active: appStore.get(splineThicknessAtom) === px,
               run: () => {
                 appStore.set(splineThicknessAtom, px);
-                applySplineThickness(px);
-                vs.invalidate();
+                vs.setSplineThickness(px);
               },
             }),
           ),

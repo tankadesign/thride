@@ -23,7 +23,7 @@ import { applyLightHelperTheme } from "@/render/helpers/LightHelpers";
 import { CameraRig } from "@/render/nav/CameraRig";
 import { ComponentOverlays } from "@/render/overlays/ComponentOverlays";
 import { applyMeshMaterialsTheme, SceneSynchronizer } from "@/render/scene-sync/SceneSynchronizer";
-import { applySplineTheme } from "@/render/scene-sync/SplineSync";
+import { applySplineTheme, applySplineThickness } from "@/render/scene-sync/SplineSync";
 import { projectAxes, sceneBox, selectionBox } from "./viewportFraming";
 import { refreshViewportTheme, viewportTheme } from "@/render/theme/viewportTheme";
 import { SplineOverlays } from "@/render/overlays/SplineOverlays";
@@ -195,7 +195,7 @@ export class ViewportSystem {
   applyTheme(): void {
     refreshViewportTheme();
     applyMeshMaterialsTheme();
-    applySplineTheme();
+    applySplineTheme(this.scene);
     applyLightHelperTheme();
     applyCameraHelperTheme();
     this.gizmo.applyTheme();
@@ -208,6 +208,12 @@ export class ViewportSystem {
     this.grid.dispose();
     this.grid = this.buildGrid();
     this.scene.add(this.grid);
+    this.invalidate();
+  }
+
+  /** Spline Thickness setting (screen px) — updates every spline's own material. */
+  setSplineThickness(px: number): void {
+    applySplineThickness(px, this.scene);
     this.invalidate();
   }
 

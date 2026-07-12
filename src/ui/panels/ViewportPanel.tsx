@@ -11,7 +11,6 @@ import {
   targetRotationBakerAtom,
   useViewportState,
 } from "@/ui/hooks/editor/viewport";
-import { applySplineThickness } from "@/render/scene-sync/SplineSync";
 import { BevelSettings } from "./BevelSettings";
 import { SplinePointPanel } from "./SplinePointPanel";
 import {
@@ -94,8 +93,7 @@ export function ViewportPanel({ onSystem }: Props) {
 
   // spline display thickness: applied on boot and whenever the setting changes
   useEffect(() => {
-    applySplineThickness(splineThickness);
-    system?.invalidate();
+    system?.setSplineThickness(splineThickness);
   }, [splineThickness, system]);
 
   useEffect(() => {
