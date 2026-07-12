@@ -12,46 +12,43 @@ import { viewportTheme } from "@/render/theme/viewportTheme";
 // splines are control objects and draw on top of shading (C4D-style) —
 // vital for projected splines lying exactly ON a surface.
 //
-// A Line2NodeMaterial CANNOT be shared across multiple Line2 objects on WebGPU:
-// only the LAST-rendered line reflects the material's linewidth/color, the rest
-// render stale. So this is only a TEMPLATE — every spline gets its own clone,
-// and the thickness/theme setters walk the scene to update each live material.
-const SPLINE_MAT_TEMPLATE = new Line2NodeMaterial({
+// ALL splines share this ONE material. three's per-material `materialReference`
+// uniforms (linewidth / color) do NOT propagate an IN-PLACE change to more than
+// the last-rendered line — so a thickness/theme edit swaps in a fresh CLONE and
+// reassigns it to every spline, which forces each Line2 to re-bind and pick up
+// the new value. The clone is a pipeline-cache hit (a re-bind, not a shader
+// recompile), so this is cheap even though it touches every spline.
+let splineMat = new Line2NodeMaterial({
   color: viewportTheme.accent,
   linewidth: 1.5,
   worldUnits: false,
   depthTest: false,
 });
-let currentThickness = 1.5;
 
-function makeSplineMaterial(): Line2NodeMaterial {
-  const m = SPLINE_MAT_TEMPLATE.clone();
-  m.linewidth = currentThickness;
-  return m;
+/** Swap in a freshly-mutated clone of the shared material, reassigned to every spline. */
+function rebindSplineMaterial(root: Object3D, mutate: (m: Line2NodeMaterial) => void): void {
+  const fresh = splineMat.clone();
+  mutate(fresh);
+  root.traverse((o) => {
+    if (o.userData.spline) (o as Line2).material = fresh;
+  });
+  // NOTE: don't dispose the old material — the clone is a pipeline-cache hit
+  // that shares its compiled pipeline, and disposing tears that down for lines
+  // not yet re-bound this frame (one renders stale). The orphaned material is a
+  // negligible one-off per discrete thickness/theme change.
+  splineMat = fresh;
 }
 
-const splineMaterialOf = (o: Object3D): Line2NodeMaterial =>
-  (o as Line2).material as Line2NodeMaterial;
-
-/** Re-apply theme colors to the template + every live spline material. */
+/** Re-apply theme colors to every spline (via a re-bind — see rebindSplineMaterial). */
 export function applySplineTheme(root: Object3D): void {
-  SPLINE_MAT_TEMPLATE.color.copy(viewportTheme.accent);
-  root.traverse((o) => {
-    if (o.userData.spline) splineMaterialOf(o).color.copy(viewportTheme.accent);
-  });
+  rebindSplineMaterial(root, (m) => m.color.copy(viewportTheme.accent));
 }
 
-/** Spline Thickness setting (screen px) — walk the scene, update every spline. */
+/** Spline Thickness setting (screen px) — re-bind every spline to the new width. */
 export function applySplineThickness(px: number, root: Object3D): void {
-  currentThickness = Math.max(0.5, px);
-  root.traverse((o) => {
-    if (o.userData.spline) splineMaterialOf(o).linewidth = currentThickness;
+  rebindSplineMaterial(root, (m) => {
+    m.linewidth = Math.max(0.5, px);
   });
-}
-
-/** Dispose a removed spline's own material (each spline owns a clone). */
-export function disposeSplineObject(o: Object3D): void {
-  if (o.userData.spline) splineMaterialOf(o).dispose();
 }
 
 /**
@@ -62,7 +59,7 @@ export function disposeSplineObject(o: Object3D): void {
  * with `userData.spline`.
  */
 export function buildSplineObject(node: SceneNode): Line2 {
-  const line = new Line2(new LineGeometry(), makeSplineMaterial());
+  const line = new Line2(new LineGeometry(), splineMat);
   line.frustumCulled = false; // WebGPU mis-culls line objects (see helpers)
   line.renderOrder = 3; // above surfaces + edge wires (control object)
   line.userData.spline = true;

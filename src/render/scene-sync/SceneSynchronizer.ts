@@ -32,7 +32,7 @@ import { viewportTheme } from "@/render/theme/viewportTheme";
 import { evaluateGenerator } from "@/generators/graph";
 import { LightSync } from "./LightSync";
 import { SelectionOutline } from "./SelectionOutline";
-import { buildSplineObject, disposeSplineObject, syncSplineGeometry } from "./SplineSync";
+import { buildSplineObject, syncSplineGeometry } from "./SplineSync";
 
 // three-mesh-bvh accelerated raycast, wired once for the whole app
 Mesh.prototype.raycast = acceleratedRaycast;
@@ -282,7 +282,6 @@ export class SceneSynchronizer {
         this.edgeWires.delete(nid);
         this.lights.onNodeRemoved(nid, o);
       }
-      disposeSplineObject(o); // each spline owns a private Line2 material
     });
   }
 
