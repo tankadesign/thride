@@ -12,6 +12,7 @@ import { CommandRegistry } from "@/ui/commands/CommandRegistry";
 import { setRegistry, usePalette } from "@/ui/hooks/editor/shell";
 import { AttributesPanel } from "@/ui/panels/AttributesPanel";
 import { GalleryPanel } from "@/ui/panels/GalleryPanel";
+import { MaterialManagerPanel } from "@/ui/panels/MaterialManagerPanel";
 import { ObjectManagerPanel } from "@/ui/panels/ObjectManagerPanel";
 import { ViewportPanel } from "@/ui/panels/ViewportPanel";
 import type { ViewportSystem } from "@/render/viewport/ViewportSystem";
@@ -41,6 +42,18 @@ export function Shell({ doc }: { doc: Document }) {
             component: "gallery",
             title: "UI Gallery",
             position: { direction: "right" },
+          });
+      },
+      openMaterials: () => {
+        const api = apiRef.current;
+        if (!api) return;
+        if (api.getPanel("materials")) api.getPanel("materials")!.focus();
+        else
+          api.addPanel({
+            id: "materials",
+            component: "materials",
+            title: "Materials",
+            position: { referencePanel: "attributes", direction: "within" },
           });
       },
       resetLayout: () => {
@@ -87,6 +100,7 @@ export function Shell({ doc }: { doc: Document }) {
       objects: (_p: IDockviewPanelProps) => <ObjectManagerPanel />,
       // panel api lets the inspector retitle its tab per edit mode
       attributes: (p: IDockviewPanelProps) => <AttributesPanel panelApi={p.api} />,
+      materials: (_p: IDockviewPanelProps) => <MaterialManagerPanel />,
       gallery: (_p: IDockviewPanelProps) => <GalleryPanel />,
     }),
     [],
@@ -149,6 +163,12 @@ function buildDefaultLayout(api: DockviewApi) {
     component: "attributes",
     title: "Attributes",
     position: { referencePanel: "objects", direction: "below" },
+  });
+  api.addPanel({
+    id: "materials",
+    component: "materials",
+    title: "Materials",
+    position: { referencePanel: "attributes", direction: "within" },
   });
   requestAnimationFrame(() => objects.api.setSize({ width: 340 }));
 }

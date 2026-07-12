@@ -95,6 +95,7 @@ const LIGHT_TYPES: LightType[] = ["spot", "point", "directional", "ambient", "he
 export interface ShellApi {
   getViewport: () => ViewportSystem | null;
   openGallery: () => void;
+  openMaterials: () => void;
   resetLayout: () => void;
 }
 
@@ -619,6 +620,12 @@ export function buildCommands(doc: Document, shell: ShellApi): AppCommand[] {
       sep: true,
       shortcut: "mod+k",
       run: () => openPalette(),
+    },
+    {
+      id: "view.materials",
+      title: "Material Manager",
+      menu: "View",
+      run: () => shell.openMaterials(),
     },
     {
       id: "view.gallery",

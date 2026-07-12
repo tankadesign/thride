@@ -21,7 +21,7 @@
 ## Decisions made (and why)
 
 - **Standard/Physical node materials DO propagate in-place param edits to all meshes** (verified with a two-mesh emissive spike) — unlike `Line2NodeMaterial` (see [[webgpu-render-gotchas]] #8). So one shared material + in-place edits is the cache design; no reassign-clone dance needed.
-- **Default (unassigned) mesh look stays the existing themed `BASE_MAT`** (MeshStandard); the "physical default" is for NEW library materials. Revisit if the user wants the default *look* physical too.
+- **Default (unassigned) mesh look stays the existing themed `BASE_MAT`** (MeshStandard); the "physical default" is for NEW library materials. Revisit if the user wants the default _look_ physical too.
 - **No eager material disposal** on type-change/delete (rare, discrete; disposing a material still bound to a mesh until the next `applyShading` risks a stale-GPU glitch). Deferred disposal later.
 - Thumbnails are a separate chunk (offscreen WebGPU sphere render — its own gotchas), not part of E1a. (Advisor-endorsed.)
 
