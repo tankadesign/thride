@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { useAtom } from "jotai";
 import type { Document } from "@/core";
 import {
@@ -7,21 +7,15 @@ import {
   UpdateMaterialCommand,
   uuidv7,
 } from "@/core";
-import type { MaterialDTO, MaterialType, Uuid } from "@/types/core";
-import {
-  defaultMaterialData,
-  HAS_COLOR,
-  HAS_EMISSIVE,
-  HAS_PBR,
-  MATERIAL_TYPES,
-} from "@/types/core";
+import type { MaterialDTO, Uuid } from "@/types/core";
+import { defaultMaterialData, MATERIAL_TYPES } from "@/types/core";
 import { useDocument, useSliceVersion } from "@/ui/hooks/doc/document";
 import {
   MATERIAL_DND_MIME,
   selectedMaterialAtom,
   useMaterialThumbnail,
 } from "@/ui/hooks/editor/materials";
-import { NumberDrag } from "@/ui/widgets/NumberDrag";
+import { MaterialEditor } from "./MaterialEditor";
 
 function uniqueMaterialName(doc: Document): string {
   const names = new Set(doc.materials.all().map((m) => m.name));
@@ -103,93 +97,6 @@ export function MaterialManagerPanel() {
         ) : null}
       </div>
       {selected && doc.materials.has(selected) ? <MaterialEditor id={selected} /> : null}
-    </div>
-  );
-}
-
-/** Live param editor for the selected material (drag = preview, release = undo step). */
-function MaterialEditor({ id }: { id: Uuid }) {
-  const doc = useDocument();
-  useSliceVersion("materials");
-  const scrub = useRef<{ before: MaterialDTO } | null>(null);
-  const mat = doc.materials.get(id);
-  if (!mat) return null;
-
-  const setMat = (patch: Partial<MaterialDTO>, committed: boolean) => {
-    const cur = doc.materials.get(id);
-    if (!cur) return;
-    scrub.current ??= { before: structuredClone(cur) };
-    const after = { ...cur, ...patch };
-    doc.updateMaterial(after, !committed); // preview during scrub
-    if (committed) {
-      const before = scrub.current.before;
-      scrub.current = null;
-      doc.history.pushWithoutExecute(new UpdateMaterialCommand(before, after, "Edit Material"));
-    }
-  };
-
-  const slider = (
-    label: string,
-    key: "roughness" | "metalness" | "emissiveIntensity" | "opacity",
-    step: number,
-    max: number,
-  ) => (
-    <div className="grid grid-cols-[68px_1fr] items-center gap-1" key={key}>
-      <span className="opacity-60">{label}</span>
-      <NumberDrag
-        value={mat[key]}
-        step={step}
-        min={0}
-        max={max}
-        onChange={(v, committed) => setMat({ [key]: v }, committed)}
-      />
-    </div>
-  );
-
-  const color = (label: string, key: "color" | "emissive") => (
-    <div className="grid grid-cols-[68px_1fr] items-center gap-1">
-      <span className="opacity-60">{label}</span>
-      <input
-        type="color"
-        className="h-6 w-12 cursor-pointer rounded border border-base-300 bg-base-100"
-        value={mat[key]}
-        onChange={(e) => setMat({ [key]: e.target.value }, true)}
-      />
-    </div>
-  );
-
-  return (
-    <div className="flex flex-col gap-1.5 border-t border-base-200 bg-base-200/40 p-2 text-xs">
-      <div className="truncate font-semibold opacity-80">{mat.name}</div>
-      <div className="grid grid-cols-[68px_1fr] items-center gap-1">
-        <span className="opacity-60">Type</span>
-        <select
-          className="select select-xs"
-          value={mat.type}
-          onChange={(e) => setMat({ type: e.target.value as MaterialType }, true)}
-        >
-          {MATERIAL_TYPES.map((t) => (
-            <option key={t.type} value={t.type}>
-              {t.label}
-            </option>
-          ))}
-        </select>
-      </div>
-      {HAS_COLOR.has(mat.type) ? color("Color", "color") : null}
-      {HAS_PBR.has(mat.type) ? slider("Roughness", "roughness", 0.01, 1) : null}
-      {HAS_PBR.has(mat.type) ? slider("Metalness", "metalness", 0.01, 1) : null}
-      {HAS_EMISSIVE.has(mat.type) ? color("Emissive", "emissive") : null}
-      {HAS_EMISSIVE.has(mat.type) ? slider("Emis. Str", "emissiveIntensity", 0.05, 10) : null}
-      {slider("Opacity", "opacity", 0.01, 1)}
-      <div className="grid grid-cols-[68px_1fr] items-center gap-1">
-        <span className="opacity-60">Transparent</span>
-        <input
-          type="checkbox"
-          className="toggle toggle-xs"
-          checked={mat.transparent}
-          onChange={(e) => setMat({ transparent: e.target.checked }, true)}
-        />
-      </div>
     </div>
   );
 }

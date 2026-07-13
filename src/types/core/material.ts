@@ -37,6 +37,8 @@ export const HAS_COLOR = new Set<MaterialType>([
   "toon",
 ]);
 export const HAS_EMISSIVE = new Set<MaterialType>(["physical", "standard", "lambert", "phong"]);
+/** Clearcoat / transmission / sheen / iridescence / specular are MeshPhysical-only. */
+export const HAS_PHYSICAL = new Set<MaterialType>(["physical"]);
 
 /**
  * A named material in the project library, assignable to any mesh by id
@@ -59,7 +61,42 @@ export interface MaterialDTO {
   /** 0..1; `transparent` must be on for opacity < 1 to show. */
   opacity: number;
   transparent: boolean;
+
+  // ---- MeshPhysicalMaterial extras (optional; absent → the default below) ----
+  /** Clearcoat lacquer layer. */
+  clearcoat?: number;
+  clearcoatRoughness?: number;
+  /** Glass-like light transmission (needs opacity/transparent handling). */
+  transmission?: number;
+  ior?: number;
+  thickness?: number;
+  /** Cloth-like retroreflective sheen. */
+  sheen?: number;
+  sheenRoughness?: number;
+  sheenColor?: string;
+  /** Thin-film iridescence (soap bubble / oil). */
+  iridescence?: number;
+  iridescenceIOR?: number;
+  /** Specular reflection tint/strength (dielectric). */
+  specularIntensity?: number;
+  specularColor?: string;
 }
+
+/** Defaults for the optional physical fields — shared by the editor + builder. */
+export const PHYSICAL_DEFAULTS = {
+  clearcoat: 0,
+  clearcoatRoughness: 0,
+  transmission: 0,
+  ior: 1.5,
+  thickness: 0,
+  sheen: 0,
+  sheenRoughness: 1,
+  sheenColor: "#ffffff",
+  iridescence: 0,
+  iridescenceIOR: 1.3,
+  specularIntensity: 1,
+  specularColor: "#ffffff",
+} as const;
 
 /** Default params for a new material of `type` (physical = full PBR default). */
 export function defaultMaterialData(

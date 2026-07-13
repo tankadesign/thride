@@ -11,6 +11,7 @@ import {
   type NodeMaterial,
 } from "three/webgpu";
 import type { MaterialDTO, MaterialType } from "@/types/core";
+import { PHYSICAL_DEFAULTS as PD } from "@/types/core";
 
 /**
  * MaterialDTO → three WebGPU node material. This is the only place that names
@@ -50,6 +51,19 @@ interface MatProps {
   emissiveIntensity?: number;
   opacity: number;
   transparent: boolean;
+  // MeshPhysical extras
+  clearcoat?: number;
+  clearcoatRoughness?: number;
+  transmission?: number;
+  ior?: number;
+  thickness?: number;
+  sheen?: number;
+  sheenRoughness?: number;
+  sheenColor?: Color;
+  iridescence?: number;
+  iridescenceIOR?: number;
+  specularIntensity?: number;
+  specularColor?: Color;
 }
 
 /** Apply DTO params to an existing material IN PLACE (only fields the type has). */
@@ -60,6 +74,29 @@ export function applyMaterialParams(mat: NodeMaterial, dto: MaterialDTO): void {
   if ("metalness" in mat) m.metalness = dto.metalness;
   if (m.emissive) m.emissive.set(dto.emissive);
   if ("emissiveIntensity" in mat) m.emissiveIntensity = dto.emissiveIntensity;
+  // MeshPhysical extras — absent DTO fields fall back to three's defaults
+  if ("clearcoat" in mat) {
+    m.clearcoat = dto.clearcoat ?? PD.clearcoat;
+    m.clearcoatRoughness = dto.clearcoatRoughness ?? PD.clearcoatRoughness;
+  }
+  if ("transmission" in mat) {
+    m.transmission = dto.transmission ?? PD.transmission;
+    m.ior = dto.ior ?? PD.ior;
+    m.thickness = dto.thickness ?? PD.thickness;
+  }
+  if ("sheen" in mat) {
+    m.sheen = dto.sheen ?? PD.sheen;
+    m.sheenRoughness = dto.sheenRoughness ?? PD.sheenRoughness;
+    if (m.sheenColor) m.sheenColor.set(dto.sheenColor ?? PD.sheenColor);
+  }
+  if ("iridescence" in mat) {
+    m.iridescence = dto.iridescence ?? PD.iridescence;
+    m.iridescenceIOR = dto.iridescenceIOR ?? PD.iridescenceIOR;
+  }
+  if ("specularIntensity" in mat) {
+    m.specularIntensity = dto.specularIntensity ?? PD.specularIntensity;
+    if (m.specularColor) m.specularColor.set(dto.specularColor ?? PD.specularColor);
+  }
   m.opacity = dto.opacity;
   // opacity < 1 needs transparency to show; `transparent`/`depthWrite` are
   // pipeline blend-state (NOT uniforms), so an in-place change only takes
