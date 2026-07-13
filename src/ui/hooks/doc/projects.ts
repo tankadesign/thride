@@ -102,6 +102,7 @@ function startAutosave(p: ProjectHandle): void {
   const unsubs = [
     p.doc.subscribeSlice("scene", schedule),
     p.doc.subscribeSlice("materials", schedule),
+    p.doc.subscribeSlice("settings", schedule), // environment / dome light edits
   ];
   autosaves.set(p.id, {
     flush: write,

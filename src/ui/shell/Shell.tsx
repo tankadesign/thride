@@ -14,6 +14,7 @@ import { useSelectObjectMaterial } from "@/ui/hooks/editor/materials";
 import { AttributesPanel } from "@/ui/panels/AttributesPanel";
 import { GalleryPanel } from "@/ui/panels/GalleryPanel";
 import { MaterialManagerPanel } from "@/ui/panels/MaterialManagerPanel";
+import { EnvironmentPanel } from "@/ui/panels/EnvironmentPanel";
 import { ObjectManagerPanel } from "@/ui/panels/ObjectManagerPanel";
 import { ViewportPanel } from "@/ui/panels/ViewportPanel";
 import type { ViewportSystem } from "@/render/viewport/ViewportSystem";
@@ -55,6 +56,18 @@ export function Shell({ doc }: { doc: Document }) {
             id: "materials",
             component: "materials",
             title: "Materials",
+            position: { referencePanel: "attributes", direction: "within" },
+          });
+      },
+      openEnvironment: () => {
+        const api = apiRef.current;
+        if (!api) return;
+        if (api.getPanel("environment")) api.getPanel("environment")!.focus();
+        else
+          api.addPanel({
+            id: "environment",
+            component: "environment",
+            title: "Environment",
             position: { referencePanel: "attributes", direction: "within" },
           });
       },
@@ -103,6 +116,7 @@ export function Shell({ doc }: { doc: Document }) {
       // panel api lets the inspector retitle its tab per edit mode
       attributes: (p: IDockviewPanelProps) => <AttributesPanel panelApi={p.api} />,
       materials: (_p: IDockviewPanelProps) => <MaterialManagerPanel />,
+      environment: (_p: IDockviewPanelProps) => <EnvironmentPanel />,
       gallery: (_p: IDockviewPanelProps) => <GalleryPanel />,
     }),
     [],

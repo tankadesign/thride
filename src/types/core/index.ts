@@ -5,6 +5,8 @@ export { identityTransform } from "./scene";
 export type { ThrideDocumentDTO } from "./document";
 export { FORMAT_VERSION } from "./document";
 export type { MaterialDTO, MaterialType, TextureChannel, TextureAssetDTO } from "./material";
+export type { EnvironmentDTO } from "./environment";
+export { defaultEnvironment, environmentAssets } from "./environment";
 export {
   MATERIAL_TYPES,
   HAS_PBR,

@@ -37,4 +37,6 @@ export type DocEventMap = {
   "material:changed": { id: Uuid; preview?: boolean };
   /** A material was removed from the library. */
   "material:removed": { id: Uuid };
+  /** The scene environment / dome light changed; `preview` marks scrub updates. */
+  "environment:changed": { preview?: boolean };
 };

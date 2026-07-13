@@ -1,3 +1,4 @@
+import type { EnvironmentDTO } from "./environment";
 import type { MaterialDTO } from "./material";
 import type { SceneNodeDTO } from "./scene";
 
@@ -18,4 +19,6 @@ export interface ThrideDocumentDTO {
   /** Material library; nodes reference entries by id via `data.material`.
    *  Optional + additive — pre-material files load with an empty library. */
   materials?: MaterialDTO[];
+  /** Scene environment / dome light. Optional — absent loads the studio default. */
+  environment?: EnvironmentDTO;
 }

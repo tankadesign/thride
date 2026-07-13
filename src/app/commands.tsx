@@ -96,6 +96,7 @@ export interface ShellApi {
   getViewport: () => ViewportSystem | null;
   openGallery: () => void;
   openMaterials: () => void;
+  openEnvironment: () => void;
   resetLayout: () => void;
 }
 
@@ -626,6 +627,12 @@ export function buildCommands(doc: Document, shell: ShellApi): AppCommand[] {
       title: "Material Manager",
       menu: "View",
       run: () => shell.openMaterials(),
+    },
+    {
+      id: "view.environment",
+      title: "Environment",
+      menu: "View",
+      run: () => shell.openEnvironment(),
     },
     {
       id: "view.gallery",

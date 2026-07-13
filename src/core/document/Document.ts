@@ -1,5 +1,6 @@
 import type {
   DocEventMap,
+  EnvironmentDTO,
   MaterialDTO,
   NodeKind,
   SceneNodeDTO,
@@ -8,7 +9,7 @@ import type {
   TransformDTO,
   Uuid,
 } from "@/types/core";
-import { FORMAT_VERSION } from "@/types/core";
+import { defaultEnvironment, FORMAT_VERSION } from "@/types/core";
 import { EventBus } from "@/core/events/EventBus";
 import { History } from "@/core/history/History";
 import { Selection } from "@/core/selection/Selection";
@@ -29,6 +30,7 @@ import { SceneStore } from "./SceneStore";
 export class Document {
   scene = new SceneStore();
   materials = new MaterialStore();
+  environment: EnvironmentDTO = defaultEnvironment();
   readonly events = new EventBus<DocEventMap>();
   readonly history = new History(this, () => {
     this.bump("history");
@@ -179,6 +181,15 @@ export class Document {
     this.events.emit("material:removed", { id });
   }
 
+  // ---- environment -----------------------------------------------------
+
+  /** Patch the scene environment; `preview` marks scrub updates. */
+  setEnvironment(patch: Partial<EnvironmentDTO>, preview = false): void {
+    this.environment = { ...this.environment, ...patch };
+    this.bump("settings");
+    this.events.emit("environment:changed", { preview });
+  }
+
   // ---- serialization ---------------------------------------------------
 
   toDTO(): ThrideDocumentDTO {
@@ -186,6 +197,7 @@ export class Document {
       formatVersion: FORMAT_VERSION,
       nodes: this.scene.toDTO(),
       materials: this.materials.toDTO(),
+      environment: { ...this.environment },
     };
   }
 
@@ -193,10 +205,12 @@ export class Document {
   loadDTO(dto: ThrideDocumentDTO): void {
     this.scene = SceneStore.fromDTO(dto.nodes);
     this.materials = MaterialStore.fromDTO(dto.materials);
+    this.environment = { ...defaultEnvironment(), ...dto.environment };
     this.history.clear();
     this.bump("scene");
     this.bump("materials");
     this.bump("selection");
+    this.bump("settings");
     this.events.emit("document:reset", {});
   }
 }

@@ -13,7 +13,7 @@ import {
 } from "three";
 import { WebGPURenderer } from "three/webgpu";
 import { DitherOutput, type OutputToneMapping } from "./ditherOutput";
-import { buildStudioEnvironment } from "@/render/environment/studioEnvironment";
+import { EnvironmentSync } from "@/render/environment/EnvironmentSync";
 import type { Document } from "@/core";
 import type { Uuid } from "@/types/core";
 import type { BuiltinCamera, EditorViewportState } from "@/types/editor";
@@ -102,6 +102,7 @@ export class ViewportSystem {
   private renderer: WebGPURenderer | null = null;
   private output: DitherOutput | null = null;
   private readonly scene = new Scene();
+  private readonly envSync: EnvironmentSync;
   private grid: GridHelper;
   private readonly defaultAmbient: AmbientLight;
   private readonly defaultKey: DirectionalLight;
@@ -148,11 +149,10 @@ export class ViewportSystem {
     this.defaultFill = new DirectionalLight(viewportTheme.lightFillColor, 0.6);
     this.defaultFill.position.set(-6, 3, -5);
     this.scene.add(this.defaultFill);
-    // IBL: a neutral studio environment so metals/glossy surfaces get real
-    // reflections instead of rendering black. Used for lighting only — the
-    // dark viewport background stays (scene.environment, not scene.background).
-    this.scene.environment = buildStudioEnvironment();
-    this.scene.environmentIntensity = 0.55;
+    // IBL + background from the document's environment (studio default). The
+    // sync sets scene.environment/intensity/rotation and exposes the background
+    // value the per-pane clear uses below.
+    this.envSync = new EnvironmentSync(this.scene, doc, () => this.invalidate());
 
     this.sync = new SceneSynchronizer(doc, () => this.invalidate());
     this.scene.add(this.sync.root);
@@ -317,6 +317,7 @@ export class ViewportSystem {
     this.resizeObserver.disconnect();
     this.input.dispose();
     this.sync.dispose();
+    this.envSync.dispose();
     this.output?.dispose();
     this.renderer?.dispose();
   }
@@ -473,9 +474,10 @@ export class ViewportSystem {
       // the renderer (that flag IS read from it).
       output.hdr.viewport.set(p.x * pr, yGL, p.w * pr, p.h * pr);
       output.hdr.scissor.set(p.x * pr, yGL, p.w * pr, p.h * pr);
-      // first pane clears the whole hdr (color+depth); later panes preserve it —
+      // first pane clears the whole hdr (color+depth) using the environment's
+      // background (solid color / env map / none); later panes preserve it —
       // null background so a Color doesn't force-clear their region
-      this.scene.background = r === 0 ? viewportTheme.backgroundColor : null;
+      this.scene.background = r === 0 ? this.envSync.background : null;
       renderer.autoClear = r === 0;
       const activeObj = this.activeObject();
       // the extrude/inset modal and the live bevel drive their own drag — hide
