@@ -107,6 +107,13 @@ export class SceneSynchronizer {
       doc.events.on("scene:node-added", ({ id }) => {
         this.addNode(id);
         if (this.doc.scene.get(id)?.kind === "light") this.refreshShadowMaterials();
+        // a newly added/restored child re-supplies a generator's input, so the
+        // parent generator must re-evaluate (mirrors node-removed). Undo of a
+        // deleted sweep/spline-extrude restores the subtree PARENTS-FIRST, so the
+        // generator is re-added childless (renders empty) — without this it never
+        // recomputes when its children come back.
+        const parent = this.doc.scene.get(id)?.parent ?? null;
+        if (parent && this.doc.scene.has(parent)) this.updateNode(parent);
         this.onDirty();
       }),
       doc.events.on("scene:node-removed", ({ id, parent }) => {
