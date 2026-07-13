@@ -61,7 +61,15 @@ export function applyMaterialParams(mat: NodeMaterial, dto: MaterialDTO): void {
   if (m.emissive) m.emissive.set(dto.emissive);
   if ("emissiveIntensity" in mat) m.emissiveIntensity = dto.emissiveIntensity;
   m.opacity = dto.opacity;
-  m.transparent = dto.transparent;
+  // opacity < 1 needs transparency to show; `transparent`/`depthWrite` are
+  // pipeline blend-state (NOT uniforms), so an in-place change only takes
+  // effect after needsUpdate. depthWrite off lets transparents composite through.
+  const wantTransparent = dto.transparent || dto.opacity < 1;
+  if (mat.transparent !== wantTransparent) {
+    mat.transparent = wantTransparent;
+    mat.depthWrite = !wantTransparent;
+    mat.needsUpdate = true;
+  }
 }
 
 /** Build a fresh, double-sided node material for a DTO with its params applied. */
