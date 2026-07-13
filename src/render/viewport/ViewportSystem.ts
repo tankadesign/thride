@@ -505,9 +505,11 @@ export class ViewportSystem {
     const activeDisp = this.editor.paneDisplay(this.editor.activePane);
     const mode: OutputToneMapping = activeDisp.shading === "pbr" ? activeDisp.toneMapping : "none";
     output.setToneMapping(mode);
-    // Ambient Shadows (GTAO): single-pane + PBR only — GTAO reconstructs from
-    // the active camera, so a shared pass would corrupt the other quad panes.
-    const aoOn = activeDisp.ssao && activeDisp.shading === "pbr" && this.editor.layout === "single";
+    // Ambient Shadows (GTAO): single-pane, PBR or Flat (Flat gives a GTAO-only
+    // look) — wireframe has no surfaces to occlude. GTAO reconstructs from the
+    // active camera, so a shared pass would corrupt the other quad panes.
+    const aoOn =
+      activeDisp.ssao && activeDisp.shading !== "wireframe" && this.editor.layout === "single";
     output.setAmbientShadows(
       aoOn ? this.rigFor(this.editor.activePane).camera : null,
       aoOn

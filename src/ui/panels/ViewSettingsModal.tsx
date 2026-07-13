@@ -118,7 +118,7 @@ export function ViewSettingsModal({
           <Toggle
             label="Enabled"
             checked={disp.ssao}
-            disabled={!isPbr}
+            disabled={disp.shading === "wireframe"}
             onChange={(v) => set({ ssao: v })}
           />
           <Row label="Radius">
