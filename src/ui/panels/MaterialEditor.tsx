@@ -98,7 +98,7 @@ export function MaterialEditor({ id }: { id: Uuid }) {
 
   return (
     <div className="flex max-h-[55%] flex-col overflow-auto border-t border-base-300 bg-base-200/40 text-xs">
-      <div className="truncate px-2 py-1.5 font-semibold opacity-80">{mat.name}</div>
+      <div className="truncate px-2 py-1.5 font-semibold opacity-80 flex-none">{mat.name}</div>
 
       <Section title="Base" defaultOpen>
         <Row label="Type">

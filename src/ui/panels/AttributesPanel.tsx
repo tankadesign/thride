@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import type { ComponentMode, TransformDTO, Uuid } from "@/types/core";
+import type { ComponentMode, NodeKind, TransformDTO, Uuid } from "@/types/core";
 import type { PrimitiveDescriptor } from "@/types/geometry/primitives";
 import { paramMeta, primitiveDefaults, visibleParams } from "@/types/geometry/primitives";
 import {
@@ -33,6 +33,9 @@ const MODE_TITLE: Record<ComponentMode, string> = {
   edge: "Edges",
   polygon: "Polygons",
 };
+
+/** Node kinds that render as triangle meshes and can take a library material. */
+const MATERIAL_CAPABLE = new Set<NodeKind>(["mesh", "generator"]);
 
 /**
  * Attributes/inspector. Object mode shows the node's settings; component
@@ -159,6 +162,7 @@ function NodeAttributes({ id }: { id: Uuid }) {
       {splinePrim ? <SplinePrimitiveParams id={id} prim={splinePrim} /> : null}
       {generator ? <GeneratorParams id={id} gen={generator} /> : null}
       {meshRef ? <MeshInfo meshId={meshRef.id} /> : null}
+      {MATERIAL_CAPABLE.has(node.kind) ? <MaterialSelector id={id} /> : null}
       {light ? <LightParams id={id} light={light} /> : null}
       {node.kind === "light" || node.kind === "camera" ? <TargetSelector id={id} /> : null}
     </div>
@@ -433,6 +437,84 @@ function TargetSelector({ id }: { id: Uuid }) {
           </option>
         ))}
       </select>
+    </fieldset>
+  );
+}
+
+/** Color chip for a material: base color fill with a subtle white ring (12px radius). */
+function Swatch({ color }: { color: string }) {
+  return (
+    <span
+      className="inline-block shrink-0 rounded-full border border-white/30"
+      style={{ width: 24, height: 24, backgroundColor: color }}
+    />
+  );
+}
+
+/**
+ * Assign a library material to a triangle-mesh object (or None to unset).
+ * Custom dropdown (not a native select) so each entry can show the material's
+ * base-color swatch. One undo step per change; a dangling id reads as None.
+ */
+function MaterialSelector({ id }: { id: Uuid }) {
+  const doc = useDocument();
+  useSliceVersion("materials"); // re-render on library add/rename/recolor
+  const node = doc.scene.mustGet(id);
+  const materials = doc.materials.all();
+  const currentId = node.data?.material as Uuid | undefined;
+  const current = currentId ? doc.materials.get(currentId) : undefined;
+
+  const assign = (matId: Uuid | null) => {
+    const before = structuredClone(node.data ?? {});
+    const data = structuredClone(node.data ?? {});
+    if (matId) data.material = matId;
+    else delete data.material;
+    doc.history.run(
+      new SetNodeDataCommand(id, data, before, matId ? "Assign Material" : "Clear Material"),
+    );
+    (document.activeElement as HTMLElement | null)?.blur(); // close the dropdown
+  };
+
+  return (
+    <fieldset className="fieldset border-b border-base-200 px-2 py-1.5">
+      <legend className="fieldset-legend py-1 text-[10px] uppercase opacity-60">Material</legend>
+      {/* opens upward: the Material section sits at the panel bottom, and the
+          panel's overflow would otherwise clip a downward menu off-screen */}
+      <div className="dropdown dropdown-top w-full">
+        <div
+          tabIndex={0}
+          role="button"
+          className="btn btn-xs btn-block justify-between font-normal"
+        >
+          <span className="flex min-w-0 items-center gap-2">
+            {current ? <Swatch color={current.color} /> : null}
+            <span className="truncate">{current ? current.name : "None"}</span>
+          </span>
+          <span className="opacity-50">▾</span>
+        </div>
+        <ul
+          tabIndex={0}
+          className="dropdown-content menu menu-xs z-10 mt-1 max-h-60 w-full flex-nowrap overflow-auto rounded-box border border-base-300 bg-base-200 shadow-lg"
+        >
+          <li>
+            <button type="button" className={current ? "" : "active"} onClick={() => assign(null)}>
+              None
+            </button>
+          </li>
+          {materials.map((m) => (
+            <li key={m.id}>
+              <button
+                type="button"
+                className={m.id === currentId ? "active" : ""}
+                onClick={() => assign(m.id)}
+              >
+                <Swatch color={m.color} />
+                <span className="truncate">{m.name}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      </div>
     </fieldset>
   );
 }
