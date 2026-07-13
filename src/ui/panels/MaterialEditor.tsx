@@ -94,7 +94,26 @@ export function MaterialEditor({ id }: { id: Uuid }) {
     delete next[channel];
     setMat({ textures: next }, true);
   };
-  const channels = TEXTURE_CHANNELS.filter((c) => c.applies.has(mat.type));
+  // one image-map slot, rendered inline in the section its channel belongs to
+  // (null when the channel doesn't apply to this material type)
+  const texSlot = (channel: TextureChannel, label: string) => {
+    const meta = TEXTURE_CHANNELS.find((c) => c.channel === channel);
+    if (!meta?.applies.has(mat.type)) return null;
+    return (
+      <TextureSlot
+        key={channel}
+        label={label}
+        assetId={mat.textures?.[channel]}
+        onLoad={(file) => setTexture(channel, file)}
+        onClear={() => clearTexture(channel)}
+      />
+    );
+  };
+  // Normal map applies to lit non-PBR types too (lambert/phong/toon), which have
+  // no Surface section otherwise — show Surface whenever it has something to hold.
+  const hasNormalMap = TEXTURE_CHANNELS.some(
+    (c) => c.channel === "normalMap" && c.applies.has(mat.type),
+  );
 
   return (
     <div className="flex max-h-[55%] flex-col overflow-auto border-t border-base-300 bg-base-200/40 text-xs">
@@ -115,6 +134,7 @@ export function MaterialEditor({ id }: { id: Uuid }) {
           </select>
         </Row>
         {HAS_COLOR.has(mat.type) ? color("Color", "color") : null}
+        {texSlot("map", "Color Map")}
         {slider("Opacity", "opacity", 0.01, 1, 1)}
         <Row label="Transparent">
           <input
@@ -126,12 +146,15 @@ export function MaterialEditor({ id }: { id: Uuid }) {
         </Row>
       </Section>
 
-      {HAS_PBR.has(mat.type) ? (
+      {HAS_PBR.has(mat.type) || hasNormalMap ? (
         <Section title="Surface" defaultOpen>
-          {slider("Roughness", "roughness", 0.01, 1)}
-          {slider("Metalness", "metalness", 0.01, 1)}
+          {HAS_PBR.has(mat.type) ? slider("Roughness", "roughness", 0.01, 1) : null}
+          {texSlot("roughnessMap", "Roughness Map")}
+          {HAS_PBR.has(mat.type) ? slider("Metalness", "metalness", 0.01, 1) : null}
+          {texSlot("metalnessMap", "Metalness Map")}
           {physical ? slider("Specular", "specularIntensity", 0.01, 1, PD.specularIntensity) : null}
           {physical ? color("Spec. Tint", "specularColor", PD.specularColor) : null}
+          {texSlot("normalMap", "Normal Map")}
         </Section>
       ) : null}
 
@@ -169,20 +192,7 @@ export function MaterialEditor({ id }: { id: Uuid }) {
         <Section title="Emission">
           {color("Emissive", "emissive", "#000000")}
           {slider("Strength", "emissiveIntensity", 0.05, 10, 1)}
-        </Section>
-      ) : null}
-
-      {channels.length > 0 ? (
-        <Section title="Textures">
-          {channels.map((c) => (
-            <TextureSlot
-              key={c.channel}
-              label={c.label}
-              assetId={mat.textures?.[c.channel]}
-              onLoad={(file) => setTexture(c.channel, file)}
-              onClear={() => clearTexture(c.channel)}
-            />
-          ))}
+          {texSlot("emissiveMap", "Emissive Map")}
         </Section>
       ) : null}
     </div>
