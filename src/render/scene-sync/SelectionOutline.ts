@@ -65,6 +65,11 @@ export class SelectionOutline {
       const mat = new MeshBasicNodeMaterial();
       mat.color.copy(this.color);
       mat.side = BackSide;
+      // don't write depth: the expanded hull would otherwise pollute the depth
+      // buffer GTAO samples, painting false Ambient Shadows onto the selected
+      // object (and its inner edges). The ring still shows — the real surface
+      // paints over the interior and closer objects paint over the ring.
+      mat.depthWrite = false;
       // Cast to any before chaining to prevent TSL's combinatorial union explosion (TS2590 / tsgolint hang)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       mat.positionNode = (positionLocal as any).add((normalLocal as any).mul(offset)) as Node;
