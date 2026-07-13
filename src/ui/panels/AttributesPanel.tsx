@@ -581,26 +581,49 @@ function GeneratorParams({ id, gen }: { id: Uuid; gen: GeneratorDescriptor }) {
   }
 
   if (gen.type === "sweep") {
-    const sp = gen.params as unknown as Record<string, number>;
-    const sweepRows = [{ key: "pathSegments", label: "Path Segs", min: 2, max: 512 }];
+    const sp = gen.params as unknown as {
+      pathSegments: number;
+      rotation?: number;
+      usePathPoints?: boolean;
+    };
+    const usePathPoints = sp.usePathPoints ?? true;
     return (
       <fieldset className="fieldset px-2 py-1.5">
         <legend className="fieldset-legend py-1 text-[10px] uppercase opacity-60">Sweep</legend>
-        {sweepRows.map((row) => (
-          <div className="grid grid-cols-[64px_1fr] items-center gap-1" key={row.key}>
-            <span className="truncate opacity-60" title={row.label}>
-              {row.label}
+        <div className="grid grid-cols-[64px_1fr] items-center gap-1">
+          <span className="opacity-60">Rotation</span>
+          <NumberDrag
+            value={sp.rotation ?? 0}
+            step={1}
+            min={-360}
+            max={360}
+            onChange={(v, committed) => setParam("rotation", v, committed)}
+          />
+        </div>
+        <div className="flex items-center justify-between gap-2">
+          <span className="opacity-60">Use path points</span>
+          <input
+            type="checkbox"
+            className="toggle toggle-xs"
+            checked={usePathPoints}
+            onChange={(e) => setParam("usePathPoints", e.target.checked, true)}
+          />
+        </div>
+        {usePathPoints ? null : (
+          <div className="grid grid-cols-[64px_1fr] items-center gap-1">
+            <span className="truncate opacity-60" title="Path Segs">
+              Path Segs
             </span>
             <NumberDrag
-              value={sp[row.key] ?? 0}
+              value={sp.pathSegments ?? 48}
               step={1}
               integer
-              min={row.min}
-              max={row.max}
-              onChange={(v, committed) => setParam(row.key, v, committed)}
+              min={2}
+              max={512}
+              onChange={(v, committed) => setParam("pathSegments", v, committed)}
             />
           </div>
-        ))}
+        )}
         <p className="mt-1 text-[10px] opacity-50">Children: 1st = profile, 2nd = path.</p>
       </fieldset>
     );

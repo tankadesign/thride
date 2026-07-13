@@ -3,11 +3,21 @@ import { HEMesh } from "@/geometry/kernel/HEMesh";
 import { bestFitFrame, type P2, projectToFrame } from "@/geometry/splines/planeFrame";
 
 export interface SweepParams {
-  /** stations sampled along the path curve. */
+  /** Even stations resampled along the path (only when `usePathPoints` is off). */
   pathSegments: number;
+  /** Cross-section rotation around the path tangent, in degrees (default 0). */
+  rotation?: number;
+  /** Place a ring at each path point (orientation follows the path's own
+   * geometry) instead of resampling to `pathSegments` even stations. Default on;
+   * absent on sweeps saved before this existed → treated as on. */
+  usePathPoints?: boolean;
 }
 
-export const defaultSweepParams = (): SweepParams => ({ pathSegments: 48 });
+export const defaultSweepParams = (): SweepParams => ({
+  pathSegments: 48,
+  rotation: 0,
+  usePathPoints: true,
+});
 
 /** A sampled curve in a common space (handles already resolved to a polyline). */
 export interface SweepCurve {
@@ -20,10 +30,11 @@ export interface SweepCurve {
  * as polylines in a common space (the graph bakes each child's transform). The
  * profile is flattened to its own plane, then placed into a rotation-minimizing
  * frame (double-reflection RMF — no Frenet flips at inflection points) at each
- * path station, so the tube never twists or pinches. `pathSegments` resamples
- * the path; the profile's own points define the ring verbatim (no
- * interpolation). A closed profile on an open path gets end caps. Returns null
- * on a degenerate input.
+ * path station, so the tube never twists or pinches. Ring stations are the
+ * path's own points (`usePathPoints`, default) or an even resample to
+ * `pathSegments`; `rotation` spins the whole cross-section about the path. The
+ * profile's own points define the ring verbatim (no interpolation). A closed
+ * profile on an open path gets end caps. Returns null on a degenerate input.
  */
 export function buildSweep(
   profile: SweepCurve,
@@ -34,10 +45,21 @@ export function buildSweep(
 
   const nP = Math.max(2, Math.round(params.pathSegments));
 
-  // even path stations, then the profile's own points as the ring (verbatim)
-  const centers = resample(path.points, path.closed ? nP : nP + 1, path.closed, lerp3);
+  // ring stations: the path's own points (orientation follows the path
+  // geometry — the default) or an even arc-length resample to `pathSegments`.
+  const centers =
+    (params.usePathPoints ?? true)
+      ? path.points
+      : resample(path.points, path.closed ? nP : nP + 1, path.closed, lerp3);
   const frame = bestFitFrame(profile.points);
-  const ringPts = profile.points.map((p) => projectToFrame(p, frame));
+  // profile ring points, rotated about the path tangent by `rotation` (deg)
+  const rot = ((params.rotation ?? 0) * Math.PI) / 180;
+  const ca = Math.cos(rot);
+  const sa = Math.sin(rot);
+  const ringPts = profile.points.map((p) => {
+    const q = projectToFrame(p, frame);
+    return { x: q.x * ca - q.y * sa, y: q.x * sa + q.y * ca };
+  });
 
   const tangents = computeTangents(centers, path.closed);
   const { normals, binormals } = rmfFrames(centers, tangents);

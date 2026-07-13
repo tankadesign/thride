@@ -19,14 +19,24 @@ const linePath = (len = 4, n = 10): SweepCurve => {
 };
 
 describe("buildSweep", () => {
-  it("closed profile on an open path → watertight capped tube", () => {
-    const mesh = buildSweep(circleProfile(0.3, 12), linePath(), { pathSegments: 16 });
+  it("closed profile on an open path → watertight capped tube (resampled)", () => {
+    const mesh = buildSweep(circleProfile(0.3, 12), linePath(), {
+      pathSegments: 16,
+      usePathPoints: false,
+    });
     expect(mesh).not.toBeNull();
     const v = validateMesh(mesh!);
     expect(v.errors).toEqual([]);
     expect(v.boundaryEdges).toBe(0); // caps close both ends
-    // 17 path rings × the profile's own 12 points (no resampling)
+    // resample on → 17 even path rings (pathSegments 16 + 1) × the profile's 12 points
     expect(mesh!.vCount).toBe(17 * 12);
+  });
+
+  it("usePathPoints (default) rings at each path point instead of resampling", () => {
+    // linePath() has 11 points; the default uses them verbatim, ignoring pathSegments
+    const mesh = buildSweep(circleProfile(0.3, 12), linePath(), { pathSegments: 16 })!;
+    expect(mesh.vCount).toBe(11 * 12);
+    expect(validateMesh(mesh).boundaryEdges).toBe(0);
   });
 
   it("uses the profile's own points verbatim (a 4-pt square stays 4-sided)", () => {
