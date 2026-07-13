@@ -101,7 +101,7 @@ export class SceneSynchronizer {
   constructor(doc: Document, onDirty: () => void) {
     this.doc = doc;
     this.onDirty = onDirty;
-    this.materials = new MaterialSync(doc, BASE_MAT);
+    this.materials = new MaterialSync(doc, BASE_MAT, onDirty);
     this.root.name = "thride-document";
     this.unsubs.push(
       doc.events.on("scene:node-added", ({ id }) => {

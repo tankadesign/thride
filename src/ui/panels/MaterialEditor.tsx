@@ -1,5 +1,5 @@
-import { useRef, useState } from "react";
-import type { MaterialDTO, MaterialType, Uuid } from "@/types/core";
+import { useEffect, useRef, useState } from "react";
+import type { MaterialDTO, MaterialType, TextureChannel, Uuid } from "@/types/core";
 import {
   HAS_COLOR,
   HAS_EMISSIVE,
@@ -7,8 +7,10 @@ import {
   HAS_PHYSICAL,
   MATERIAL_TYPES,
   PHYSICAL_DEFAULTS as PD,
+  TEXTURE_CHANNELS,
 } from "@/types/core";
-import { UpdateMaterialCommand } from "@/core";
+import { UpdateMaterialCommand, uuidv7 } from "@/core";
+import { textureAssets } from "@/io/storage/textureAssets";
 import { useDocument, useSliceVersion } from "@/ui/hooks/doc/document";
 import { NumberDrag } from "@/ui/widgets/NumberDrag";
 
@@ -79,6 +81,20 @@ export function MaterialEditor({ id }: { id: Uuid }) {
       />
     </Row>
   );
+
+  const setTexture = async (channel: TextureChannel, file: File | null) => {
+    if (!file) return;
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const asset = { id: uuidv7(), name: file.name, mime: file.type || "image/png", bytes };
+    textureAssets.register(asset);
+    setMat({ textures: { ...mat.textures, [channel]: asset.id } }, true);
+  };
+  const clearTexture = (channel: TextureChannel) => {
+    const next = { ...mat.textures };
+    delete next[channel];
+    setMat({ textures: next }, true);
+  };
+  const channels = TEXTURE_CHANNELS.filter((c) => c.applies.has(mat.type));
 
   return (
     <div className="flex max-h-[55%] flex-col overflow-auto border-t border-base-300 bg-base-200/40 text-xs">
@@ -155,8 +171,92 @@ export function MaterialEditor({ id }: { id: Uuid }) {
           {slider("Strength", "emissiveIntensity", 0.05, 10, 1)}
         </Section>
       ) : null}
+
+      {channels.length > 0 ? (
+        <Section title="Textures">
+          {channels.map((c) => (
+            <TextureSlot
+              key={c.channel}
+              label={c.label}
+              assetId={mat.textures?.[c.channel]}
+              onLoad={(file) => setTexture(c.channel, file)}
+              onClear={() => clearTexture(c.channel)}
+            />
+          ))}
+        </Section>
+      ) : null}
     </div>
   );
+}
+
+/** One image-map channel: a thumbnail that opens a file picker, with a clear button. */
+function TextureSlot({
+  label,
+  assetId,
+  onLoad,
+  onClear,
+}: {
+  label: string;
+  assetId: Uuid | undefined;
+  onLoad: (file: File | null) => void;
+  onClear: () => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const url = useAssetUrl(assetId);
+  return (
+    <Row label={label}>
+      <div className="flex items-center gap-1">
+        <button
+          type="button"
+          className="flex h-7 w-7 items-center justify-center overflow-hidden rounded border border-base-300 bg-base-100"
+          onClick={() => inputRef.current?.click()}
+          title={assetId ? "Replace image" : "Load image"}
+        >
+          {url ? (
+            <img src={url} alt="" className="h-full w-full object-cover" />
+          ) : (
+            <span className="text-sm opacity-40">+</span>
+          )}
+        </button>
+        {assetId ? (
+          <button
+            type="button"
+            className="btn btn-ghost btn-xs px-1 opacity-60"
+            onClick={onClear}
+            title="Clear"
+          >
+            ✕
+          </button>
+        ) : null}
+        <input
+          ref={inputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(e) => {
+            onLoad(e.target.files?.[0] ?? null);
+            e.target.value = ""; // allow re-picking the same file
+          }}
+        />
+      </div>
+    </Row>
+  );
+}
+
+/** Object URL for a registered texture asset's preview (revoked on change/unmount). */
+function useAssetUrl(assetId: Uuid | undefined): string | null {
+  const [url, setUrl] = useState<string | null>(null);
+  useEffect(() => {
+    const asset = assetId ? textureAssets.get(assetId) : undefined;
+    if (!asset) {
+      setUrl(null);
+      return;
+    }
+    const u = URL.createObjectURL(new Blob([new Uint8Array(asset.bytes)], { type: asset.mime }));
+    setUrl(u);
+    return () => URL.revokeObjectURL(u);
+  }, [assetId]);
+  return url;
 }
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
