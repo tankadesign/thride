@@ -1,5 +1,6 @@
 import type { Document } from "@/core";
 import {
+  environmentAssets,
   FORMAT_VERSION,
   type TextureAssetDTO,
   type ThrideDocumentDTO,
@@ -112,13 +113,13 @@ export function projectRecordOf(id: Uuid, name: string, doc: Document): ProjectR
     if (mesh) meshes[ref.id] = mesh.snapshot();
   }
   const textures: Record<string, TextureAssetDTO> = {};
-  for (const mat of document.materials ?? []) {
-    for (const texId of texturesOf(mat)) {
-      if (textures[texId]) continue;
-      const asset = textureAssets.get(texId);
-      if (asset) textures[texId] = asset;
-    }
-  }
+  const collect = (texId: Uuid) => {
+    if (textures[texId]) return;
+    const asset = textureAssets.get(texId);
+    if (asset) textures[texId] = asset;
+  };
+  for (const mat of document.materials ?? []) for (const texId of texturesOf(mat)) collect(texId);
+  for (const texId of environmentAssets(document.environment)) collect(texId); // env HDR
   return { id, name, updatedAt: Date.now(), document, meshes, textures };
 }
 
@@ -152,6 +153,7 @@ export function releaseProjectMeshes(document: ThrideDocumentDTO): void {
   for (const mat of document.materials ?? []) {
     for (const texId of texturesOf(mat)) textureAssets.unregister(texId);
   }
+  for (const texId of environmentAssets(document.environment)) textureAssets.unregister(texId);
 }
 
 // ---- one-time migration from the localStorage autosave ----------------------

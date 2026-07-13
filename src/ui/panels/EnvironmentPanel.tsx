@@ -1,18 +1,32 @@
+import { useRef } from "react";
+import { uuidv7 } from "@/core";
 import type { EnvironmentDTO } from "@/types/core";
+import { textureAssets } from "@/io/storage/textureAssets";
 import { useDocument, useSliceVersion } from "@/ui/hooks/doc/document";
 import { NumberDrag } from "@/ui/widgets/NumberDrag";
 
 /**
  * Environment / dome-light panel: edits the document's EnvironmentDTO — IBL
  * source, intensity, Y rotation, and how the viewport background renders.
- * Studio is the built-in painted equirect; HDR/EXR loading arrives next.
+ * Studio is the built-in painted equirect; HDR/EXR loads a `.hdr`/`.exr`
+ * equirect into the texture-asset store (the render layer decodes it).
  */
 export function EnvironmentPanel() {
   const doc = useDocument();
   useSliceVersion("settings"); // re-render on environment:changed
   const env = doc.environment;
+  const fileRef = useRef<HTMLInputElement>(null);
   const setNum = (key: keyof EnvironmentDTO, v: number, committed: boolean) =>
     doc.setEnvironment({ [key]: v }, !committed);
+
+  const loadHdr = async (file: File | null) => {
+    if (!file) return;
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const asset = { id: uuidv7(), name: file.name, mime: file.type || "image/vnd.radiance", bytes };
+    textureAssets.register(asset);
+    doc.setEnvironment({ source: "hdr", hdrAssetId: asset.id });
+  };
+  const hdrAsset = env.hdrAssetId ? textureAssets.get(env.hdrAssetId) : undefined;
 
   return (
     <div className="h-full overflow-auto bg-base-100 text-xs">
@@ -29,8 +43,35 @@ export function EnvironmentPanel() {
             }
           >
             <option value="studio">Studio</option>
+            <option value="hdr">HDR / EXR</option>
           </select>
         </Row>
+        {env.source === "hdr" ? (
+          <Row label="File">
+            <div className="flex min-w-0 items-center gap-1">
+              <button
+                type="button"
+                className="btn btn-xs shrink-0"
+                onClick={() => fileRef.current?.click()}
+              >
+                Load…
+              </button>
+              <span className="truncate opacity-60" title={hdrAsset?.name}>
+                {hdrAsset?.name ?? "No file"}
+              </span>
+              <input
+                ref={fileRef}
+                type="file"
+                accept=".hdr,.exr,image/vnd.radiance,image/x-exr"
+                className="hidden"
+                onChange={(e) => {
+                  void loadHdr(e.target.files?.[0] ?? null);
+                  e.target.value = ""; // allow re-picking the same file
+                }}
+              />
+            </div>
+          </Row>
+        ) : null}
         <Row label="Intensity">
           <NumberDrag
             value={env.intensity}
