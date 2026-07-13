@@ -64,9 +64,10 @@ export interface PaneDisplay {
   toneMapping: ToneMappingMode;
 }
 
-export const defaultPaneDisplay = (): PaneDisplay => ({
-  shading: "pbr",
-  shadows: true,
+/** pane index (0-3) — used to generate default display settings for each pane. */
+export const defaultPaneDisplay = (pane = 0): PaneDisplay => ({
+  shading: pane === 0 ? "pbr" : "wireframe",
+  shadows: pane === 0,
   backfaces: true,
   ssao: false,
   aoRadius: 0.8,
@@ -96,10 +97,10 @@ export const defaultViewportSettings = (): ViewportSettingsDTO => ({
   layout: "single",
   paneCameras: ["persp", "top", "front", "right"],
   paneDisplays: [
-    defaultPaneDisplay(),
-    defaultPaneDisplay(),
-    defaultPaneDisplay(),
-    defaultPaneDisplay(),
+    defaultPaneDisplay(0),
+    defaultPaneDisplay(1),
+    defaultPaneDisplay(2),
+    defaultPaneDisplay(3),
   ],
 });
 

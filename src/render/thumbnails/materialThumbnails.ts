@@ -9,6 +9,7 @@ import {
 import { WebGPURenderer } from "three/webgpu";
 import type { MaterialDTO } from "@/types/core";
 import { buildMaterial } from "@/materials/build";
+import { buildStudioEnvironment } from "@/render/environment/studioEnvironment";
 
 /**
  * Offscreen C4D-style material preview: a lit sphere in a small studio scene,
@@ -17,9 +18,9 @@ import { buildMaterial } from "@/materials/build";
  * pipeline is per-device, so previews build a fresh material from the DTO for
  * this device). One instance is shared; `render(dto)` is awaited per thumbnail.
  *
- * A hemisphere + 3-point light rig gives form and highlights on a transparent
- * background (the card behind it shows through). No IBL yet — metals read a
- * touch darker; an environment map is a later enhancement.
+ * A hemisphere + 3-point light rig plus a neutral studio IBL environment gives
+ * form, highlights, and reflections on a transparent background (the card
+ * behind it shows through).
  */
 export class MaterialThumbnails {
   private readonly renderer: WebGPURenderer;
@@ -44,6 +45,9 @@ export class MaterialThumbnails {
     this.scene.add(dir(0xffffff, 2.6, 2, 3, 4)); // key
     this.scene.add(dir(0xbfcfff, 0.9, -3, 1, 2)); // cool fill
     this.scene.add(dir(0xffffff, 1.6, -1.5, 2, -4)); // rim / back
+    // IBL so metals/glossy previews reflect a studio env instead of reading black
+    this.scene.environment = buildStudioEnvironment();
+    this.scene.environmentIntensity = 0.5;
 
     this.sphere = new Mesh(new SphereGeometry(1, 64, 48), buildMaterial(placeholderDto()));
     this.scene.add(this.sphere);

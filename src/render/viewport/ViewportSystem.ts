@@ -13,6 +13,7 @@ import {
 } from "three";
 import { WebGPURenderer } from "three/webgpu";
 import { DitherOutput, type OutputToneMapping } from "./ditherOutput";
+import { buildStudioEnvironment } from "@/render/environment/studioEnvironment";
 import type { Document } from "@/core";
 import type { Uuid } from "@/types/core";
 import type { BuiltinCamera, EditorViewportState } from "@/types/editor";
@@ -147,6 +148,11 @@ export class ViewportSystem {
     this.defaultFill = new DirectionalLight(viewportTheme.lightFillColor, 0.6);
     this.defaultFill.position.set(-6, 3, -5);
     this.scene.add(this.defaultFill);
+    // IBL: a neutral studio environment so metals/glossy surfaces get real
+    // reflections instead of rendering black. Used for lighting only — the
+    // dark viewport background stays (scene.environment, not scene.background).
+    this.scene.environment = buildStudioEnvironment();
+    this.scene.environmentIntensity = 0.55;
 
     this.sync = new SceneSynchronizer(doc, () => this.invalidate());
     this.scene.add(this.sync.root);
