@@ -49,7 +49,9 @@ export interface PaneDisplay {
   ssao: boolean;
   /** GTAO sample radius (world units) — how far creases darken. */
   aoRadius: number;
-  /** GTAO horizon thickness — hides thin-surface haloing. */
+  /** GTAO occlusion thickness — max view-depth gap that counts as occlusion.
+   * Lower rejects halos from floating/distant geometry; too high and objects
+   * that merely float above a surface cast a false AO shadow onto it. */
   aoBias: number;
   /** Hex color occluded areas darken toward (Spline's "Tint"). */
   aoTint: string;
@@ -78,8 +80,8 @@ export const defaultPaneDisplay = (pane = 0): PaneDisplay => ({
   shadows: pane === 0,
   backfaces: true,
   ssao: false,
-  aoRadius: 0.8,
-  aoBias: 0.5,
+  aoRadius: 0.2,
+  aoBias: 0.05,
   aoTint: "#000000",
   aoSamples: 16,
   aoFalloff: 1,
