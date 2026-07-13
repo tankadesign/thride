@@ -1,9 +1,15 @@
 import type { Document } from "@/core";
-import { FORMAT_VERSION, type ThrideDocumentDTO, type Uuid } from "@/types/core";
+import {
+  FORMAT_VERSION,
+  type TextureAssetDTO,
+  type ThrideDocumentDTO,
+  type Uuid,
+} from "@/types/core";
 import type { ViewportSettingsDTO } from "@/types/editor";
 import { HEMesh, type HEMeshSnapshot } from "@/geometry/kernel/HEMesh";
 import { meshRegistry } from "@/geometry/store/meshRegistry";
 import { type PackedMesh, unpackMesh } from "./meshPack";
+import { textureAssets, texturesOf } from "./textureAssets";
 
 /**
  * IndexedDB project persistence (interim until the .thride package, H1).
@@ -20,6 +26,12 @@ export interface ProjectRecord {
   document: ThrideDocumentDTO;
   /** Kernel meshes referenced by nodes, keyed by mesh id. */
   meshes: Record<string, HEMeshSnapshot>;
+  /**
+   * Bitmap texture assets referenced by materials, keyed by asset id. Bytes
+   * store natively via structured clone (no base64). Optional — records saved
+   * before textures existed hydrate with none.
+   */
+  textures?: Record<string, TextureAssetDTO>;
   /**
    * Per-project viewport/UI settings (layout, pane cameras, per-pane display).
    * Optional — records saved before this existed hydrate to defaults. Kept
@@ -99,7 +111,15 @@ export function projectRecordOf(id: Uuid, name: string, doc: Document): ProjectR
     const mesh = meshRegistry.get(ref.id);
     if (mesh) meshes[ref.id] = mesh.snapshot();
   }
-  return { id, name, updatedAt: Date.now(), document, meshes };
+  const textures: Record<string, TextureAssetDTO> = {};
+  for (const mat of document.materials ?? []) {
+    for (const texId of texturesOf(mat)) {
+      if (textures[texId]) continue;
+      const asset = textureAssets.get(texId);
+      if (asset) textures[texId] = asset;
+    }
+  }
+  return { id, name, updatedAt: Date.now(), document, meshes, textures };
 }
 
 /**
@@ -117,14 +137,20 @@ export function hydrateProjectRecord(record: ProjectRecord): ThrideDocumentDTO |
       // dropped — see docstring
     }
   }
+  for (const asset of Object.values(record.textures ?? {})) {
+    if (asset?.id && asset.bytes) textureAssets.register(asset);
+  }
   return dto;
 }
 
-/** Drop a closed project's meshes from the registry (mesh ids are per-project). */
+/** Drop a closed project's meshes + textures from the registries (ids are per-project). */
 export function releaseProjectMeshes(document: ThrideDocumentDTO): void {
   for (const node of document.nodes) {
     const ref = node.data?.mesh as { id: Uuid } | undefined;
     if (ref?.id) meshRegistry.unregister(ref.id);
+  }
+  for (const mat of document.materials ?? []) {
+    for (const texId of texturesOf(mat)) textureAssets.unregister(texId);
   }
 }
 

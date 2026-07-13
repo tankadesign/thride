@@ -4,7 +4,7 @@ export type { NodeKind, TransformDTO, SceneNodeDTO } from "./scene";
 export { identityTransform } from "./scene";
 export type { ThrideDocumentDTO } from "./document";
 export { FORMAT_VERSION } from "./document";
-export type { MaterialDTO, MaterialType } from "./material";
+export type { MaterialDTO, MaterialType, TextureChannel, TextureAssetDTO } from "./material";
 export {
   MATERIAL_TYPES,
   HAS_PBR,
@@ -12,6 +12,7 @@ export {
   HAS_EMISSIVE,
   HAS_PHYSICAL,
   PHYSICAL_DEFAULTS,
+  TEXTURE_CHANNELS,
   defaultMaterialData,
 } from "./material";
 export type { SliceId, DocEventMap } from "./events";

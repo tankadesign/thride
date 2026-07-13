@@ -41,6 +41,49 @@ export const HAS_EMISSIVE = new Set<MaterialType>(["physical", "standard", "lamb
 export const HAS_PHYSICAL = new Set<MaterialType>(["physical"]);
 
 /**
+ * Image-map channels a material can bind. Each maps to a three material slot
+ * (`map`, `roughnessMap`, …). A material references a texture asset by id per
+ * channel (`MaterialDTO.textures`); the bytes live in the texture-asset registry
+ * and persist alongside kernel meshes in the project record. Procedural layer
+ * stacks (E3) build on top of these raw image channels.
+ */
+export type TextureChannel = "map" | "roughnessMap" | "metalnessMap" | "normalMap" | "emissiveMap";
+
+export const TEXTURE_CHANNELS: {
+  channel: TextureChannel;
+  label: string;
+  /** Which material types expose this channel (gates the editor slots). */
+  applies: Set<MaterialType>;
+  /** sRGB (color data) vs linear (data maps) — set on the three texture. */
+  colorSpace: "srgb" | "linear";
+}[] = [
+  { channel: "map", label: "Color", applies: HAS_COLOR, colorSpace: "srgb" },
+  { channel: "roughnessMap", label: "Roughness", applies: HAS_PBR, colorSpace: "linear" },
+  { channel: "metalnessMap", label: "Metalness", applies: HAS_PBR, colorSpace: "linear" },
+  {
+    channel: "normalMap",
+    label: "Normal",
+    applies: new Set<MaterialType>(["physical", "standard", "lambert", "phong", "toon"]),
+    colorSpace: "linear",
+  },
+  { channel: "emissiveMap", label: "Emissive", applies: HAS_EMISSIVE, colorSpace: "srgb" },
+];
+
+/**
+ * A bitmap texture asset in the project library. `bytes` is the raw encoded
+ * image file (PNG/JPEG/…) — stored natively by IndexedDB structured clone (no
+ * base64), decoded to a GPU texture lazily by the render layer. Referenced by
+ * id from `MaterialDTO.textures`.
+ */
+export interface TextureAssetDTO {
+  id: Uuid;
+  name: string;
+  /** MIME of `bytes`, e.g. "image/png". */
+  mime: string;
+  bytes: Uint8Array;
+}
+
+/**
  * A named material in the project library, assignable to any mesh by id
  * (`node.data.material`). Pure serializable data — the render layer compiles it
  * into a three node material and shares that across every mesh that references
@@ -80,6 +123,9 @@ export interface MaterialDTO {
   /** Specular reflection tint/strength (dielectric). */
   specularIntensity?: number;
   specularColor?: string;
+
+  /** Image-map channels → texture-asset id. Absent/empty = no maps. */
+  textures?: Partial<Record<TextureChannel, Uuid>>;
 }
 
 /** Defaults for the optional physical fields — shared by the editor + builder. */
