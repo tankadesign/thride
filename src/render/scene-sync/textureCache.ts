@@ -2,6 +2,36 @@ import { NoColorSpace, RepeatWrapping, SRGBColorSpace, Texture } from "three";
 import type { Uuid } from "@/types/core";
 import { textureAssets } from "@/io/storage/textureAssets";
 
+export type ChannelColorSpace = "srgb" | "linear";
+
+/**
+ * Decode a registered texture asset into a fresh GPU texture with the channel's
+ * color space, repeat wrapping, and top-left origin. Returns a NEW Texture each
+ * call (GPU resources are per-renderer/device — the viewport and the thumbnail
+ * renderer must not share one). Null if the asset is missing or undecodable.
+ */
+export async function decodeChannelTexture(
+  id: Uuid,
+  colorSpace: ChannelColorSpace,
+): Promise<Texture | null> {
+  const asset = textureAssets.get(id);
+  if (!asset) return null;
+  try {
+    // copy into a fresh ArrayBuffer-backed view (asset.bytes may be a subarray)
+    const blob = new Blob([new Uint8Array(asset.bytes)], { type: asset.mime });
+    const bitmap = await createImageBitmap(blob, { colorSpaceConversion: "none" });
+    const tex = new Texture(bitmap);
+    tex.colorSpace = colorSpace === "srgb" ? SRGBColorSpace : NoColorSpace;
+    tex.wrapS = RepeatWrapping;
+    tex.wrapT = RepeatWrapping;
+    tex.flipY = false; // ImageBitmap is already top-left origin
+    tex.needsUpdate = true;
+    return tex;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Decodes texture-asset bytes into GPU textures, cached per (asset id,
  * colorSpace) — the same image feeds a color channel as sRGB and a data channel
@@ -20,7 +50,7 @@ export class TextureCache {
   }
 
   /** Cached texture for the asset, or undefined while it decodes (kicks decode off). */
-  get(id: Uuid, colorSpace: "srgb" | "linear"): Texture | undefined {
+  get(id: Uuid, colorSpace: ChannelColorSpace): Texture | undefined {
     const key = `${id}:${colorSpace}`;
     const hit = this.cache.get(key);
     if (hit) return hit;
@@ -28,27 +58,16 @@ export class TextureCache {
     return undefined;
   }
 
-  private decode(id: Uuid, key: string, colorSpace: "srgb" | "linear"): void {
-    const asset = textureAssets.get(id);
-    if (!asset) return;
+  private decode(id: Uuid, key: string, colorSpace: ChannelColorSpace): void {
     this.pending.add(key);
-    // copy into a fresh ArrayBuffer-backed view (asset.bytes may be a subarray)
-    const blob = new Blob([new Uint8Array(asset.bytes)], { type: asset.mime });
-    createImageBitmap(blob, { colorSpaceConversion: "none" })
-      .then((bitmap) => {
-        const tex = new Texture(bitmap);
-        tex.colorSpace = colorSpace === "srgb" ? SRGBColorSpace : NoColorSpace;
-        tex.wrapS = RepeatWrapping;
-        tex.wrapT = RepeatWrapping;
-        tex.flipY = false; // ImageBitmap is already top-left origin
-        tex.needsUpdate = true;
-        this.cache.set(key, tex);
+    decodeChannelTexture(id, colorSpace)
+      .then((tex) => {
         this.pending.delete(key);
+        if (!tex) return; // missing/undecodable — leave the channel empty
+        this.cache.set(key, tex);
         this.onReady();
       })
-      .catch(() => {
-        this.pending.delete(key); // corrupt/undecodable — leave the channel empty
-      });
+      .catch(() => this.pending.delete(key));
   }
 
   dispose(): void {

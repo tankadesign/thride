@@ -5,11 +5,15 @@ import {
   PerspectiveCamera,
   Scene,
   SphereGeometry,
+  type Texture,
 } from "three";
+import type { NodeMaterial } from "three/webgpu";
 import { WebGPURenderer } from "three/webgpu";
-import type { MaterialDTO } from "@/types/core";
+import type { MaterialDTO, Uuid } from "@/types/core";
+import { TEXTURE_CHANNELS } from "@/types/core";
 import { buildMaterial } from "@/materials/build";
 import { buildStudioEnvironment } from "@/render/environment/studioEnvironment";
+import { decodeChannelTexture } from "@/render/scene-sync/textureCache";
 
 /**
  * Offscreen C4D-style material preview: a lit sphere in a small studio scene,
@@ -29,6 +33,7 @@ export class MaterialThumbnails {
   private readonly camera: PerspectiveCamera;
   private readonly sphere: Mesh;
   private readonly ready: Promise<unknown>;
+  private readonly texCache = new Map<string, Texture>();
   private disposed = false;
 
   constructor(size = 192) {
@@ -60,6 +65,7 @@ export class MaterialThumbnails {
     await this.ready;
     if (this.disposed) return "";
     const mat = buildMaterial(dto);
+    await this.applyTextures(mat, dto);
     const prev = this.sphere.material;
     this.sphere.material = mat;
     await this.renderer.renderAsync(this.scene, this.camera);
@@ -69,8 +75,31 @@ export class MaterialThumbnails {
     return url;
   }
 
+  /** Decode + bind this material's image-map channels (own device textures). */
+  private async applyTextures(mat: NodeMaterial, dto: MaterialDTO): Promise<void> {
+    const m = mat as unknown as Record<string, unknown>;
+    for (const { channel, applies, colorSpace } of TEXTURE_CHANNELS) {
+      if (!(channel in mat)) continue;
+      const id = applies.has(dto.type) ? dto.textures?.[channel] : undefined;
+      if (!id) continue;
+      const tex = await this.loadTexture(id, colorSpace);
+      if (tex) m[channel] = tex;
+    }
+  }
+
+  private async loadTexture(id: Uuid, colorSpace: "srgb" | "linear"): Promise<Texture | null> {
+    const key = `${id}:${colorSpace}`;
+    const hit = this.texCache.get(key);
+    if (hit) return hit;
+    const tex = await decodeChannelTexture(id, colorSpace);
+    if (tex) this.texCache.set(key, tex);
+    return tex;
+  }
+
   dispose(): void {
     this.disposed = true;
+    for (const t of this.texCache.values()) t.dispose();
+    this.texCache.clear();
     this.renderer.dispose();
   }
 }
