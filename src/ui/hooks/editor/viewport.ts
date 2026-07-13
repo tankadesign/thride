@@ -47,10 +47,10 @@ export const bevelParamsAtom = atom<BevelToolParams>(defaultBevelParams());
 export const penActiveAtom = atom(false);
 /** Per-logical-pane display settings (viewport context menu → Display). */
 export const paneDisplaysAtom = atom<PaneDisplay[]>([
-  defaultPaneDisplay(),
-  defaultPaneDisplay(),
-  defaultPaneDisplay(),
-  defaultPaneDisplay(),
+  defaultPaneDisplay(0),
+  defaultPaneDisplay(1),
+  defaultPaneDisplay(2),
+  defaultPaneDisplay(3),
 ]);
 
 /** Snapshot the persistable viewport settings (layout, cameras, per-pane display). */
@@ -181,7 +181,7 @@ class EditorStateStore implements EditorViewportState {
   }
 
   paneDisplay(pane: number): PaneDisplay {
-    return appStore.get(paneDisplaysAtom)[pane] ?? defaultPaneDisplay();
+    return appStore.get(paneDisplaysAtom)[pane] ?? defaultPaneDisplay(pane);
   }
 
   setPaneDisplay(pane: number, patch: Partial<PaneDisplay>): void {

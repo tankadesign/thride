@@ -41,10 +41,12 @@ const aoTint = (s: number): string => {
 export function ViewSettingsModal({
   pane,
   vs,
+  initialPos,
   onClose,
 }: {
   pane: number;
   vs: ViewportSystem;
+  initialPos: { x: number; y: number };
   onClose: () => void;
 }) {
   const disp = useAtomValue(paneDisplaysAtom)[pane] ?? defaultPaneDisplay(pane);
@@ -52,7 +54,7 @@ export function ViewSettingsModal({
   const isPbr = disp.shading === "pbr";
   const set = (patch: Partial<PaneDisplay>) => editorState.setPaneDisplay(pane, patch);
 
-  const [pos, setPos] = useState({ x: 8, y: 44 });
+  const [pos, setPos] = useState(initialPos);
   const onHeaderDown = (e: React.PointerEvent) => {
     if ((e.target as HTMLElement).closest("button")) return; // let the close button click
     const sx = e.clientX;

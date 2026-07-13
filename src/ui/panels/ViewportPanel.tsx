@@ -90,7 +90,8 @@ export function ViewportPanel({ onSystem }: Props) {
   const [snapMarker, setSnapMarker] = useState<{ x: number; y: number } | null>(null);
   const [axes, setAxes] = useState<PaneAxes[]>([]);
   const [system, setSystem] = useState<ViewportSystem | null>(null);
-  const [settingsPane, setSettingsPane] = useState<number | null>(null);
+  const [settings, setSettings] = useState<{ pane: number; x: number; y: number } | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const bevelActive = useAtomValue(bevelActiveAtom);
   const splineThickness = useAtomValue(splineThicknessAtom);
   const { layout, maximizedPane, paneCameras, setPaneCamera } = useViewportState();
@@ -180,6 +181,7 @@ export function ViewportPanel({ onSystem }: Props) {
 
   return (
     <div
+      ref={containerRef}
       className="relative h-full w-full overflow-hidden"
       onDragOver={onMaterialDragOver}
       onDrop={onMaterialDrop}
@@ -204,14 +206,32 @@ export function ViewportPanel({ onSystem }: Props) {
             type="button"
             className="btn btn-square btn-xs border-base-300 bg-base-100/80 backdrop-blur"
             title="View settings"
-            onClick={() => setSettingsPane((p) => (p === pane ? null : pane))}
+            onClick={(e) => {
+              if (settings?.pane === pane) {
+                setSettings(null);
+                return;
+              }
+              // open anchored under THIS pane's gear so 4-up lands in the right
+              // quadrant; clamp x so the ~240px modal stays inside the viewport
+              const box = containerRef.current?.getBoundingClientRect();
+              const b = e.currentTarget.getBoundingClientRect();
+              const x = b.left - (box?.left ?? 0);
+              const y = b.bottom - (box?.top ?? 0) + 4;
+              setSettings({ pane, x: Math.max(4, Math.min(x, (box?.width ?? 248) - 248)), y });
+            }}
           >
             <HugeiconsIcon icon={Settings01Icon} size={14} />
           </button>
         </div>
       ))}
-      {settingsPane !== null && system ? (
-        <ViewSettingsModal pane={settingsPane} vs={system} onClose={() => setSettingsPane(null)} />
+      {settings && system ? (
+        <ViewSettingsModal
+          key={settings.pane}
+          pane={settings.pane}
+          initialPos={{ x: settings.x, y: settings.y }}
+          vs={system}
+          onClose={() => setSettings(null)}
+        />
       ) : null}
       {slots.map((pane, slot) =>
         axes[slot] ? (
