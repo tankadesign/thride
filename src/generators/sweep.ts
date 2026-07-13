@@ -5,18 +5,26 @@ import { bestFitFrame, type P2, projectToFrame } from "@/geometry/splines/planeF
 export interface SweepParams {
   /** Even stations resampled along the path (only when `usePathPoints` is off). */
   pathSegments: number;
+  /** Per-span subdivision of the profile curve (round circles; polylines with
+   * straight spans are unaffected). Applied when the profile is sampled from its
+   * spline (graph layer), not in `buildSweep`. Default 12. */
+  profileSegments?: number;
   /** Cross-section rotation around the path tangent, in degrees (default 0). */
   rotation?: number;
   /** Place a ring at each path point (orientation follows the path's own
    * geometry) instead of resampling to `pathSegments` even stations. Default on;
    * absent on sweeps saved before this existed → treated as on. */
   usePathPoints?: boolean;
+  /** Flip face winding so the tube's normals point the other way. */
+  invertNormals?: boolean;
 }
 
 export const defaultSweepParams = (): SweepParams => ({
   pathSegments: 48,
+  profileSegments: 12,
   rotation: 0,
   usePathPoints: true,
+  invertNormals: false,
 });
 
 /** A sampled curve in a common space (handles already resolved to a polyline). */
@@ -98,6 +106,8 @@ export function buildSweep(
     faces.push([...Array(ring).keys()].map((j) => at(0, ring - 1 - j)));
     faces.push([...Array(ring).keys()].map((j) => at(rings - 1, j)));
   }
+  // flip winding (and thus normals) on every face — walls and caps together
+  if (params.invertNormals) for (const f of faces) f.reverse();
   const faceUVs = faces.map((f) => new Array(f.length * 2).fill(0));
   try {
     return HEMesh.fromPolygons({ positions, faces, faceUVs });

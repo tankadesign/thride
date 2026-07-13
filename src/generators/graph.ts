@@ -98,7 +98,7 @@ export function evaluateGenerator(
 
   if (desc.type === "sweep") {
     // two ordered spline children: [0] = profile, [1] = path
-    const inputs = sweepInputs(doc, node.id);
+    const inputs = sweepInputs(doc, node.id, desc.params.profileSegments ?? 12);
     const key = `sw:${JSON.stringify(desc.params)}:${inputs.key}`;
     const hit = perDoc.get(node.id);
     if (hit && hit.key === key) return hit.mesh ? { key, mesh: hit.mesh } : null;
@@ -159,12 +159,12 @@ function firstChildSpline(
 /**
  * Sweep inputs: the first two spline children in object-manager order —
  * [0] profile, [1] path — each baked into the child's world transform so both
- * live in the sweep's local space. The PATH is bezier-sampled to a smooth
- * polyline; the PROFILE uses its own anchor points verbatim (no interpolation),
- * so a 4-point circle sweeps as a 4-sided section. The key covers both
- * children's data + transforms (a path edit must recompute).
+ * live in the sweep's local space. Both are bezier-sampled to a polyline; the
+ * profile at `profileSegments` per curved span (1 → anchors verbatim, so a
+ * bezier circle is a polygon; higher → round), the path at the default density.
+ * The key covers both children's data + transforms (a path edit must recompute).
  */
-function sweepInputs(doc: Document, id: Uuid) {
+function sweepInputs(doc: Document, id: Uuid, profileSegments: number) {
   const splines: { data: SplineData; transform: SceneNode["transform"] }[] = [];
   for (const childId of doc.scene.childrenOf(id)) {
     if (splines.length >= 2) break;
@@ -189,10 +189,7 @@ function sweepInputs(doc: Document, id: Uuid) {
   const key = splines.map((s) => JSON.stringify(s.data) + JSON.stringify(s.transform)).join("|");
   return {
     profile: splines[0]
-      ? bake(
-          splines[0],
-          splines[0].data.points.map((p) => p.position),
-        )
+      ? bake(splines[0], sampleSpline3D(splines[0].data, Math.max(1, Math.round(profileSegments))))
       : null,
     path: splines[1] ? bake(splines[1], sampleSpline3D(splines[1].data)) : null,
     key: key || "∅",

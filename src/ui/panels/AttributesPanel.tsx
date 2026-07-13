@@ -583,8 +583,10 @@ function GeneratorParams({ id, gen }: { id: Uuid; gen: GeneratorDescriptor }) {
   if (gen.type === "sweep") {
     const sp = gen.params as unknown as {
       pathSegments: number;
+      profileSegments?: number;
       rotation?: number;
       usePathPoints?: boolean;
+      invertNormals?: boolean;
     };
     const usePathPoints = sp.usePathPoints ?? true;
     return (
@@ -598,6 +600,19 @@ function GeneratorParams({ id, gen }: { id: Uuid; gen: GeneratorDescriptor }) {
             min={-360}
             max={360}
             onChange={(v, committed) => setParam("rotation", v, committed)}
+          />
+        </div>
+        <div className="grid grid-cols-[64px_1fr] items-center gap-1">
+          <span className="truncate opacity-60" title="Profile Segs">
+            Profile Segs
+          </span>
+          <NumberDrag
+            value={sp.profileSegments ?? 12}
+            step={1}
+            integer
+            min={1}
+            max={64}
+            onChange={(v, committed) => setParam("profileSegments", v, committed)}
           />
         </div>
         <div className="flex items-center justify-between gap-2">
@@ -624,6 +639,15 @@ function GeneratorParams({ id, gen }: { id: Uuid; gen: GeneratorDescriptor }) {
             />
           </div>
         )}
+        <div className="flex items-center justify-between gap-2">
+          <span className="opacity-60">Invert Normals</span>
+          <input
+            type="checkbox"
+            className="toggle toggle-xs"
+            checked={sp.invertNormals ?? false}
+            onChange={(e) => setParam("invertNormals", e.target.checked, true)}
+          />
+        </div>
         <p className="mt-1 text-[10px] opacity-50">Children: 1st = profile, 2nd = path.</p>
       </fieldset>
     );
