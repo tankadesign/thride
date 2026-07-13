@@ -55,6 +55,14 @@ export interface PaneDisplay {
   aoTint: string;
   /** GTAO quality — samples per pixel (more = smoother, slower). */
   aoSamples: number;
+  /** GTAO distance falloff (0–1) — how quickly occlusion weakens with distance. */
+  aoFalloff: number;
+  /** GTAO sample-distribution exponent — biases samples near (>1) vs even (1). */
+  aoDistanceExp: number;
+  /** GTAO contrast — AO is raised to this power (higher = darker/harder). */
+  aoScale: number;
+  /** GTAO resolution scale (0–1) — render AO at reduced res for perf. */
+  aoResolution: number;
   grid: boolean;
   /** Wireframe overlay on top of PBR/Flat. No effect in Wireframe mode (already all lines). */
   lines: boolean;
@@ -74,6 +82,10 @@ export const defaultPaneDisplay = (pane = 0): PaneDisplay => ({
   aoBias: 0.5,
   aoTint: "#000000",
   aoSamples: 16,
+  aoFalloff: 1,
+  aoDistanceExp: 1,
+  aoScale: 1,
+  aoResolution: 1,
   grid: true,
   lines: false,
   hiddenLines: false,

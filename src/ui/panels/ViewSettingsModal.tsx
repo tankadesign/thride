@@ -128,6 +128,15 @@ export function ViewSettingsModal({
               onChange={(v) => set({ aoRadius: v })}
             />
           </Row>
+          <Row label="Thickness">
+            <NumberDrag
+              value={disp.aoBias}
+              step={0.02}
+              min={0.01}
+              max={5}
+              onChange={(v) => set({ aoBias: v })}
+            />
+          </Row>
           <Row label="Quality">
             <NumberDrag
               value={disp.aoSamples}
@@ -136,6 +145,42 @@ export function ViewSettingsModal({
               min={4}
               max={32}
               onChange={(v) => set({ aoSamples: v })}
+            />
+          </Row>
+          <Row label="Falloff">
+            <NumberDrag
+              value={disp.aoFalloff}
+              step={0.02}
+              min={0}
+              max={1}
+              onChange={(v) => set({ aoFalloff: v })}
+            />
+          </Row>
+          <Row label="Distance Exp">
+            <NumberDrag
+              value={disp.aoDistanceExp}
+              step={0.05}
+              min={0.1}
+              max={4}
+              onChange={(v) => set({ aoDistanceExp: v })}
+            />
+          </Row>
+          <Row label="Contrast">
+            <NumberDrag
+              value={disp.aoScale}
+              step={0.05}
+              min={0.1}
+              max={4}
+              onChange={(v) => set({ aoScale: v })}
+            />
+          </Row>
+          <Row label="Resolution">
+            <NumberDrag
+              value={disp.aoResolution}
+              step={0.05}
+              min={0.25}
+              max={1}
+              onChange={(v) => set({ aoResolution: v })}
             />
           </Row>
           <Row label="Strength">

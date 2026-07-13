@@ -516,6 +516,10 @@ export class ViewportSystem {
             bias: activeDisp.aoBias,
             tint: activeDisp.aoTint,
             samples: activeDisp.aoSamples,
+            falloff: activeDisp.aoFalloff,
+            distanceExp: activeDisp.aoDistanceExp,
+            scale: activeDisp.aoScale,
+            resolution: activeDisp.aoResolution,
           }
         : null,
     );

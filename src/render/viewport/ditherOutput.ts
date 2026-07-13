@@ -34,6 +34,10 @@ export interface AmbientShadowParams {
   bias: number; // horizon thickness (hides thin-surface haloing)
   tint: string; // hex — the color occluded areas darken toward
   samples: number; // quality (more = smoother, slower)
+  falloff: number; // distance falloff (0–1)
+  distanceExp: number; // sample-distribution exponent
+  scale: number; // AO contrast (ao = pow(ao, scale))
+  resolution: number; // AO render resolution scale (0–1, perf)
 }
 
 const THREE_TONE_MAPPING: Record<OutputToneMapping, ToneMapping> = {
@@ -112,10 +116,20 @@ export class DitherOutput {
   }
 
   private applyAoParams(p: AmbientShadowParams): void {
-    if (!this.aoNode) return;
-    this.aoNode.radius.value = Math.max(0.01, p.radius);
-    this.aoNode.thickness.value = Math.max(0.01, p.bias);
-    this.aoNode.samples.value = Math.max(4, Math.round(p.samples));
+    const n = this.aoNode;
+    if (!n) return;
+    n.radius.value = Math.max(0.01, p.radius);
+    n.thickness.value = Math.max(0.01, p.bias);
+    n.samples.value = Math.max(4, Math.round(p.samples));
+    n.distanceFallOff.value = Math.min(1, Math.max(0, p.falloff));
+    n.distanceExponent.value = Math.max(0.1, p.distanceExp);
+    n.scale.value = Math.max(0.1, p.scale);
+    // resolutionScale is a plain property; the AO target must resize to take it
+    const res = Math.min(1, Math.max(0.1, p.resolution));
+    if (n.resolutionScale !== res) {
+      n.resolutionScale = res;
+      n.setSize(this.width, this.height);
+    }
   }
 
   private rebuild(): void {
@@ -129,11 +143,10 @@ export class DitherOutput {
       const depth = texture(this.hdr.depthTexture as NonNullable<typeof this.hdr.depthTexture>);
       // biome-ignore lint/suspicious/noExplicitAny: ao() normalNode is optional
       const aoPass = ao(depth, null as any, this.aoCamera);
-      aoPass.radius.value = Math.max(0.01, this.aoParams.radius);
-      aoPass.thickness.value = Math.max(0.01, this.aoParams.bias);
-      aoPass.samples.value = Math.max(4, Math.round(this.aoParams.samples));
+      aoPass.resolutionScale = Math.min(1, Math.max(0.1, this.aoParams.resolution));
       aoPass.setSize(this.width, this.height);
       this.aoNode = aoPass;
+      this.applyAoParams(this.aoParams); // radius/thickness/samples/falloff/exp/scale
       const occ = aoPass.getTextureNode().r; // 1 = lit, 0 = fully occluded
       const tint = new Color(this.aoParams.tint);
       // occluded areas fade the HDR color toward the tint (linear, pre-tonemap)
