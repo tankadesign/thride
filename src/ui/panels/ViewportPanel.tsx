@@ -21,7 +21,9 @@ import {
   ViewportSystem,
 } from "@/render/viewport/ViewportSystem";
 import { themeStyle, viewportTheme } from "@/render/theme/viewportTheme";
-import { buildViewportMenu } from "./viewportMenu";
+import { ViewSettingsModal } from "./ViewSettingsModal";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { Settings01Icon } from "@hugeicons/core-free-icons";
 import { IconPivotPoint } from "@/icons";
 
 const OBJECT_CONTEXT_COMMANDS = [
@@ -88,6 +90,7 @@ export function ViewportPanel({ onSystem }: Props) {
   const [snapMarker, setSnapMarker] = useState<{ x: number; y: number } | null>(null);
   const [axes, setAxes] = useState<PaneAxes[]>([]);
   const [system, setSystem] = useState<ViewportSystem | null>(null);
+  const [settingsPane, setSettingsPane] = useState<number | null>(null);
   const bevelActive = useAtomValue(bevelActiveAtom);
   const splineThickness = useAtomValue(splineThicknessAtom);
   const { layout, maximizedPane, paneCameras, setPaneCamera } = useViewportState();
@@ -107,17 +110,16 @@ export function ViewportPanel({ onSystem }: Props) {
     vs.onNavMarker = setNavMarker;
     vs.onSnapMarker = setSnapMarker;
     vs.onAxes = setAxes;
-    vs.onContextMenuRequest = ({ clientX, clientY, pane, nodeId }) => {
-      if (nodeId) {
-        if (!doc.selection.has(nodeId)) doc.selection.selectObjects([nodeId]);
-        openContextMenu({
-          x: clientX,
-          y: clientY,
-          entries: OBJECT_CONTEXT_COMMANDS.map((commandId) => ({ commandId })),
-        });
-      } else {
-        openContextMenu({ x: clientX, y: clientY, entries: buildViewportMenu(doc, vs, pane) });
-      }
+    vs.onContextMenuRequest = ({ clientX, clientY, nodeId }) => {
+      // background right-click has no menu now — Camera & Display moved to the
+      // View Settings modal (the gear button next to the camera dropdown).
+      if (!nodeId) return;
+      if (!doc.selection.has(nodeId)) doc.selection.selectObjects([nodeId]);
+      openContextMenu({
+        x: clientX,
+        y: clientY,
+        entries: OBJECT_CONTEXT_COMMANDS.map((commandId) => ({ commandId })),
+      });
     };
     onSystem(vs);
     // expose a narrow baker so the Attributes target selector can retain the
@@ -186,20 +188,31 @@ export function ViewportPanel({ onSystem }: Props) {
       {bevelActive && system ? <BevelSettings vs={system} /> : null}
       {system ? <SplinePointPanel vs={system} /> : null}
       {slots.map((pane, slot) => (
-        <select
-          key={pane}
-          className="select select-xs absolute w-32 border-base-300 bg-base-100/80 backdrop-blur"
-          style={slotStyle(slot)}
-          value={paneCameras[pane] as string}
-          onChange={(e) => setPaneCamera(pane, e.target.value as PaneCamera)}
-        >
-          {cameraOptions.map((o) => (
-            <option key={o.value} value={o.value}>
-              {o.label}
-            </option>
-          ))}
-        </select>
+        <div key={pane} className="absolute flex items-center gap-1" style={slotStyle(slot)}>
+          <select
+            className="select select-xs w-32 border-base-300 bg-base-100/80 backdrop-blur"
+            value={paneCameras[pane] as string}
+            onChange={(e) => setPaneCamera(pane, e.target.value as PaneCamera)}
+          >
+            {cameraOptions.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            className="btn btn-square btn-xs border-base-300 bg-base-100/80 backdrop-blur"
+            title="View settings"
+            onClick={() => setSettingsPane((p) => (p === pane ? null : pane))}
+          >
+            <HugeiconsIcon icon={Settings01Icon} size={14} />
+          </button>
+        </div>
       ))}
+      {settingsPane !== null && system ? (
+        <ViewSettingsModal pane={settingsPane} vs={system} onClose={() => setSettingsPane(null)} />
+      ) : null}
       {slots.map((pane, slot) =>
         axes[slot] ? (
           <div key={`axes-${pane}`} className="absolute" style={axesStyle(slot)}>
