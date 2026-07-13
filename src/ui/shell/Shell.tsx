@@ -10,6 +10,7 @@ import type { Document } from "@/core";
 import { buildCommands, type ShellApi } from "@/app/commands";
 import { CommandRegistry } from "@/ui/commands/CommandRegistry";
 import { setRegistry, usePalette } from "@/ui/hooks/editor/shell";
+import { useSelectObjectMaterial } from "@/ui/hooks/editor/materials";
 import { AttributesPanel } from "@/ui/panels/AttributesPanel";
 import { GalleryPanel } from "@/ui/panels/GalleryPanel";
 import { MaterialManagerPanel } from "@/ui/panels/MaterialManagerPanel";
@@ -28,6 +29,7 @@ export function Shell({ doc }: { doc: Document }) {
   const apiRef = useRef<DockviewApi | null>(null);
   const viewportRef = useRef<ViewportSystem | null>(null);
   const palette = usePalette();
+  useSelectObjectMaterial(); // selecting an object selects its material in the manager
 
   const registry = useMemo(() => {
     const shellApi: ShellApi = {

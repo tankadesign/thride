@@ -1,10 +1,30 @@
 import { useEffect, useState } from "react";
-import { atom } from "jotai";
+import { atom, useSetAtom } from "jotai";
 import type { MaterialDTO, Uuid } from "@/types/core";
 import { MaterialThumbnails } from "@/render/thumbnails/materialThumbnails";
+import { useDocument } from "@/ui/hooks/doc/document";
+import { useSelectionInfo } from "@/ui/hooks/doc/selection";
 
 /** Material selected in the Material Manager (ephemeral UI state). */
 export const selectedMaterialAtom = atom<Uuid | null>(null);
+
+/**
+ * Keep the Material Manager's selection in sync with the viewport: selecting a
+ * SINGLE object that has an assigned material selects that material in the
+ * editor. Multi-select, or an object with no material, leaves the current
+ * material selection untouched (so the panel isn't yanked on every stray click).
+ * Mounted once at the shell so it works even when the panel is closed.
+ */
+export function useSelectObjectMaterial(): void {
+  const doc = useDocument();
+  const { objectIds } = useSelectionInfo();
+  const setSelected = useSetAtom(selectedMaterialAtom);
+  useEffect(() => {
+    if (objectIds.length !== 1) return;
+    const matId = doc.scene.get(objectIds[0]!)?.data?.material as Uuid | undefined;
+    if (matId && doc.materials.has(matId)) setSelected(matId);
+  }, [objectIds, doc, setSelected]);
+}
 
 /** dataTransfer type carrying a material id when dragging a swatch onto an object. */
 export const MATERIAL_DND_MIME = "application/x-thride-material";
