@@ -20,16 +20,17 @@ const TONE: { value: ToneMappingMode; label: string }[] = [
   { value: "aces", label: "ACES Filmic" },
   { value: "neutral", label: "Neutral" },
 ];
-const AO_QUALITY = [
-  { value: "8", label: "Low" },
-  { value: "16", label: "Normal" },
-  { value: "32", label: "High" },
-];
-const AO_STRENGTH = [
-  { value: "#5a5a5a", label: "Subtle" },
-  { value: "#323232", label: "Normal" },
-  { value: "#000000", label: "Strong" },
-];
+/** AO "Strength" ↔ neutral tint darkness: 0 = none (#ffffff), 1 = full (#000000). */
+const aoStrength = (hex: string): number => {
+  const v = Number.parseInt(hex.slice(1, 3), 16);
+  return Number.isFinite(v) ? 1 - v / 255 : 1;
+};
+const aoTint = (s: number): string => {
+  const h = Math.round((1 - Math.min(1, Math.max(0, s))) * 255)
+    .toString(16)
+    .padStart(2, "0");
+  return `#${h}${h}${h}`;
+};
 
 /**
  * Draggable per-pane View Settings — an attribute editor for the pane's display
@@ -128,17 +129,22 @@ export function ViewSettingsModal({
             />
           </Row>
           <Row label="Quality">
-            <Select
-              value={String(disp.aoSamples)}
-              options={AO_QUALITY}
-              onChange={(v) => set({ aoSamples: Number(v) })}
+            <NumberDrag
+              value={disp.aoSamples}
+              step={1}
+              integer
+              min={4}
+              max={32}
+              onChange={(v) => set({ aoSamples: v })}
             />
           </Row>
           <Row label="Strength">
-            <Select
-              value={disp.aoTint.toLowerCase()}
-              options={AO_STRENGTH}
-              onChange={(v) => set({ aoTint: v })}
+            <NumberDrag
+              value={aoStrength(disp.aoTint)}
+              step={0.02}
+              min={0}
+              max={1}
+              onChange={(v) => set({ aoTint: aoTint(v) })}
             />
           </Row>
         </Section>
