@@ -10,6 +10,7 @@ import {
   Vector3,
 } from "three";
 import { MeshBasicNodeMaterial } from "three/webgpu";
+import { HELPER_LAYER } from "@/render/layers";
 import type { Node } from "three/webgpu";
 import type { Uuid } from "@/types/core";
 import type { Document } from "@/core";
@@ -77,6 +78,9 @@ export class SelectionOutline {
       outline.raycast = () => {}; // never pickable
       outline.userData.outline = true;
       outline.renderOrder = -1; // hull first, real surface wins the depth test
+      // helper layer: outlines must not appear in SSR / planar-mirror
+      // reflections; the viewport's overlay render draws them instead
+      outline.layers.set(HELPER_LAYER);
       obj.add(outline);
       this.outlines.set(id, { mesh: outline, offset });
     }

@@ -15,6 +15,7 @@ import { WebGPURenderer } from "three/webgpu";
 import { DitherOutput, type OutputToneMapping } from "./ditherOutput";
 import { ssrEnvironmentTexture } from "@/render/environment/defaultHdr";
 import { EnvironmentSync } from "@/render/environment/EnvironmentSync";
+import { HELPER_LAYER } from "@/render/layers";
 import type { Document } from "@/core";
 import type { Uuid } from "@/types/core";
 import type { BuiltinCamera, EditorViewportState } from "@/types/editor";
@@ -58,14 +59,6 @@ export interface AxisProjection {
 
 /** Per visible pane slot: X/Y/Z projections. */
 export type PaneAxes = [AxisProjection, AxisProjection, AxisProjection];
-
-/**
- * Layer for interaction helpers (gizmo, handles, overlays, tools). Scene
- * renders — the hdr pass, the SSR G-buffer pass, and planar-reflector mirror
- * renders — use cameras on layer 0 only, so helpers never appear in
- * reflections; a dedicated overlay render draws them each frame instead.
- */
-const HELPER_LAYER = 1;
 
 const BUILTINS: BuiltinCamera[] = [
   "persp",
@@ -467,7 +460,6 @@ export class ViewportSystem {
   private async renderFrame(): Promise<void> {
     const renderer = this.renderer;
     if (!renderer) return;
-    this.applyHelperLayers();
     this.layoutPanes();
     const logical = this.logicalPanes();
     const axesPerSlot: PaneAxes[] = [];
@@ -545,6 +537,10 @@ export class ViewportSystem {
       this.splineOverlays.update(rig.camera, p.h);
       this.sync.updateOutlines(rig.camera, p.h);
       this.sync.updateHelperBillboards(rig.camera, p.h);
+      // AFTER the updates: gizmo/handles rebuild children during update(), and
+      // fresh objects default to layer 0 — tag them (again) or the SSR pass /
+      // reflector mirrors render them into reflections.
+      this.applyHelperLayers();
       axesPerSlot.push(projectAxes(rig));
       // SSR draws the scene in the composite (output.render → pass node); the
       // manual blit is skipped for the active pane.
@@ -588,11 +584,21 @@ export class ViewportSystem {
       renderer.setClearAlpha(0);
       output.hdr.viewport.set(0, 0, output.hdr.width, output.hdr.height);
       output.hdr.scissor.set(0, 0, output.hdr.width, output.hdr.height);
+      // prime the overlay depth with the SSR pass's (previous frame's) scene
+      // depth so outlines/handles occlude correctly (the outline hull relies
+      // on depth-testing against the real surface). One frame of lag is fine.
+      const passDepth = output.ssrDepthTexture;
+      const depthPrimed =
+        passDepth?.image?.width === output.hdr.width &&
+        passDepth?.image?.height === output.hdr.height;
+      if (depthPrimed) renderer.copyTextureToTexture(passDepth, output.hdr.depthTexture!);
+      renderer.autoClearDepth = !depthPrimed; // keep the copied depth
       renderer.setRenderTarget(output.hdr);
       activeCam.layers.set(HELPER_LAYER);
       await renderer.renderAsync(this.scene, activeCam);
       activeCam.layers.set(0);
       renderer.setRenderTarget(null);
+      renderer.autoClearDepth = true;
       renderer.setClearAlpha(prevClearAlpha);
       this.scene.background = bg;
     }

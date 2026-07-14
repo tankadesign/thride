@@ -148,11 +148,28 @@ export class DitherOutput {
     this.rebuild();
   }
 
+  /**
+   * The SSR scene pass's depth texture (previous frame) — primes the helper
+   * overlay's depth so outlines/handles occlude correctly in SSR mode.
+   */
+  // biome-ignore lint/suspicious/noExplicitAny: DepthTexture via untyped PassNode
+  get ssrDepthTexture(): any {
+    return this.scenePass?.renderTarget?.depthTexture ?? null;
+  }
+
   /** Size the HDR target to the renderer's drawing buffer (device pixels). */
   resize(width: number, height: number): void {
     this.width = Math.max(1, Math.floor(width));
     this.height = Math.max(1, Math.floor(height));
     this.hdr.setSize(this.width, this.height);
+    // three 0.185.1: RenderTarget.setSize doesn't resize depthTexture — size it
+    // so depth copies into it (SSR helper overlay) pass validation.
+    const hdrDepth = this.hdr.depthTexture;
+    if (hdrDepth?.image) {
+      hdrDepth.image.width = this.width;
+      hdrDepth.image.height = this.height;
+      hdrDepth.dispose();
+    }
     this.aoNode?.setSize(this.width, this.height);
     if (this.denoise) {
       // The temporal graph holds internal history buffers (previous-depth AND
