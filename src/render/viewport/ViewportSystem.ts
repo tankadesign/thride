@@ -119,11 +119,10 @@ export class ViewportSystem {
   private unsubs: (() => void)[] = [];
   private frames = 0;
   private lastStats = performance.now();
-  // Converge-then-idle accumulation for temporal SSR (High). `frameIndex` is a
-  // monotonic per-frame counter for stochastic noise/history; `accumFrame`
-  // counts frames since the last change and `accumTarget` is how many to render
-  // before idling (0 = pure on-demand — every non-temporal path is unchanged).
-  private frameIndex = 0;
+  // Converge-then-idle accumulation for temporal SSR (High): `accumFrame` counts
+  // frames since the last change and `accumTarget` is how many to render before
+  // idling (0 = pure on-demand — every non-temporal path is unchanged). The SSR/
+  // reproject/denoise nodes self-manage their own frame counters via updateBefore.
   private accumFrame = 0;
   private accumTarget = 0;
   /** Canvas-relative 2D position of the active nav pivot marker (the "+"). */
@@ -587,7 +586,6 @@ export class ViewportSystem {
     output.render();
     this.onAxes?.(axesPerSlot);
     this.frames++;
-    this.frameIndex++;
     // Temporal SSR converges over a burst of frames after each change, then
     // idles; every other path stays pure on-demand (accumTarget 0). Only counts
     // when the HDR env is actually ready (else DitherOutput ran gen-1).
