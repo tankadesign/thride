@@ -11,6 +11,7 @@ export {
   mix,
   renderOutput,
   screenCoordinate,
+  smoothstep,
   texture,
   vec3,
   vec2,

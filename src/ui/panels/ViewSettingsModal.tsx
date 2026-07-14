@@ -282,6 +282,15 @@ export function ViewSettingsModal({
               onChange={(v) => set({ ssrResolution: v })}
             />
           </Row>
+          <Row label="Roughness Fade">
+            <NumberDrag
+              value={disp.ssrRoughnessFade}
+              step={0.02}
+              min={0}
+              max={1}
+              onChange={(v) => set({ ssrRoughnessFade: v })}
+            />
+          </Row>
         </Section>
 
         <Section title="Overlays">

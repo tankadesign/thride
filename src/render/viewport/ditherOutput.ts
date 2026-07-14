@@ -27,7 +27,9 @@ import {
   renderOutput,
   roughness,
   screenCoordinate,
+  smoothstep,
   texture,
+  uniform,
   vec2,
   vec3,
 } from "@/materials/tsl";
@@ -59,6 +61,7 @@ export interface SsrParams {
   maxLuminance: number; // HDR firefly clamp
   resolution: number; // SSR render resolution scale 0.25–1
   reflectNonMetals: boolean; // reflect dielectrics too (compile-time)
+  roughnessFade: number; // roughness where SSR starts fading to IBL (0 at rough=1)
 }
 
 const THREE_TONE_MAPPING: Record<OutputToneMapping, ToneMapping> = {
@@ -104,6 +107,9 @@ export class DitherOutput {
   private ssrNode: any = null;
   // biome-ignore lint/suspicious/noExplicitAny: PassNode type not exported
   private scenePass: any = null;
+  // roughness at which SSR fades to IBL — a uniform so it live-tweaks
+  // biome-ignore lint/suspicious/noExplicitAny: TSL uniform node
+  private ssrFadeStart: any = null;
   private width = 1;
   private height = 1;
 
@@ -165,22 +171,33 @@ export class DitherOutput {
     const on = scene !== null && camera !== null && params !== null;
     const was = this.ssrScene !== null && this.ssrCamera !== null && this.ssrParams !== null;
     const targetChanged = camera !== this.ssrCamera || scene !== this.ssrScene;
-    const compileChanged =
-      on &&
-      was &&
-      params !== null &&
-      this.ssrParams !== null &&
-      (params.reflectNonMetals !== this.ssrParams.reflectNonMetals ||
-        Math.round(params.blurQuality) !== Math.round(this.ssrParams.blurQuality));
+    // The SSR pass only reflects changes made at graph-build time — poking its
+    // uniforms live (even with post.needsUpdate) does NOT re-run the reflection
+    // render. So any value change rebuilds. ViewportSystem hands a fresh params
+    // object each frame, hence the field-by-field compare (else we'd rebuild
+    // every frame). Rebuilding on a steady frame is skipped entirely.
+    const changed = on !== was || targetChanged || this.ssrParamsDiffer(params, this.ssrParams);
     this.ssrScene = scene;
     this.ssrCamera = camera;
     this.ssrParams = params;
-    if (on && params && this.ssrNode && !targetChanged && !compileChanged) {
-      this.applySsrParams(params); // live uniform tweak — no rebuild
-      return;
-    }
-    if (on !== was || targetChanged || compileChanged) this.rebuild();
-    else if (params) this.applySsrParams(params);
+    if (changed) this.rebuild();
+  }
+
+  private ssrParamsDiffer(a: SsrParams | null, b: SsrParams | null): boolean {
+    if (a === b) return false;
+    if (!a || !b) return true;
+    return (
+      a.maxDistance !== b.maxDistance ||
+      a.thickness !== b.thickness ||
+      a.intensity !== b.intensity ||
+      a.quality !== b.quality ||
+      a.blurQuality !== b.blurQuality ||
+      a.edgeFade !== b.edgeFade ||
+      a.maxLuminance !== b.maxLuminance ||
+      a.resolution !== b.resolution ||
+      a.reflectNonMetals !== b.reflectNonMetals ||
+      a.roughnessFade !== b.roughnessFade
+    );
   }
 
   private applyAoParams(p: AmbientShadowParams): void {
@@ -209,6 +226,8 @@ export class DitherOutput {
     n.quality.value = clamp(p.quality, 0, 1);
     n.screenEdgeFade.value = clamp(p.edgeFade, 0, 1);
     n.maxLuminance.value = Math.max(0.001, p.maxLuminance);
+    // fade edge < 1 so the smoothstep(fadeStart, 1) below stays well-formed
+    if (this.ssrFadeStart) this.ssrFadeStart.value = clamp(p.roughnessFade, 0, 0.99);
     // resolutionScale is a plain property; the SSR target must resize to take it
     const res = clamp(p.resolution, 0.25, 1);
     if (n.resolutionScale !== res) {
@@ -223,6 +242,7 @@ export class DitherOutput {
     this.aoNode = null;
     this.ssrNode?.dispose?.();
     this.ssrNode = null;
+    this.ssrFadeStart = null;
     this.scenePass?.dispose?.();
     this.scenePass = null;
 
@@ -284,8 +304,15 @@ export class DitherOutput {
       ssrNode.resolutionScale = clamp(this.ssrParams.resolution, 0.25, 1);
       ssrNode.setSize(this.width, this.height);
       this.ssrNode = ssrNode;
-      this.applySsrParams(this.ssrParams); // maxDistance/thickness/intensity/quality/…
-      composite = composite.add(ssrNode.getTextureNode().rgb);
+      // SSR's mirror+blur can't reach a true diffuse gather, so fade its
+      // contribution to zero as roughness → 1 and let the IBL/PMREM env
+      // reflection (already the correct wide blur) take over. `roughNode.r`
+      // is the per-pixel material roughness from the MRT G-buffer.
+      const fadeStart = uniform(clamp(this.ssrParams.roughnessFade, 0, 0.99));
+      this.ssrFadeStart = fadeStart;
+      const fade = smoothstep(fadeStart, float(1), roughNode.r).oneMinus();
+      this.applySsrParams(this.ssrParams); // maxDistance/thickness/intensity/quality/fade
+      composite = composite.add(ssrNode.getTextureNode().rgb.mul(fade));
     }
 
     const display = renderOutput(composite, THREE_TONE_MAPPING[this.mode]);

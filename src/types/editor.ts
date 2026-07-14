@@ -85,6 +85,10 @@ export interface PaneDisplay {
   ssrMaxLuminance: number;
   /** SSR resolution scale (0.25–1) — render reflections at reduced res for perf. */
   ssrResolution: number;
+  /** Roughness at which SSR begins fading to IBL (fully gone by roughness 1).
+   * Screen-space reflections can't diffuse fully; past this, hand off to the
+   * env/PMREM reflection. Higher = SSR persists onto rougher surfaces. */
+  ssrRoughnessFade: number;
   grid: boolean;
   /** Wireframe overlay on top of PBR/Flat. No effect in Wireframe mode (already all lines). */
   lines: boolean;
@@ -118,6 +122,7 @@ export const defaultPaneDisplay = (pane = 0): PaneDisplay => ({
   ssrEdgeFade: 0.2,
   ssrMaxLuminance: 10,
   ssrResolution: 1,
+  ssrRoughnessFade: 0.5,
   grid: true,
   lines: false,
   hiddenLines: false,

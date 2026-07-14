@@ -559,6 +559,7 @@ export class ViewportSystem {
             maxLuminance: activeDisp.ssrMaxLuminance,
             resolution: activeDisp.ssrResolution,
             reflectNonMetals: activeDisp.ssrReflectNonMetals,
+            roughnessFade: activeDisp.ssrRoughnessFade,
           }
         : null,
     );
