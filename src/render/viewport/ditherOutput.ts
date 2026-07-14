@@ -13,25 +13,35 @@ import {
 } from "three";
 import { PostProcessing, RenderTarget, type WebGPURenderer } from "three/webgpu";
 import { ao } from "three/examples/jsm/tsl/display/GTAONode.js";
+import { recurrentDenoise } from "three/examples/jsm/tsl/display/RecurrentDenoiseNode.js";
 import { ssr } from "three/examples/jsm/tsl/display/SSRNode.js";
+import { temporalReproject } from "three/examples/jsm/tsl/display/TemporalReprojectNode.js";
 import {
+  diffuseColor,
   dot,
   float,
   fract,
+  materialMetalness,
+  materialRoughness,
   metalness,
   mix,
   mrt,
   normalView,
   output,
+  packNormalToRGB,
   pass,
   renderOutput,
   roughness,
+  sample,
   screenCoordinate,
   smoothstep,
   texture,
   uniform,
+  unpackRGBToNormal,
   vec2,
   vec3,
+  vec4,
+  velocity,
 } from "@/materials/tsl";
 import type { ToneMappingMode } from "@/types/editor";
 
@@ -50,18 +60,22 @@ export interface AmbientShadowParams {
   resolution: number; // AO render resolution scale (0–1, perf)
 }
 
-/** Screen-space reflection settings — a first-gen (mirror + roughness-blur) SSR pass. */
+/** Screen-space reflection settings. */
 export interface SsrParams {
+  /** "fast" = gen-1 mirror + roughness-blur (deterministic, on-demand);
+   * "high" = stochastic GGX + temporal denoise (accumulates, needs HDR env). */
+  mode: "fast" | "high";
   maxDistance: number; // max reflection ray distance, world units
   thickness: number; // ray-hit thickness (view-depth gap counted as a hit)
   intensity: number; // reflection strength multiplier
   quality: number; // raymarch quality 0–1 (scales step count)
-  blurQuality: number; // roughness-blur mip passes 1–3 (compile-time)
+  blurQuality: number; // fast: roughness-blur mip passes 1–3 (compile-time)
   edgeFade: number; // screen-edge fade 0–1
   maxLuminance: number; // HDR firefly clamp
   resolution: number; // SSR render resolution scale 0.25–1
-  reflectNonMetals: boolean; // reflect dielectrics too (compile-time)
-  roughnessFade: number; // roughness where SSR starts fading to IBL (0 at rough=1)
+  reflectNonMetals: boolean; // fast: reflect dielectrics too (compile-time)
+  roughnessFade: number; // fast: roughness where SSR fades to IBL (0 at rough=1)
+  denoise: number; // high: recurrent-denoise strength
 }
 
 const THREE_TONE_MAPPING: Record<OutputToneMapping, ToneMapping> = {
@@ -110,6 +124,14 @@ export class DitherOutput {
   // roughness at which SSR fades to IBL — a uniform so it live-tweaks
   // biome-ignore lint/suspicious/noExplicitAny: TSL uniform node
   private ssrFadeStart: any = null;
+  // --- "high" mode: temporal (stochastic + reproject + recurrent denoise) SSR ---
+  /** Equirect HDR (RGBELoader, has image.data) for stochastic env misses. */
+  // biome-ignore lint/suspicious/noExplicitAny: three Texture
+  private ssrEnvTex: any = null;
+  // biome-ignore lint/suspicious/noExplicitAny: TemporalReprojectNode not exported
+  private tempReproject: any = null;
+  // biome-ignore lint/suspicious/noExplicitAny: RecurrentDenoiseNode not exported
+  private denoise: any = null;
   private width = 1;
   private height = 1;
 
@@ -131,8 +153,16 @@ export class DitherOutput {
     this.height = Math.max(1, Math.floor(height));
     this.hdr.setSize(this.width, this.height);
     this.aoNode?.setSize(this.width, this.height);
-    this.ssrNode?.setSize(this.width, this.height);
-    this.scenePass?.setSize(this.width, this.height);
+    if (this.denoise) {
+      // The temporal graph holds internal history buffers (previous-depth AND
+      // previous-normal) that three's setSize can't resize (0.185.1 bug — see
+      // buildTemporalSsr). Rebuild at the new size instead of chasing each one;
+      // resize is infrequent and the history reset just restarts convergence.
+      this.rebuild();
+    } else {
+      this.ssrNode?.setSize(this.width, this.height);
+      this.scenePass?.setSize(this.width, this.height);
+    }
   }
 
   /** Tone mapping for the whole composite (the active pane's). */
@@ -167,10 +197,17 @@ export class DitherOutput {
    * rebuild; enable/disable, camera or scene swap, and compile-time param
    * changes (blur quality, reflect-non-metals) rebuild the pass graph.
    */
-  setScreenReflections(scene: Scene | null, camera: Camera | null, params: SsrParams | null): void {
+  setScreenReflections(
+    scene: Scene | null,
+    camera: Camera | null,
+    params: SsrParams | null,
+    // biome-ignore lint/suspicious/noExplicitAny: three Texture — high mode only
+    envTex: any = null,
+  ): void {
     const on = scene !== null && camera !== null && params !== null;
     const was = this.ssrScene !== null && this.ssrCamera !== null && this.ssrParams !== null;
-    const targetChanged = camera !== this.ssrCamera || scene !== this.ssrScene;
+    const targetChanged =
+      camera !== this.ssrCamera || scene !== this.ssrScene || envTex !== this.ssrEnvTex;
     // The SSR pass only reflects changes made at graph-build time — poking its
     // uniforms live (even with post.needsUpdate) does NOT re-run the reflection
     // render. So any value change rebuilds. ViewportSystem hands a fresh params
@@ -180,6 +217,7 @@ export class DitherOutput {
     this.ssrScene = scene;
     this.ssrCamera = camera;
     this.ssrParams = params;
+    this.ssrEnvTex = envTex;
     if (changed) this.rebuild();
   }
 
@@ -187,6 +225,7 @@ export class DitherOutput {
     if (a === b) return false;
     if (!a || !b) return true;
     return (
+      a.mode !== b.mode ||
       a.maxDistance !== b.maxDistance ||
       a.thickness !== b.thickness ||
       a.intensity !== b.intensity ||
@@ -196,7 +235,8 @@ export class DitherOutput {
       a.maxLuminance !== b.maxLuminance ||
       a.resolution !== b.resolution ||
       a.reflectNonMetals !== b.reflectNonMetals ||
-      a.roughnessFade !== b.roughnessFade
+      a.roughnessFade !== b.roughnessFade ||
+      a.denoise !== b.denoise
     );
   }
 
@@ -243,10 +283,21 @@ export class DitherOutput {
     this.ssrNode?.dispose?.();
     this.ssrNode = null;
     this.ssrFadeStart = null;
+    this.tempReproject?.dispose?.();
+    this.tempReproject = null;
+    this.denoise?.dispose?.();
+    this.denoise = null;
     this.scenePass?.dispose?.();
     this.scenePass = null;
 
     const ssrOn = this.ssrScene !== null && this.ssrCamera !== null && this.ssrParams !== null;
+
+    // "high" mode: the stochastic + temporal-denoise chain owns the whole SSR
+    // graph. Needs an equirect HDR env (falls back to plain gen-1 if none yet).
+    if (ssrOn && this.ssrParams?.mode === "high" && this.ssrEnvTex) {
+      this.buildTemporalSsr();
+      return;
+    }
 
     // Beauty + G-buffer source: an in-graph MRT pass when SSR is on (real
     // view-space normals / metalness / roughness), else the viewport's hdr blit.
@@ -324,6 +375,103 @@ export class DitherOutput {
     this.post.needsUpdate = true;
   }
 
+  /**
+   * "High" SSR: stochastic GGX rays (SSRNode) → temporal reprojection →
+   * recurrent denoise, accumulated across the render loop's convergence frames.
+   * Mirrors three's webgpu_postprocessing_ssr_denoise example. Only the
+   * reflection layer accumulates — the beauty/overlays render deterministically
+   * each frame and stay stable (no camera jitter; TRAA is deferred). Requires an
+   * equirect HDR env (`ssrEnvTex`) for off-screen ray misses.
+   */
+  private buildTemporalSsr(): void {
+    const scene = this.ssrScene as Scene;
+    const camera = this.ssrCamera as Camera;
+    const params = this.ssrParams as SsrParams;
+
+    // Temporal reprojection copies the pass depth into a single-sample history
+    // buffer, so the pass must be single-sample (MSAA off, samples:0) — same
+    // constraint as three's TRAA. The renderer is antialias:true (samples 4);
+    // this override is required. The baseline viewport is already single-sample
+    // (hdr target), so beauty AA is unchanged (a future TRAA pass would improve it).
+    // biome-ignore lint/suspicious/noExplicitAny: PassNode not fully typed
+    const scenePass: any = pass(scene, camera, { samples: 0 });
+    // Packed G-buffer (example convention): metalness in diffuse.a, roughness
+    // in the packed-normal .a, plus NDC motion vectors for reprojection.
+    scenePass.setMRT(
+      mrt({
+        output,
+        diffuseColor: vec4(diffuseColor.rgb, materialMetalness),
+        normal: vec4(packNormalToRGB(normalView).rgb, materialRoughness),
+        velocity,
+      }),
+    );
+    this.scenePass = scenePass;
+    // biome-ignore-start lint/suspicious/noExplicitAny: TSL node graph — loose by design
+    const color: any = scenePass.getTextureNode("output");
+    const depth: any = scenePass.getTextureNode("depth");
+    const normalTex: any = scenePass.getTextureNode("normal"); // packed
+    const diffTex: any = scenePass.getTextureNode("diffuseColor");
+    const velTex: any = scenePass.getTextureNode("velocity");
+    // SSR wants unpacked view-space normals; the denoiser wants the packed ones.
+    const sceneNormal = sample((uv: any) => unpackRGBToNormal(normalTex.sample(uv).rgb));
+    const metalRough = sample((uv: any) => vec2(diffTex.sample(uv).a, normalTex.sample(uv).a));
+
+    const ssrNode: any = ssr(color, depth, sceneNormal, {
+      stochastic: true,
+      diffuseNode: diffTex,
+      metalnessNode: diffTex.a,
+      roughnessNode: normalTex.a,
+      environmentNode: this.ssrEnvTex, // stochastic REQUIRES an equirect HDR
+      camera,
+    });
+    ssrNode.resolutionScale = clamp(params.resolution, 0.25, 1);
+    ssrNode.setSize(this.width, this.height);
+    this.ssrNode = ssrNode;
+    this.applySsrParams(params); // maxDistance/thickness/intensity/quality
+
+    const tr: any = temporalReproject(ssrNode, depth, normalTex, velTex, camera, {
+      mode: "specular",
+      accumulate: false,
+    });
+    tr.setSize(this.width, this.height);
+    // three 0.185.1 bug: RenderTarget.setSize resizes color attachments but NOT
+    // depthTexture, so the history RT's depth stays 1×1 and its per-frame
+    // copyTextureToTexture(sceneDepth → historyDepth) fails validation. Size the
+    // history depth to match (fresh node → GPU texture not yet allocated).
+    const histDepth = tr._historyRenderTarget?.depthTexture;
+    if (histDepth?.image) {
+      histDepth.image.width = this.width;
+      histDepth.image.height = this.height;
+    }
+    this.tempReproject = tr;
+
+    const dn: any = recurrentDenoise(tr, camera, {
+      depth,
+      normal: normalTex,
+      raw: ssrNode,
+      metalRoughness: metalRough,
+      mode: "specular",
+      accumulate: true,
+    });
+    dn.alphaSource = "raylength";
+    dn.strength.value = clamp(params.denoise, 0, 1);
+    dn.setSize(this.width, this.height);
+    this.denoise = dn;
+
+    // feedback: denoised result becomes next frame's history
+    ssrNode.setHistory(dn, velTex);
+    tr.setHistoryTexture(dn);
+
+    const litColor = color.rgb.add(dn.rgb);
+    // biome-ignore-end lint/suspicious/noExplicitAny: TSL node graph — loose by design
+    const display = renderOutput(litColor, THREE_TONE_MAPPING[this.mode]);
+    const p = screenCoordinate;
+    const ign = fract(float(52.9829189).mul(fract(dot(p, vec2(0.06711056, 0.00583715)))));
+    const d = ign.sub(0.5).mul(1 / 255);
+    this.post.outputNode = display.add(vec3(d));
+    this.post.needsUpdate = true;
+  }
+
   /** Blit the HDR buffer (or render the SSR pass graph) to the canvas. */
   render(): void {
     this.post.render();
@@ -333,6 +481,8 @@ export class DitherOutput {
     this.hdr.dispose();
     this.aoNode?.dispose?.();
     this.ssrNode?.dispose?.();
+    this.tempReproject?.dispose?.();
+    this.denoise?.dispose?.();
     this.scenePass?.dispose?.();
     this.post.dispose();
   }

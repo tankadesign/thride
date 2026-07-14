@@ -67,6 +67,13 @@ export interface PaneDisplay {
   aoResolution: number;
   /** Screen-space reflections (SSR) on/off. PBR + single-pane only. */
   ssr: boolean;
+  /** SSR quality: "fast" = gen-1 mirror+blur (on-demand); "high" = stochastic +
+   * temporal denoise (accumulates over frames, needs an HDR environment). */
+  ssrMode: "fast" | "high";
+  /** High-mode recurrent-denoise strength (0–1). */
+  ssrDenoise: number;
+  /** High-mode convergence frames rendered after a change before idling. */
+  ssrMaxFrames: number;
   /** Reflect dielectrics too (not just metals). Off = metals-only (cheaper). */
   ssrReflectNonMetals: boolean;
   /** Max reflection ray distance, world units — how far reflections reach. */
@@ -113,6 +120,9 @@ export const defaultPaneDisplay = (pane = 0): PaneDisplay => ({
   aoScale: 1,
   aoResolution: 1,
   ssr: false,
+  ssrMode: "high",
+  ssrDenoise: 0.5,
+  ssrMaxFrames: 24,
   ssrReflectNonMetals: true,
   ssrMaxDistance: 10,
   ssrThickness: 0.1,

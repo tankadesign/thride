@@ -20,6 +20,10 @@ const TONE: { value: ToneMappingMode; label: string }[] = [
   { value: "aces", label: "ACES Filmic" },
   { value: "neutral", label: "Neutral" },
 ];
+const SSR_MODE: { value: "fast" | "high"; label: string }[] = [
+  { value: "fast", label: "Fast (mirror)" },
+  { value: "high", label: "High (temporal)" },
+];
 /** AO "Strength" ↔ neutral tint darkness: 0 = none (#ffffff), 1 = full (#000000). */
 const aoStrength = (hex: string): number => {
   const v = Number.parseInt(hex.slice(1, 3), 16);
@@ -203,12 +207,14 @@ export function ViewSettingsModal({
             disabled={!isPbr}
             onChange={(v) => set({ ssr: v })}
           />
-          <Toggle
-            label="Reflect Non-Metals"
-            checked={disp.ssrReflectNonMetals}
-            disabled={!isPbr}
-            onChange={(v) => set({ ssrReflectNonMetals: v })}
-          />
+          <Row label="Mode">
+            <Select
+              value={disp.ssrMode}
+              options={SSR_MODE}
+              disabled={!isPbr}
+              onChange={(v) => set({ ssrMode: v as "fast" | "high" })}
+            />
+          </Row>
           <Row label="Max Distance">
             <NumberDrag
               value={disp.ssrMaxDistance}
@@ -236,23 +242,13 @@ export function ViewSettingsModal({
               onChange={(v) => set({ ssrIntensity: v })}
             />
           </Row>
-          <Row label="Quality">
+          <Row label={disp.ssrMode === "high" ? "Rays" : "Quality"}>
             <NumberDrag
               value={disp.ssrQuality}
               step={0.02}
               min={0}
               max={1}
               onChange={(v) => set({ ssrQuality: v })}
-            />
-          </Row>
-          <Row label="Blur Quality">
-            <NumberDrag
-              value={disp.ssrBlurQuality}
-              step={1}
-              integer
-              min={1}
-              max={3}
-              onChange={(v) => set({ ssrBlurQuality: v })}
             />
           </Row>
           <Row label="Edge Fade">
@@ -282,15 +278,57 @@ export function ViewSettingsModal({
               onChange={(v) => set({ ssrResolution: v })}
             />
           </Row>
-          <Row label="Roughness Fade">
-            <NumberDrag
-              value={disp.ssrRoughnessFade}
-              step={0.02}
-              min={0}
-              max={1}
-              onChange={(v) => set({ ssrRoughnessFade: v })}
-            />
-          </Row>
+          {disp.ssrMode === "high" ? (
+            <>
+              <Row label="Denoise">
+                <NumberDrag
+                  value={disp.ssrDenoise}
+                  step={0.02}
+                  min={0}
+                  max={1}
+                  onChange={(v) => set({ ssrDenoise: v })}
+                />
+              </Row>
+              <Row label="Max Frames">
+                <NumberDrag
+                  value={disp.ssrMaxFrames}
+                  step={1}
+                  integer
+                  min={1}
+                  max={128}
+                  onChange={(v) => set({ ssrMaxFrames: v })}
+                />
+              </Row>
+            </>
+          ) : (
+            <>
+              <Toggle
+                label="Reflect Non-Metals"
+                checked={disp.ssrReflectNonMetals}
+                disabled={!isPbr}
+                onChange={(v) => set({ ssrReflectNonMetals: v })}
+              />
+              <Row label="Blur Quality">
+                <NumberDrag
+                  value={disp.ssrBlurQuality}
+                  step={1}
+                  integer
+                  min={1}
+                  max={3}
+                  onChange={(v) => set({ ssrBlurQuality: v })}
+                />
+              </Row>
+              <Row label="Roughness Fade">
+                <NumberDrag
+                  value={disp.ssrRoughnessFade}
+                  step={0.02}
+                  min={0}
+                  max={1}
+                  onChange={(v) => set({ ssrRoughnessFade: v })}
+                />
+              </Row>
+            </>
+          )}
         </Section>
 
         <Section title="Overlays">

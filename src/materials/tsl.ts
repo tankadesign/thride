@@ -18,3 +18,14 @@ export {
 } from "three/tsl";
 // G-buffer / MRT nodes for the SSR pass (view-space normals + material outputs)
 export { metalness, mrt, normalView, output, pass, roughness } from "three/tsl";
+// Temporal SSR G-buffer: packed normals, material albedo/metal/rough, motion vectors
+export {
+  diffuseColor,
+  materialMetalness,
+  materialRoughness,
+  packNormalToRGB,
+  sample,
+  unpackRGBToNormal,
+  vec4,
+  velocity,
+} from "three/tsl";

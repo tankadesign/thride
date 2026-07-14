@@ -13,6 +13,7 @@ import {
 } from "three";
 import { WebGPURenderer } from "three/webgpu";
 import { DitherOutput, type OutputToneMapping } from "./ditherOutput";
+import { ssrEnvironmentTexture } from "@/render/environment/defaultHdr";
 import { EnvironmentSync } from "@/render/environment/EnvironmentSync";
 import type { Document } from "@/core";
 import type { Uuid } from "@/types/core";
@@ -118,6 +119,13 @@ export class ViewportSystem {
   private unsubs: (() => void)[] = [];
   private frames = 0;
   private lastStats = performance.now();
+  // Converge-then-idle accumulation for temporal SSR (High). `frameIndex` is a
+  // monotonic per-frame counter for stochastic noise/history; `accumFrame`
+  // counts frames since the last change and `accumTarget` is how many to render
+  // before idling (0 = pure on-demand — every non-temporal path is unchanged).
+  private frameIndex = 0;
+  private accumFrame = 0;
+  private accumTarget = 0;
   /** Canvas-relative 2D position of the active nav pivot marker (the "+"). */
   onNavMarker: ((pos: { x: number; y: number } | null) => void) | null = null;
   /** Canvas-relative 2D position of the active magnet snap marker, or null. */
@@ -247,7 +255,10 @@ export class ViewportSystem {
   }
 
   private async renderIfNeeded(): Promise<void> {
-    if (!this.needsRender || this.rendering || !this.renderer) return;
+    if (this.rendering || !this.renderer) return;
+    // Render when dirty OR while still converging a temporal-SSR burst. When
+    // temporal SSR is off, accumTarget is 0, so this is pure on-demand.
+    if (!this.needsRender && this.accumFrame >= this.accumTarget) return;
     this.needsRender = false;
     this.rendering = true;
     try {
@@ -260,6 +271,7 @@ export class ViewportSystem {
 
   invalidate(): void {
     this.needsRender = true;
+    this.accumFrame = 0; // any change restarts temporal convergence
     // rAF is heavily throttled in occluded/unfocused windows (Chrome can
     // drop it to ~1Hz), which left on-demand renders — e.g. the frame that
     // repositions primitive handles after an undo — stuck until a refresh.
@@ -545,11 +557,18 @@ export class ViewportSystem {
     );
     // Screen-Space Reflections — set AFTER AO so the (possibly) rebuilt graph
     // sees the current AO state. `ssrActive` already encodes single-pane + PBR.
+    // "high" (temporal) mode needs an equirect HDR env (scene's own, or the
+    // bundled default); if it's still decoding, DitherOutput falls back to gen-1.
+    const ssrHigh = ssrActive && activeDisp.ssrMode === "high";
+    const ssrEnv = ssrHigh
+      ? ssrEnvironmentTexture(this.scene.environment, () => this.invalidate())
+      : null;
     output.setScreenReflections(
       ssrActive ? this.scene : null,
       ssrActive ? activeCamera : null,
       ssrActive
         ? {
+            mode: activeDisp.ssrMode,
             maxDistance: activeDisp.ssrMaxDistance,
             thickness: activeDisp.ssrThickness,
             intensity: activeDisp.ssrIntensity,
@@ -560,12 +579,24 @@ export class ViewportSystem {
             resolution: activeDisp.ssrResolution,
             reflectNonMetals: activeDisp.ssrReflectNonMetals,
             roughnessFade: activeDisp.ssrRoughnessFade,
+            denoise: activeDisp.ssrDenoise,
           }
         : null,
+      ssrEnv,
     );
     output.render();
     this.onAxes?.(axesPerSlot);
     this.frames++;
+    this.frameIndex++;
+    // Temporal SSR converges over a burst of frames after each change, then
+    // idles; every other path stays pure on-demand (accumTarget 0). Only counts
+    // when the HDR env is actually ready (else DitherOutput ran gen-1).
+    if (ssrHigh && ssrEnv) {
+      this.accumTarget = Math.max(1, Math.round(activeDisp.ssrMaxFrames));
+      this.accumFrame++;
+    } else {
+      this.accumTarget = 0;
+    }
   }
 
   /** Pane bound to a scene camera node: follow the node's transform (+target). */
