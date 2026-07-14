@@ -15,3 +15,5 @@ export {
   vec3,
   vec2,
 } from "three/tsl";
+// G-buffer / MRT nodes for the SSR pass (view-space normals + material outputs)
+export { metalness, mrt, normalView, output, pass, roughness } from "three/tsl";

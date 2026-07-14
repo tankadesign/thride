@@ -65,6 +65,26 @@ export interface PaneDisplay {
   aoScale: number;
   /** GTAO resolution scale (0–1) — render AO at reduced res for perf. */
   aoResolution: number;
+  /** Screen-space reflections (SSR) on/off. PBR + single-pane only. */
+  ssr: boolean;
+  /** Reflect dielectrics too (not just metals). Off = metals-only (cheaper). */
+  ssrReflectNonMetals: boolean;
+  /** Max reflection ray distance, world units — how far reflections reach. */
+  ssrMaxDistance: number;
+  /** Ray-hit thickness — max view-depth gap a ray counts as a surface hit. */
+  ssrThickness: number;
+  /** Reflection strength multiplier. */
+  ssrIntensity: number;
+  /** Raymarch quality (0–1) — scales step count (more = crisper, slower). */
+  ssrQuality: number;
+  /** Roughness-blur quality (1–3) — blur mip passes for glossy reflections. */
+  ssrBlurQuality: number;
+  /** Screen-edge fade (0–1) — fades reflections out near the frame border. */
+  ssrEdgeFade: number;
+  /** HDR firefly clamp — caps per-pixel reflected luminance. */
+  ssrMaxLuminance: number;
+  /** SSR resolution scale (0.25–1) — render reflections at reduced res for perf. */
+  ssrResolution: number;
   grid: boolean;
   /** Wireframe overlay on top of PBR/Flat. No effect in Wireframe mode (already all lines). */
   lines: boolean;
@@ -88,6 +108,16 @@ export const defaultPaneDisplay = (pane = 0): PaneDisplay => ({
   aoDistanceExp: 1,
   aoScale: 1,
   aoResolution: 1,
+  ssr: false,
+  ssrReflectNonMetals: true,
+  ssrMaxDistance: 10,
+  ssrThickness: 0.1,
+  ssrIntensity: 1,
+  ssrQuality: 0.5,
+  ssrBlurQuality: 2,
+  ssrEdgeFade: 0.2,
+  ssrMaxLuminance: 10,
+  ssrResolution: 1,
   grid: true,
   lines: false,
   hiddenLines: false,

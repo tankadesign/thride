@@ -8,16 +8,24 @@ import {
   LinearSRGBColorSpace,
   NeutralToneMapping,
   NoToneMapping,
+  type Scene,
   type ToneMapping,
 } from "three";
 import { PostProcessing, RenderTarget, type WebGPURenderer } from "three/webgpu";
 import { ao } from "three/examples/jsm/tsl/display/GTAONode.js";
+import { ssr } from "three/examples/jsm/tsl/display/SSRNode.js";
 import {
   dot,
   float,
   fract,
+  metalness,
   mix,
+  mrt,
+  normalView,
+  output,
+  pass,
   renderOutput,
+  roughness,
   screenCoordinate,
   texture,
   vec2,
@@ -40,6 +48,19 @@ export interface AmbientShadowParams {
   resolution: number; // AO render resolution scale (0–1, perf)
 }
 
+/** Screen-space reflection settings — a first-gen (mirror + roughness-blur) SSR pass. */
+export interface SsrParams {
+  maxDistance: number; // max reflection ray distance, world units
+  thickness: number; // ray-hit thickness (view-depth gap counted as a hit)
+  intensity: number; // reflection strength multiplier
+  quality: number; // raymarch quality 0–1 (scales step count)
+  blurQuality: number; // roughness-blur mip passes 1–3 (compile-time)
+  edgeFade: number; // screen-edge fade 0–1
+  maxLuminance: number; // HDR firefly clamp
+  resolution: number; // SSR render resolution scale 0.25–1
+  reflectNonMetals: boolean; // reflect dielectrics too (compile-time)
+}
+
 const THREE_TONE_MAPPING: Record<OutputToneMapping, ToneMapping> = {
   none: NoToneMapping,
   agx: AgXToneMapping,
@@ -47,16 +68,26 @@ const THREE_TONE_MAPPING: Record<OutputToneMapping, ToneMapping> = {
   neutral: NeutralToneMapping,
 };
 
+const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+
 /**
- * HDR-buffer + dithered output pass, optionally with Ambient Shadows (GTAO).
+ * HDR-buffer + dithered output pass, optionally with Ambient Shadows (GTAO)
+ * and Screen-Space Reflections (SSR).
  *
  * Smooth lighting gradients band because the tone-mapped result is quantized
  * straight to the 8-bit canvas; the fix is to render the scene LINEAR into a
  * half-float target, then apply tone mapping + a ±1-LSB ordered dither in
- * display space before the 8-bit write. When Ambient Shadows are on, a GTAO
- * pass reads the target's depth and darkens creases multiplicatively (tinted,
- * in linear space) before tone mapping — Spline's "Ambient Shadows" look.
- * The scene renders into `hdr`; `render()` composites it to the canvas.
+ * display space before the 8-bit write.
+ *
+ * Two graph modes:
+ * - **default:** the scene is rendered by the viewport into `hdr`; this pass
+ *   reads `hdr.texture` (+ `hdr.depthTexture` for GTAO, normals auto-derived).
+ * - **SSR active:** the scene render moves INTO the node graph via a
+ *   `pass(scene, camera)` with an MRT G-buffer (output/normal/metalness/
+ *   roughness) — SSRNode needs real view-space normals, which depth-only can't
+ *   supply. SSR (and GTAO, now from the pass normals) composite over the beauty
+ *   pass. SSR is single-pane + PBR-only, so the manual multi-pane path is never
+ *   disturbed.
  */
 export class DitherOutput {
   readonly hdr: RenderTarget;
@@ -66,6 +97,13 @@ export class DitherOutput {
   private aoParams: AmbientShadowParams | null = null;
   // biome-ignore lint/suspicious/noExplicitAny: GTAONode type not exported
   private aoNode: any = null;
+  private ssrScene: Scene | null = null;
+  private ssrCamera: Camera | null = null;
+  private ssrParams: SsrParams | null = null;
+  // biome-ignore lint/suspicious/noExplicitAny: SSRNode type not exported
+  private ssrNode: any = null;
+  // biome-ignore lint/suspicious/noExplicitAny: PassNode type not exported
+  private scenePass: any = null;
   private width = 1;
   private height = 1;
 
@@ -87,6 +125,8 @@ export class DitherOutput {
     this.height = Math.max(1, Math.floor(height));
     this.hdr.setSize(this.width, this.height);
     this.aoNode?.setSize(this.width, this.height);
+    this.ssrNode?.setSize(this.width, this.height);
+    this.scenePass?.setSize(this.width, this.height);
   }
 
   /** Tone mapping for the whole composite (the active pane's). */
@@ -115,6 +155,34 @@ export class DitherOutput {
     else if (params) this.applyAoParams(params);
   }
 
+  /**
+   * Enable/disable Screen-Space Reflections. A null scene/camera/params turns
+   * SSR off (back to the plain `hdr` graph). Live uniform tweaks skip the
+   * rebuild; enable/disable, camera or scene swap, and compile-time param
+   * changes (blur quality, reflect-non-metals) rebuild the pass graph.
+   */
+  setScreenReflections(scene: Scene | null, camera: Camera | null, params: SsrParams | null): void {
+    const on = scene !== null && camera !== null && params !== null;
+    const was = this.ssrScene !== null && this.ssrCamera !== null && this.ssrParams !== null;
+    const targetChanged = camera !== this.ssrCamera || scene !== this.ssrScene;
+    const compileChanged =
+      on &&
+      was &&
+      params !== null &&
+      this.ssrParams !== null &&
+      (params.reflectNonMetals !== this.ssrParams.reflectNonMetals ||
+        Math.round(params.blurQuality) !== Math.round(this.ssrParams.blurQuality));
+    this.ssrScene = scene;
+    this.ssrCamera = camera;
+    this.ssrParams = params;
+    if (on && params && this.ssrNode && !targetChanged && !compileChanged) {
+      this.applySsrParams(params); // live uniform tweak — no rebuild
+      return;
+    }
+    if (on !== was || targetChanged || compileChanged) this.rebuild();
+    else if (params) this.applySsrParams(params);
+  }
+
   private applyAoParams(p: AmbientShadowParams): void {
     const n = this.aoNode;
     if (!n) return;
@@ -132,28 +200,95 @@ export class DitherOutput {
     }
   }
 
+  private applySsrParams(p: SsrParams): void {
+    const n = this.ssrNode;
+    if (!n) return;
+    n.maxDistance.value = Math.max(0, p.maxDistance);
+    n.thickness.value = Math.max(0.001, p.thickness);
+    n.intensity.value = Math.max(0, p.intensity);
+    n.quality.value = clamp(p.quality, 0, 1);
+    n.screenEdgeFade.value = clamp(p.edgeFade, 0, 1);
+    n.maxLuminance.value = Math.max(0.001, p.maxLuminance);
+    // resolutionScale is a plain property; the SSR target must resize to take it
+    const res = clamp(p.resolution, 0.25, 1);
+    if (n.resolutionScale !== res) {
+      n.resolutionScale = res;
+      n.setSize(this.width, this.height);
+    }
+  }
+
   private rebuild(): void {
-    const hdrColor = texture(this.hdr.texture);
-    // biome-ignore lint/suspicious/noExplicitAny: TSL node graph — loose by design
-    let color: any = hdrColor;
-    this.aoNode?.dispose?.(); // free the previous GTAO pass's render target
+    // free the previous effect passes' render targets
+    this.aoNode?.dispose?.();
     this.aoNode = null;
+    this.ssrNode?.dispose?.();
+    this.ssrNode = null;
+    this.scenePass?.dispose?.();
+    this.scenePass = null;
+
+    const ssrOn = this.ssrScene !== null && this.ssrCamera !== null && this.ssrParams !== null;
+
+    // Beauty + G-buffer source: an in-graph MRT pass when SSR is on (real
+    // view-space normals / metalness / roughness), else the viewport's hdr blit.
+    // biome-ignore lint/suspicious/noExplicitAny: TSL node graph — loose by design
+    let color: any;
+    // biome-ignore lint/suspicious/noExplicitAny: TSL node graph — loose by design
+    let depthNode: any;
+    // biome-ignore lint/suspicious/noExplicitAny: null → GTAO auto-derives normals
+    let normalNode: any = null;
+    // biome-ignore lint/suspicious/noExplicitAny: TSL node graph — loose by design
+    let metalNode: any = null;
+    // biome-ignore lint/suspicious/noExplicitAny: TSL node graph — loose by design
+    let roughNode: any = null;
+    if (ssrOn) {
+      const scenePass = pass(this.ssrScene as Scene, this.ssrCamera as Camera);
+      scenePass.setMRT(mrt({ output, normal: normalView, metalness, roughness }));
+      this.scenePass = scenePass;
+      color = scenePass.getTextureNode("output");
+      depthNode = scenePass.getTextureNode("depth");
+      normalNode = scenePass.getTextureNode("normal"); // view-space (SSR math is view-space)
+      metalNode = scenePass.getTextureNode("metalness");
+      roughNode = scenePass.getTextureNode("roughness");
+    } else {
+      color = texture(this.hdr.texture);
+      depthNode = texture(this.hdr.depthTexture as NonNullable<typeof this.hdr.depthTexture>);
+    }
+
+    // biome-ignore lint/suspicious/noExplicitAny: TSL node graph — loose by design
+    let composite: any = color;
+
+    // Ambient Shadows (GTAO): multiplies creases toward a tint, pre-tone-map.
+    // Uses the pass's real normals when SSR is on, else auto-derives from depth.
     if (this.aoCamera && this.aoParams) {
-      // GTAO from the linear depth; normals auto-derived (no MRT needed)
-      const depth = texture(this.hdr.depthTexture as NonNullable<typeof this.hdr.depthTexture>);
-      // biome-ignore lint/suspicious/noExplicitAny: ao() normalNode is optional
-      const aoPass = ao(depth, null as any, this.aoCamera);
+      const aoPass = ao(depthNode, normalNode, this.aoCamera);
       aoPass.resolutionScale = Math.min(1, Math.max(0.1, this.aoParams.resolution));
       aoPass.setSize(this.width, this.height);
       this.aoNode = aoPass;
       this.applyAoParams(this.aoParams); // radius/thickness/samples/falloff/exp/scale
       const occ = aoPass.getTextureNode().r; // 1 = lit, 0 = fully occluded
       const tint = new Color(this.aoParams.tint);
-      // occluded areas fade the HDR color toward the tint (linear, pre-tonemap)
       const aoFactor = mix(vec3(tint.r, tint.g, tint.b), vec3(1, 1, 1), occ);
-      color = hdrColor.mul(aoFactor);
+      composite = composite.mul(aoFactor);
     }
-    const display = renderOutput(color, THREE_TONE_MAPPING[this.mode]);
+
+    // Screen-Space Reflections: the node output is pre-weighted by metalness +
+    // intensity and roughness-blurred; add it over the (AO-darkened) beauty.
+    if (ssrOn && this.ssrParams) {
+      const ssrNode = ssr(color, depthNode, normalNode, {
+        metalnessNode: metalNode,
+        roughnessNode: roughNode, // drives the internal blur mip → "distance blur"
+        reflectNonMetals: this.ssrParams.reflectNonMetals,
+        camera: this.ssrCamera as Camera,
+      });
+      ssrNode.blurQuality = clamp(Math.round(this.ssrParams.blurQuality), 1, 3);
+      ssrNode.resolutionScale = clamp(this.ssrParams.resolution, 0.25, 1);
+      ssrNode.setSize(this.width, this.height);
+      this.ssrNode = ssrNode;
+      this.applySsrParams(this.ssrParams); // maxDistance/thickness/intensity/quality/…
+      composite = composite.add(ssrNode.getTextureNode().rgb);
+    }
+
+    const display = renderOutput(composite, THREE_TONE_MAPPING[this.mode]);
     // interleaved-gradient-noise dither, ±1 LSB, added in display space
     const p = screenCoordinate;
     const ign = fract(float(52.9829189).mul(fract(dot(p, vec2(0.06711056, 0.00583715)))));
@@ -162,13 +297,16 @@ export class DitherOutput {
     this.post.needsUpdate = true;
   }
 
-  /** Blit the HDR buffer to the current render target (the canvas). */
+  /** Blit the HDR buffer (or render the SSR pass graph) to the canvas. */
   render(): void {
     this.post.render();
   }
 
   dispose(): void {
     this.hdr.dispose();
+    this.aoNode?.dispose?.();
+    this.ssrNode?.dispose?.();
+    this.scenePass?.dispose?.();
     this.post.dispose();
   }
 }

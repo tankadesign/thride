@@ -196,6 +196,94 @@ export function ViewSettingsModal({
           </Row>
         </Section>
 
+        <Section title="Reflections">
+          <Toggle
+            label="Enabled"
+            checked={disp.ssr}
+            disabled={!isPbr}
+            onChange={(v) => set({ ssr: v })}
+          />
+          <Toggle
+            label="Reflect Non-Metals"
+            checked={disp.ssrReflectNonMetals}
+            disabled={!isPbr}
+            onChange={(v) => set({ ssrReflectNonMetals: v })}
+          />
+          <Row label="Max Distance">
+            <NumberDrag
+              value={disp.ssrMaxDistance}
+              step={0.1}
+              min={0.1}
+              max={100}
+              onChange={(v) => set({ ssrMaxDistance: v })}
+            />
+          </Row>
+          <Row label="Thickness">
+            <NumberDrag
+              value={disp.ssrThickness}
+              step={0.01}
+              min={0.001}
+              max={5}
+              onChange={(v) => set({ ssrThickness: v })}
+            />
+          </Row>
+          <Row label="Intensity">
+            <NumberDrag
+              value={disp.ssrIntensity}
+              step={0.05}
+              min={0}
+              max={5}
+              onChange={(v) => set({ ssrIntensity: v })}
+            />
+          </Row>
+          <Row label="Quality">
+            <NumberDrag
+              value={disp.ssrQuality}
+              step={0.02}
+              min={0}
+              max={1}
+              onChange={(v) => set({ ssrQuality: v })}
+            />
+          </Row>
+          <Row label="Blur Quality">
+            <NumberDrag
+              value={disp.ssrBlurQuality}
+              step={1}
+              integer
+              min={1}
+              max={3}
+              onChange={(v) => set({ ssrBlurQuality: v })}
+            />
+          </Row>
+          <Row label="Edge Fade">
+            <NumberDrag
+              value={disp.ssrEdgeFade}
+              step={0.02}
+              min={0}
+              max={1}
+              onChange={(v) => set({ ssrEdgeFade: v })}
+            />
+          </Row>
+          <Row label="Max Luminance">
+            <NumberDrag
+              value={disp.ssrMaxLuminance}
+              step={0.5}
+              min={0.5}
+              max={100}
+              onChange={(v) => set({ ssrMaxLuminance: v })}
+            />
+          </Row>
+          <Row label="Resolution">
+            <NumberDrag
+              value={disp.ssrResolution}
+              step={0.05}
+              min={0.25}
+              max={1}
+              onChange={(v) => set({ ssrResolution: v })}
+            />
+          </Row>
+        </Section>
+
         <Section title="Overlays">
           <Toggle label="Grid" checked={disp.grid} onChange={(v) => set({ grid: v })} />
           <Toggle

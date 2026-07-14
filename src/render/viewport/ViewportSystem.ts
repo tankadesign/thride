@@ -440,8 +440,17 @@ export class ViewportSystem {
     // dissolves the 8-bit banding that plain output quantization causes.
     const output = this.output!;
     const pr = renderer.getPixelRatio();
-    renderer.setRenderTarget(output.hdr);
-    renderer.setScissorTest(true);
+    // Screen-Space Reflections: single-pane + PBR only. When on, the scene
+    // render moves INTO the composite's node graph (a pass() with an MRT
+    // G-buffer feeds SSRNode), so pass 1 skips the manual hdr blit for the
+    // active pane and lets output.render() draw the scene.
+    const activeDisp = this.editor.paneDisplay(this.editor.activePane);
+    const ssrActive =
+      activeDisp.ssr && activeDisp.shading === "pbr" && this.editor.layout === "single";
+    if (!ssrActive) {
+      renderer.setRenderTarget(output.hdr);
+      renderer.setScissorTest(true);
+    }
     renderer.toneMapping = NoToneMapping;
     // Every pane renders into the SAME hdr target. In WebGPU a render pass's
     // clear (loadOp) wipes the WHOLE attachment — scissor never limits it — so
@@ -466,19 +475,24 @@ export class ViewportSystem {
       // the HDR target lives in DEVICE pixels (no implicit pixelRatio scale
       // like the canvas). WebGPU origin is top-left; WebGL bottom-left.
       const yGL = this.backendName === "WebGPU" ? p.y * pr : output.hdr.height - (p.y + p.h) * pr;
-      // three reads the viewport/scissor from the RENDER TARGET (not from
-      // renderer.setViewport/setScissor) when drawing into one — with the
-      // target's own pixelRatio of 1. So per-pane sub-rects MUST live on
-      // output.hdr, or every pane fills the whole target and only the last
-      // survives (the 4-up "only one view renders" bug). scissorTest stays on
-      // the renderer (that flag IS read from it).
-      output.hdr.viewport.set(p.x * pr, yGL, p.w * pr, p.h * pr);
-      output.hdr.scissor.set(p.x * pr, yGL, p.w * pr, p.h * pr);
-      // first pane clears the whole hdr (color+depth) using the environment's
-      // background (solid color / env map / none); later panes preserve it —
-      // null background so a Color doesn't force-clear their region
-      this.scene.background = r === 0 ? this.envSync.background : null;
-      renderer.autoClear = r === 0;
+      if (!ssrActive) {
+        // three reads the viewport/scissor from the RENDER TARGET (not from
+        // renderer.setViewport/setScissor) when drawing into one — with the
+        // target's own pixelRatio of 1. So per-pane sub-rects MUST live on
+        // output.hdr, or every pane fills the whole target and only the last
+        // survives (the 4-up "only one view renders" bug). scissorTest stays on
+        // the renderer (that flag IS read from it).
+        output.hdr.viewport.set(p.x * pr, yGL, p.w * pr, p.h * pr);
+        output.hdr.scissor.set(p.x * pr, yGL, p.w * pr, p.h * pr);
+        // first pane clears the whole hdr (color+depth) using the environment's
+        // background (solid color / env map / none); later panes preserve it —
+        // null background so a Color doesn't force-clear their region
+        this.scene.background = r === 0 ? this.envSync.background : null;
+        renderer.autoClear = r === 0;
+      } else {
+        // SSR: the pass() node renders the scene and clears to the background.
+        this.scene.background = this.envSync.background;
+      }
       const activeObj = this.activeObject();
       // the extrude/inset modal and the live bevel drive their own drag — hide
       // the gizmo so it doesn't fight them
@@ -490,7 +504,9 @@ export class ViewportSystem {
       this.sync.updateOutlines(rig.camera, p.h);
       this.sync.updateHelperBillboards(rig.camera, p.h);
       axesPerSlot.push(projectAxes(rig));
-      await renderer.renderAsync(this.scene, rig.camera);
+      // SSR draws the scene in the composite (output.render → pass node); the
+      // manual blit is skipped for the active pane.
+      if (!ssrActive) await renderer.renderAsync(this.scene, rig.camera);
     }
     renderer.autoClear = true; // restore for the composite pass / next frame
     // pass 2: tone-map + dither the HDR buffer onto the canvas. One tone
@@ -504,16 +520,16 @@ export class ViewportSystem {
     // on retina — showing only a low-res quarter of the frame (and mis-picking).
     const logicalSize = renderer.getSize(new Vector2());
     renderer.setViewport(0, 0, logicalSize.x, logicalSize.y);
-    const activeDisp = this.editor.paneDisplay(this.editor.activePane);
     const mode: OutputToneMapping = activeDisp.shading === "pbr" ? activeDisp.toneMapping : "none";
     output.setToneMapping(mode);
+    const activeCamera = this.rigFor(this.editor.activePane).camera;
     // Ambient Shadows (GTAO): single-pane, PBR or Flat (Flat gives a GTAO-only
     // look) — wireframe has no surfaces to occlude. GTAO reconstructs from the
     // active camera, so a shared pass would corrupt the other quad panes.
     const aoOn =
       activeDisp.ssao && activeDisp.shading !== "wireframe" && this.editor.layout === "single";
     output.setAmbientShadows(
-      aoOn ? this.rigFor(this.editor.activePane).camera : null,
+      aoOn ? activeCamera : null,
       aoOn
         ? {
             radius: activeDisp.aoRadius,
@@ -524,6 +540,25 @@ export class ViewportSystem {
             distanceExp: activeDisp.aoDistanceExp,
             scale: activeDisp.aoScale,
             resolution: activeDisp.aoResolution,
+          }
+        : null,
+    );
+    // Screen-Space Reflections — set AFTER AO so the (possibly) rebuilt graph
+    // sees the current AO state. `ssrActive` already encodes single-pane + PBR.
+    output.setScreenReflections(
+      ssrActive ? this.scene : null,
+      ssrActive ? activeCamera : null,
+      ssrActive
+        ? {
+            maxDistance: activeDisp.ssrMaxDistance,
+            thickness: activeDisp.ssrThickness,
+            intensity: activeDisp.ssrIntensity,
+            quality: activeDisp.ssrQuality,
+            blurQuality: activeDisp.ssrBlurQuality,
+            edgeFade: activeDisp.ssrEdgeFade,
+            maxLuminance: activeDisp.ssrMaxLuminance,
+            resolution: activeDisp.ssrResolution,
+            reflectNonMetals: activeDisp.ssrReflectNonMetals,
           }
         : null,
     );
