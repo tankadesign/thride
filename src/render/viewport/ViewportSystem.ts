@@ -579,6 +579,7 @@ export class ViewportSystem {
             reflectNonMetals: activeDisp.ssrReflectNonMetals,
             roughnessFade: activeDisp.ssrRoughnessFade,
             denoise: activeDisp.ssrDenoise,
+            maxFrames: activeDisp.ssrMaxFrames,
           }
         : null,
       ssrEnv,
@@ -590,7 +591,9 @@ export class ViewportSystem {
     // idles; every other path stays pure on-demand (accumTarget 0). Only counts
     // when the HDR env is actually ready (else DitherOutput ran gen-1).
     if (ssrHigh && ssrEnv) {
-      this.accumTarget = Math.max(1, Math.round(activeDisp.ssrMaxFrames));
+      // render a few frames PAST the accumulation window so the denoiser's
+      // history feedback settles at the fully-accumulated weight before idling
+      this.accumTarget = Math.max(1, Math.round(activeDisp.ssrMaxFrames)) + 8;
       this.accumFrame++;
     } else {
       this.accumTarget = 0;

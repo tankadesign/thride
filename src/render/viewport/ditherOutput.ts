@@ -76,6 +76,7 @@ export interface SsrParams {
   reflectNonMetals: boolean; // fast: reflect dielectrics too (compile-time)
   roughnessFade: number; // fast: roughness where SSR fades to IBL (0 at rough=1)
   denoise: number; // high: recurrent-denoise strength
+  maxFrames: number; // high: temporal accumulation window (frames)
 }
 
 const THREE_TONE_MAPPING: Record<OutputToneMapping, ToneMapping> = {
@@ -236,7 +237,8 @@ export class DitherOutput {
       a.resolution !== b.resolution ||
       a.reflectNonMetals !== b.reflectNonMetals ||
       a.roughnessFade !== b.roughnessFade ||
-      a.denoise !== b.denoise
+      a.denoise !== b.denoise ||
+      a.maxFrames !== b.maxFrames
     );
   }
 
@@ -422,6 +424,12 @@ export class DitherOutput {
       metalnessNode: diffTex.a,
       roughnessNode: normalTex.a,
       environmentNode: this.ssrEnvTex, // stochastic REQUIRES an equirect HDR
+      // MIS (CDF-table) env sampling for rays that miss the screen. Without it,
+      // naive BRDF sampling of an HDR is the persistent grain on surfaces whose
+      // reflections point off-screen (walls, grazing angles) — noise that no
+      // amount of accumulation visually settles.
+      envImportanceSampling: true,
+      binaryRefine: true, // sub-step hit refinement — crisper contact points
       camera,
     });
     ssrNode.resolutionScale = clamp(params.resolution, 0.25, 1);
@@ -429,10 +437,19 @@ export class DitherOutput {
     this.ssrNode = ssrNode;
     this.applySsrParams(params); // maxDistance/thickness/intensity/quality
 
+    const maxFrames = Math.max(1, Math.round(params.maxFrames));
     const tr: any = temporalReproject(ssrNode, depth, normalTex, velTex, camera, {
       mode: "specular",
       accumulate: false,
     });
+    tr.maxFrames.value = maxFrames; // accumulation window = the converge burst
+    // Relax the neighborhood clamp: at the strict default (1) the reproject
+    // clamps history to the CURRENT noisy frame's local min/max, re-injecting
+    // stochastic grain every frame — accumulation converges to a structured
+    // residual no maxFrames/denoise setting can remove (measured: grain frozen
+    // at ~1.47 for 32 AND 64 frames; 0.25 + denoise 1 → ~1.31 and visually
+    // clean). Static-view ghosting risk is low; disocclusion handling remains.
+    tr.clampIntensity.value = 0.25;
     tr.setSize(this.width, this.height);
     // three 0.185.1 bug: RenderTarget.setSize resizes color attachments but NOT
     // depthTexture, so the history RT's depth stays 1×1 and its per-frame
@@ -455,6 +472,7 @@ export class DitherOutput {
     });
     dn.alphaSource = "raylength";
     dn.strength.value = clamp(params.denoise, 0, 1);
+    dn.maxFrames.value = maxFrames;
     dn.setSize(this.width, this.height);
     this.denoise = dn;
 
@@ -462,7 +480,23 @@ export class DitherOutput {
     ssrNode.setHistory(dn, velTex);
     tr.setHistoryTexture(dn);
 
-    const litColor = color.rgb.add(dn.rgb);
+    // Ambient Shadows ride along in High mode too (normals auto-derived from
+    // the pass depth — the MRT normals are packed, which GTAO can't read).
+    // biome-ignore lint/suspicious/noExplicitAny: TSL node graph — loose by design
+    let beauty: any = color;
+    if (this.aoCamera && this.aoParams) {
+      const aoPass = ao(depth, null as any, this.aoCamera);
+      aoPass.resolutionScale = Math.min(1, Math.max(0.1, this.aoParams.resolution));
+      aoPass.setSize(this.width, this.height);
+      this.aoNode = aoPass;
+      this.applyAoParams(this.aoParams);
+      const occ = aoPass.getTextureNode().r;
+      const tint = new Color(this.aoParams.tint);
+      const aoFactor = mix(vec3(tint.r, tint.g, tint.b), vec3(1, 1, 1), occ);
+      beauty = color.mul(aoFactor);
+    }
+
+    const litColor = beauty.rgb.add(dn.rgb);
     // biome-ignore-end lint/suspicious/noExplicitAny: TSL node graph — loose by design
     const display = renderOutput(litColor, THREE_TONE_MAPPING[this.mode]);
     const p = screenCoordinate;

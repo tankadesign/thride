@@ -4,6 +4,7 @@ import { EXRLoader } from "three/examples/jsm/loaders/EXRLoader.js";
 import type { Document } from "@/core";
 import type { EnvironmentDTO, Uuid } from "@/types/core";
 import { textureAssets } from "@/io/storage/textureAssets";
+import { defaultHdrTexture } from "./defaultHdr";
 import { buildStudioEnvironment } from "./studioEnvironment";
 
 const DEG = Math.PI / 180;
@@ -92,7 +93,15 @@ export class EnvironmentSync {
       this.scene.backgroundBlurriness = env.backgroundBlur;
       this.scene.backgroundIntensity = env.backgroundIntensity;
       this.scene.backgroundRotation.set(0, env.rotation * DEG, 0);
-      this.background = tex;
+      // Studio is a lighting rig, not scenery — as a backdrop it reads as a
+      // flat gradient (and it's what "high" SSR reflects for misses anyway).
+      // Show the bundled default HDRI instead; fall back to studio while it
+      // decodes. HDR source keeps its own texture.
+      const react = () => {
+        this.apply();
+        this.onChange();
+      };
+      this.background = env.source === "hdr" ? tex : (defaultHdrTexture(react) ?? tex);
     } else if (env.background === "color") {
       this.background = this.bgColor.set(env.backgroundColor);
     } else {

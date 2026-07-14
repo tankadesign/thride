@@ -9,7 +9,7 @@
 - **E1b — Material Manager panel + C4D sphere thumbnails + param editor.**
   - `render/thumbnails/materialThumbnails.ts`: offscreen preview with its OWN WebGPURenderer/device (isolated). Lit sphere (hemisphere + 3-point rig) on transparent bg → PNG dataURL. No IBL yet (metals read a touch dark — env map is a later enhancement).
   - `ui/hooks/editor/materials.ts`: `selectedMaterialAtom`, `useMaterialThumbnail` (serialized single-sphere render, cached by visual params), `MATERIAL_DND_MIME`.
-  - `ui/panels/MaterialManagerPanel.tsx`: grid of thumbnails, New (default Physical) / Delete / select / rename; live param editor below (Type, Color, Roughness/Metalness, Emissive+strength, Opacity, Transparent, gated by HAS_* per type; scrub = one undo step).
+  - `ui/panels/MaterialManagerPanel.tsx`: grid of thumbnails, New (default Physical) / Delete / select / rename; live param editor below (Type, Color, Roughness/Metalness, Emissive+strength, Opacity, Transparent, gated by HAS\_\* per type; scrub = one undo step).
   - Wired into the dock (`materials` component + default-layout tab) + View-menu command (`Shell.tsx`, `app/commands.tsx`).
 - **E1c — drag-drop assignment.** Cards are draggable (carry material id); `ViewportSystem.pickNode` raycasts the mesh under the cursor; drop → `SetNodeDataCommand` sets `node.data.material`. Per-object, undoable.
 
