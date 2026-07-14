@@ -29,3 +29,5 @@ export {
   vec4,
   velocity,
 } from "three/tsl";
+// Planar (mirrored-camera) reflections: reflector + roughness-blurred sampling
+export { materialColor, reflector, textureBicubic } from "three/tsl";

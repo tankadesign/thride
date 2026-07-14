@@ -36,3 +36,24 @@ export const identityTransform = (): TransformDTO => ({
   rotation: [0, 0, 0],
   scale: [1, 1, 1],
 });
+
+/**
+ * Planar (mirrored-camera) reflection on a flat mesh — `node.data.planar`.
+ * Unlike SSR it re-renders the scene through the surface's plane, so it shows
+ * occluded geometry (e.g. a sphere's underside in a floor mirror). Exact only
+ * for flat surfaces; the plane passes through the object origin.
+ */
+export interface PlanarReflectionDTO {
+  /** Local axis of the mirror plane's normal (y = floor, x/z = walls). */
+  axis: "x" | "y" | "z";
+  /** Reflection mix into the surface color (0–1). */
+  strength: number;
+  /** Mirror render resolution scale (0.25–1) — the perf lever. */
+  resolution: number;
+}
+
+export const defaultPlanarReflection = (): PlanarReflectionDTO => ({
+  axis: "y",
+  strength: 0.5,
+  resolution: 0.5,
+});

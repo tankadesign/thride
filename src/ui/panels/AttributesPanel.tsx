@@ -1,5 +1,12 @@
 import { useEffect, useRef } from "react";
-import type { ComponentMode, NodeKind, TransformDTO, Uuid } from "@/types/core";
+import type {
+  ComponentMode,
+  NodeKind,
+  PlanarReflectionDTO,
+  TransformDTO,
+  Uuid,
+} from "@/types/core";
+import { defaultPlanarReflection } from "@/types/core";
 import type { PrimitiveDescriptor } from "@/types/geometry/primitives";
 import { paramMeta, primitiveDefaults, visibleParams } from "@/types/geometry/primitives";
 import {
@@ -163,6 +170,12 @@ function NodeAttributes({ id }: { id: Uuid }) {
       {generator ? <GeneratorParams id={id} gen={generator} /> : null}
       {meshRef ? <MeshInfo meshId={meshRef.id} /> : null}
       {MATERIAL_CAPABLE.has(node.kind) ? <MaterialSelector id={id} /> : null}
+      {MATERIAL_CAPABLE.has(node.kind) ? (
+        <PlanarReflectionSection
+          id={id}
+          planar={node.data?.planar as PlanarReflectionDTO | undefined}
+        />
+      ) : null}
       {light ? <LightParams id={id} light={light} /> : null}
       {node.kind === "light" || node.kind === "camera" ? <TargetSelector id={id} /> : null}
     </div>
@@ -292,6 +305,81 @@ function ComponentSection({ id, meshId, mode }: { id: Uuid; meshId: Uuid; mode: 
 }
 
 /** Light payload editor: color, intensity, shadows, type-specific params. */
+/**
+ * Planar (mirrored-camera) reflection on a flat surface — exact mirror that
+ * shows occluded geometry (unlike SSR). Per-object; the mirror plane passes
+ * through the object origin along the chosen local axis.
+ */
+function PlanarReflectionSection({ id, planar }: { id: Uuid; planar?: PlanarReflectionDTO }) {
+  const doc = useDocument();
+  const scrub = useRef<{ before: Record<string, unknown> } | null>(null);
+
+  const setPlanar = (patch: Partial<PlanarReflectionDTO> | null, committed: boolean) => {
+    const node = doc.scene.mustGet(id);
+    scrub.current ??= { before: structuredClone(node.data ?? {}) };
+    const data = structuredClone(node.data ?? {});
+    if (patch === null) delete data.planar;
+    else data.planar = { ...defaultPlanarReflection(), ...(data.planar ?? {}), ...patch };
+    if (committed) {
+      const before = scrub.current.before;
+      scrub.current = null;
+      doc.setNodeData(id, data, true);
+      doc.history.pushWithoutExecute(new SetNodeDataCommand(id, data, before, "Planar Reflection"));
+    } else {
+      doc.setNodeData(id, data, true);
+    }
+  };
+
+  return (
+    <fieldset className="fieldset border-b border-base-200 px-2 py-1.5">
+      <legend className="fieldset-legend py-1 text-[10px] uppercase opacity-60">
+        Planar Reflection
+      </legend>
+      <div className="grid grid-cols-[64px_1fr] items-center gap-1">
+        <span className="opacity-60">Enabled</span>
+        <input
+          type="checkbox"
+          className="toggle toggle-xs"
+          checked={!!planar}
+          onChange={(e) => setPlanar(e.target.checked ? {} : null, true)}
+        />
+        {planar ? (
+          <>
+            <span className="opacity-60">Axis</span>
+            <select
+              className="select select-xs w-full"
+              value={planar.axis}
+              onChange={(e) =>
+                setPlanar({ axis: e.target.value as PlanarReflectionDTO["axis"] }, true)
+              }
+            >
+              <option value="y">Y (floor)</option>
+              <option value="x">X (wall)</option>
+              <option value="z">Z (wall)</option>
+            </select>
+            <span className="opacity-60">Strength</span>
+            <NumberDrag
+              value={planar.strength}
+              step={0.02}
+              min={0}
+              max={1}
+              onChange={(v, committed) => setPlanar({ strength: v }, committed)}
+            />
+            <span className="opacity-60">Resolution</span>
+            <NumberDrag
+              value={planar.resolution}
+              step={0.05}
+              min={0.25}
+              max={1}
+              onChange={(v, committed) => setPlanar({ resolution: v }, committed)}
+            />
+          </>
+        ) : null}
+      </div>
+    </fieldset>
+  );
+}
+
 function LightParams({ id, light }: { id: Uuid; light: LightDataDTO }) {
   const doc = useDocument();
   const scrub = useRef<{ before: Record<string, unknown> } | null>(null);

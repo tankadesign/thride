@@ -59,6 +59,14 @@ export interface AxisProjection {
 /** Per visible pane slot: X/Y/Z projections. */
 export type PaneAxes = [AxisProjection, AxisProjection, AxisProjection];
 
+/**
+ * Layer for interaction helpers (gizmo, handles, overlays, tools). Scene
+ * renders — the hdr pass, the SSR G-buffer pass, and planar-reflector mirror
+ * renders — use cameras on layer 0 only, so helpers never appear in
+ * reflections; a dedicated overlay render draws them each frame instead.
+ */
+const HELPER_LAYER = 1;
+
 const BUILTINS: BuiltinCamera[] = [
   "persp",
   "ortho",
@@ -111,6 +119,8 @@ export class ViewportSystem {
   private readonly input: ViewportInput;
   private rigs = new Map<string, CameraRig>(); // key: `${pane}:${camera}`
   private panes: PaneRect[] = [];
+  /** Interaction-helper roots (gizmo/handles/overlays/tools) — see HELPER_LAYER. */
+  private helperRoots: Object3D[] = [];
   private needsRender = true;
   private disposed = false;
   private rendering = false;
@@ -177,6 +187,19 @@ export class ViewportSystem {
     this.splineEdit = new SplineEditTool(this);
     this.splineOverlays = new SplineOverlays(doc, this.sync);
     this.scene.add(this.splineOverlays.group);
+    // Interaction helpers live on their own layer so scene renders exclude
+    // them — SSR rays and planar-reflector mirrors must not reflect the gizmo.
+    // They're drawn by a dedicated overlay render per frame (see renderFrame);
+    // picking needs enableAll because Raycaster defaults to layer 0 only.
+    this.helperRoots = [
+      this.gizmo.group,
+      this.handles.group,
+      this.overlays.group,
+      this.weldTool.group,
+      this.penTool.group,
+      this.splineOverlays.group,
+    ];
+    this.raycaster.layers.enableAll();
 
     this.unsubs.push(editor.subscribe(() => this.invalidate()));
     this.input = new ViewportInput(this);
@@ -434,9 +457,17 @@ export class ViewportSystem {
 
   // ---- rendering -----------------------------------------------------------
 
+  /** Keep every helper object on HELPER_LAYER (tools create children dynamically). */
+  private applyHelperLayers(): void {
+    for (const root of this.helperRoots) {
+      root.traverse((o) => o.layers.set(HELPER_LAYER));
+    }
+  }
+
   private async renderFrame(): Promise<void> {
     const renderer = this.renderer;
     if (!renderer) return;
+    this.applyHelperLayers();
     this.layoutPanes();
     const logical = this.logicalPanes();
     const axesPerSlot: PaneAxes[] = [];
@@ -517,7 +548,19 @@ export class ViewportSystem {
       axesPerSlot.push(projectAxes(rig));
       // SSR draws the scene in the composite (output.render → pass node); the
       // manual blit is skipped for the active pane.
-      if (!ssrActive) await renderer.renderAsync(this.scene, rig.camera);
+      if (!ssrActive) {
+        await renderer.renderAsync(this.scene, rig.camera);
+        // helpers live on HELPER_LAYER (excluded from scene renders so
+        // reflections never show them) — draw them into the same hdr region
+        // on top, preserving color AND depth so they occlude exactly as before
+        const bg = this.scene.background;
+        this.scene.background = null; // a background would force-clear the pane
+        renderer.autoClear = false;
+        rig.camera.layers.set(HELPER_LAYER);
+        await renderer.renderAsync(this.scene, rig.camera);
+        rig.camera.layers.set(0);
+        this.scene.background = bg;
+      }
     }
     renderer.autoClear = true; // restore for the composite pass / next frame
     // pass 2: tone-map + dither the HDR buffer onto the canvas. One tone
@@ -531,6 +574,28 @@ export class ViewportSystem {
     // on retina — showing only a low-res quarter of the frame (and mis-picking).
     const logicalSize = renderer.getSize(new Vector2());
     renderer.setViewport(0, 0, logicalSize.x, logicalSize.y);
+    if (ssrActive) {
+      // Helpers are excluded from the SSR pass (HELPER_LAYER) so reflections
+      // never show them. Render them into the hdr buffer — unused by the SSR
+      // path and safely preserved across renders (the canvas is force-cleared
+      // by the WebGPU backend on every render call, so drawing on top of the
+      // composite directly is not possible) — with a transparent clear; the
+      // composite graph blends them over the final image by alpha.
+      const activeCam = this.rigFor(this.editor.activePane).camera;
+      const bg = this.scene.background;
+      this.scene.background = null;
+      const prevClearAlpha = renderer.getClearAlpha();
+      renderer.setClearAlpha(0);
+      output.hdr.viewport.set(0, 0, output.hdr.width, output.hdr.height);
+      output.hdr.scissor.set(0, 0, output.hdr.width, output.hdr.height);
+      renderer.setRenderTarget(output.hdr);
+      activeCam.layers.set(HELPER_LAYER);
+      await renderer.renderAsync(this.scene, activeCam);
+      activeCam.layers.set(0);
+      renderer.setRenderTarget(null);
+      renderer.setClearAlpha(prevClearAlpha);
+      this.scene.background = bg;
+    }
     const mode: OutputToneMapping = activeDisp.shading === "pbr" ? activeDisp.toneMapping : "none";
     output.setToneMapping(mode);
     const activeCamera = this.rigFor(this.editor.activePane).camera;

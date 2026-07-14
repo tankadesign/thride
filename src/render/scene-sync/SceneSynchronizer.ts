@@ -18,7 +18,7 @@ import {
   Vector3,
 } from "three";
 import { computeBoundsTree, disposeBoundsTree, acceleratedRaycast } from "three-mesh-bvh";
-import type { Uuid } from "@/types/core";
+import type { PlanarReflectionDTO, Uuid } from "@/types/core";
 import { type LightDataDTO, SHADOW_CAPABLE } from "@/types/core/light";
 import type { Document, SceneNode } from "@/core";
 import type { PrimitiveDescriptor } from "@/types/geometry/primitives";
@@ -299,6 +299,7 @@ export class SceneSynchronizer {
       if (nid) {
         this.objects.delete(nid);
         this.dropRenderMesh(nid);
+        this.materials.releasePlanar(nid);
         this.edgeWires.get(nid)?.geometry.dispose();
         this.edgeWires.delete(nid);
         this.lights.onNodeRemoved(nid, o);
@@ -438,8 +439,12 @@ export class SceneSynchronizer {
       if (override) {
         obj.material = override;
       } else {
-        const matId = this.doc.scene.get(id)?.data?.material as Uuid | undefined;
-        const m = this.materials.resolve(matId);
+        const data = this.doc.scene.get(id)?.data;
+        const matId = data?.material as Uuid | undefined;
+        const planar = data?.planar as PlanarReflectionDTO | undefined;
+        const m = planar
+          ? this.materials.resolvePlanar(id, matId, planar, obj)
+          : (this.materials.releasePlanar(id), this.materials.resolve(matId));
         m.side = side; // shared material: per-pane side is last-pane-wins (pre-existing)
         obj.material = m;
       }

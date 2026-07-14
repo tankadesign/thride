@@ -368,6 +368,13 @@ export class DitherOutput {
       composite = composite.add(ssrNode.getTextureNode().rgb.mul(fade));
     }
 
+    if (ssrOn) {
+      // In SSR mode the viewport renders the interaction helpers (gizmo etc.)
+      // into the otherwise-unused hdr buffer (transparent clear) — blend them
+      // over the composite so the SSR pass never sees them in reflections.
+      const helpers = texture(this.hdr.texture);
+      composite = mix(composite.rgb, helpers.rgb, helpers.a);
+    }
     const display = renderOutput(composite, THREE_TONE_MAPPING[this.mode]);
     // interleaved-gradient-noise dither, ±1 LSB, added in display space
     const p = screenCoordinate;
@@ -497,8 +504,12 @@ export class DitherOutput {
     }
 
     const litColor = beauty.rgb.add(dn.rgb);
+    // helpers rendered into the (unused) hdr buffer — blend over the composite
+    // so the SSR pass never sees them in reflections (see rebuild's ssrOn note)
+    const helpers = texture(this.hdr.texture);
+    const withHelpers = mix(litColor, helpers.rgb, helpers.a);
     // biome-ignore-end lint/suspicious/noExplicitAny: TSL node graph — loose by design
-    const display = renderOutput(litColor, THREE_TONE_MAPPING[this.mode]);
+    const display = renderOutput(withHelpers, THREE_TONE_MAPPING[this.mode]);
     const p = screenCoordinate;
     const ign = fract(float(52.9829189).mul(fract(dot(p, vec2(0.06711056, 0.00583715)))));
     const d = ign.sub(0.5).mul(1 / 255);
