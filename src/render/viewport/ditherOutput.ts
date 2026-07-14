@@ -162,13 +162,15 @@ export class DitherOutput {
     this.width = Math.max(1, Math.floor(width));
     this.height = Math.max(1, Math.floor(height));
     this.hdr.setSize(this.width, this.height);
-    // three 0.185.1: RenderTarget.setSize doesn't resize depthTexture — size it
-    // so depth copies into it (SSR helper overlay) pass validation.
+    // three 0.185.1: RenderTarget.setSize doesn't update depthTexture.image —
+    // set it so depth copies into it (SSR helper overlay) size the destination
+    // correctly. NO dispose(): setSize already disposed the whole target on a
+    // real size change; destroying the depth out-of-band leaves the backend's
+    // cached render context submitting a destroyed texture (black viewport).
     const hdrDepth = this.hdr.depthTexture;
     if (hdrDepth?.image) {
       hdrDepth.image.width = this.width;
       hdrDepth.image.height = this.height;
-      hdrDepth.dispose();
     }
     this.aoNode?.setSize(this.width, this.height);
     if (this.denoise) {

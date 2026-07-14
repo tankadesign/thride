@@ -28,6 +28,7 @@ import { buildPrimitive } from "@/geometry/primitives";
 import { meshRegistry } from "@/geometry/store/meshRegistry";
 import { RenderMesh } from "@/geometry/sync/RenderMesh";
 import { buildCameraHelper } from "@/render/helpers/CameraHelper";
+import { HELPER_LAYER } from "@/render/layers";
 import { viewportTheme } from "@/render/theme/viewportTheme";
 import { evaluateGenerator } from "@/generators/graph";
 import { LightSync } from "./LightSync";
@@ -284,7 +285,11 @@ export class SceneSynchronizer {
 
   private buildCameraObject(): Object3D {
     const group = new Group();
-    group.add(buildCameraHelper());
+    const helper = buildCameraHelper();
+    // helper layer: the camera pyramid must not appear in SSR / planar-mirror
+    // reflections; the viewport's overlay render draws it instead
+    helper.traverse((o) => o.layers.set(HELPER_LAYER));
+    group.add(helper);
     return group;
   }
 

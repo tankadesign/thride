@@ -5,6 +5,7 @@ import { Line2NodeMaterial } from "three/webgpu";
 import type { SceneNode } from "@/core";
 import type { SplineData } from "@/types/geometry/spline";
 import { sampleSpline } from "@/geometry/splines/eval";
+import { HELPER_LAYER } from "@/render/layers";
 import { viewportTheme } from "@/render/theme/viewportTheme";
 
 // Splines render as WIDE lines (Line2 — screen-pixel thickness, adjustable
@@ -63,6 +64,10 @@ export function buildSplineObject(node: SceneNode): Line2 {
   line.frustumCulled = false; // WebGPU mis-culls line objects (see helpers)
   line.renderOrder = 3; // above surfaces + edge wires (control object)
   line.userData.spline = true;
+  // helper layer: splines are control objects — never reflected by SSR or
+  // planar mirrors; the viewport's overlay render draws them (still pickable,
+  // the shared raycaster enables all layers)
+  line.layers.set(HELPER_LAYER);
   syncSplineGeometry(node, line);
   return line;
 }

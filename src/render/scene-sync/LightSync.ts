@@ -23,6 +23,7 @@ import {
   isBillboardLightType,
   updateBillboardHelper,
 } from "@/render/helpers/LightHelpers";
+import { HELPER_LAYER } from "@/render/layers";
 
 /**
  * True when the light's live shadow-map size no longer matches the requested
@@ -242,6 +243,10 @@ export class LightSync {
     const helper = buildOrientedLightHelper(data);
     if (helper) {
       helper.userData.orientedHelper = true;
+      // helper layer: excluded from SSR / planar-mirror reflections. Only the
+      // VISUAL moves — the Light itself must stay on layer 0 (a light only
+      // illuminates when its layer matches the rendering camera's mask).
+      helper.traverse((o) => o.layers.set(HELPER_LAYER));
       light.add(helper);
     }
   }
@@ -255,6 +260,7 @@ export class LightSync {
     }
     if (isBillboardLightType(data.type)) {
       const circle = buildBillboardCircle();
+      circle.traverse((o) => o.layers.set(HELPER_LAYER)); // not reflected
       this.root.add(circle);
       this.billboards.set(id, circle);
     }
