@@ -31,3 +31,5 @@ export {
 } from "three/tsl";
 // Planar (mirrored-camera) reflections: reflector + roughness-blurred sampling
 export { materialColor, reflector, textureBicubic } from "three/tsl";
+// degenerate-value guards in the SSR graph
+export { lengthSq, select } from "three/tsl";

@@ -21,6 +21,7 @@ import {
   dot,
   float,
   fract,
+  lengthSq,
   materialMetalness,
   materialRoughness,
   metalness,
@@ -447,7 +448,17 @@ export class DitherOutput {
     const diffTex: any = scenePass.getTextureNode("diffuseColor");
     const velTex: any = scenePass.getTextureNode("velocity");
     // SSR wants unpacked view-space normals; the denoiser wants the packed ones.
-    const sceneNormal = sample((uv: any) => unpackRGBToNormal(normalTex.sample(uv).rgb));
+    // Guard degenerate normals: at silhouettes the bilinear mix of a packed
+    // normal with the background's zeros can land near (0.5,0.5,0.5) — unpack
+    // gives ~(0,0,0) and SSRNode's normalize(0) is NaN. One NaN texel poisons
+    // every kernel/history sum that touches it (w·NaN = NaN at any weight) and
+    // the temporal feedback dilates it into the black silhouette smears.
+    const sceneNormal = sample((uv: any) => {
+      const v = unpackRGBToNormal(normalTex.sample(uv).rgb);
+      return lengthSq(v)
+        .lessThan(float(0.01))
+        .select(vec3(0, 0, 1), v);
+    });
     const metalRough = sample((uv: any) => vec2(diffTex.sample(uv).a, normalTex.sample(uv).a));
 
     const ssrNode: any = ssr(color, depth, sceneNormal, {
@@ -511,6 +522,17 @@ export class DitherOutput {
     dn.alphaSource = "raylength";
     dn.strength.value = clamp(params.denoise, 0, 1);
     dn.maxFrames.value = maxFrames;
+    // The Vogel-disk kernel at the default radius (5, tuned for diffuse SSGI)
+    // reaches across silhouettes and drags the SSR buffer's cleared-black
+    // background texels into edge pixels — at full strength that accumulates
+    // into black smears hugging objects against the backdrop, and the history
+    // feedback bakes them in. A tight specular kernel + strong depth edge-stop
+    // removes it while temporal accumulation supplies the real smoothing
+    // (measured on the reporting scene: black-pixel count 8525 → 800 at
+    // strength 1, better than strength 0's 1010; alpha/normal/luma phi and
+    // smoothDisocclusions measured no effect).
+    dn.radius.value = 1.5;
+    dn.depthPhi.value = 30;
     dn.setSize(this.width, this.height);
     this.denoise = dn;
 
@@ -534,7 +556,15 @@ export class DitherOutput {
       beauty = color.mul(aoFactor);
     }
 
-    const litColor = beauty.rgb.add(dn.rgb);
+    // NaN-kill the reflection layer at the composite: the reproject/denoise
+    // chain reconstructs view positions from the pass depth, and background
+    // pixels sit at depth 1.0 (far plane) — 1/(1-depth) → Inf/NaN wherever a
+    // kernel or history sample touches the backdrop (any scene with visible
+    // sky; three's own demos are interiors and never trip it). Any weight ×
+    // NaN is NaN, so edge-stopping can't reject it — but WGSL max/min return
+    // the non-NaN operand, so max(0) turns poisoned texels into "no
+    // reflection" (correct at silhouettes) instead of black smears.
+    const litColor = beauty.rgb.add(dn.rgb.max(vec3(0, 0, 0)).min(vec3(1e4, 1e4, 1e4)));
     // helpers rendered into the (unused) hdr buffer — blend over the composite
     // so the SSR pass never sees them in reflections (see rebuild's ssrOn note)
     const helpers = texture(this.hdr.texture);
