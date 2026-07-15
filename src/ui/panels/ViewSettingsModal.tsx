@@ -2,46 +2,31 @@ import { useState } from "react";
 import { useAtomValue } from "jotai";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Cancel01Icon } from "@hugeicons/core-free-icons";
-import type { PaneDisplay, ShadingMode, ToneMappingMode } from "@/types/editor";
+import type { PaneDisplay } from "@/types/editor";
 import { defaultPaneDisplay } from "@/types/editor";
-import { appStore } from "@/ui/hooks/doc/document";
-import { splineThicknessAtom } from "@/ui/hooks/editor/settings";
 import { editorState, paneDisplaysAtom } from "@/ui/hooks/editor/viewport";
-import { NumberDrag } from "@/ui/widgets/NumberDrag";
 import type { ViewportSystem } from "@/render/viewport/ViewportSystem";
-
-const SHADING: { value: ShadingMode; label: string }[] = [
-  { value: "pbr", label: "PBR" },
-  { value: "flat", label: "Flat" },
-  { value: "wireframe", label: "Wireframe" },
-];
-const TONE: { value: ToneMappingMode; label: string }[] = [
-  { value: "agx", label: "AgX" },
-  { value: "aces", label: "ACES Filmic" },
-  { value: "neutral", label: "Neutral" },
-];
-const SSR_MODE: { value: "fast" | "high"; label: string }[] = [
-  { value: "fast", label: "Fast (mirror)" },
-  { value: "high", label: "High (temporal)" },
-];
-/** AO "Strength" ↔ neutral tint darkness: 0 = none (#ffffff), 1 = full (#000000). */
-const aoStrength = (hex: string): number => {
-  const v = Number.parseInt(hex.slice(1, 3), 16);
-  return Number.isFinite(v) ? 1 - v / 255 : 1;
-};
-const aoTint = (s: number): string => {
-  const h = Math.round((1 - Math.min(1, Math.max(0, s))) * 255)
-    .toString(16)
-    .padStart(2, "0");
-  return `#${h}${h}${h}`;
-};
+import { PostProcessingTab } from "./viewSettings/PostProcessingTab";
+import { ViewTab } from "./viewSettings/ViewTab";
 
 /**
  * Draggable per-pane View Settings — an attribute editor for the pane's display
- * options (replaces the old viewport-background context menu). Grouped into
- * collapsible sections; nested option sets (Ambient Shadows) are their own group.
+ * options. Two tabs (C6):
+ * - **View** — how the pane draws the scene: shading, tone map, overlays, camera.
+ * - **Post Processing** — everything the output graph does afterward: ambient
+ *   shadows, reflections, bloom, chromatic aberration, vignette.
+ *
  * Edits `paneDisplaysAtom` live (the viewport re-renders via editor subscribe).
+ * The tab bodies live in `viewSettings/` — this file is the chrome only, which
+ * is what keeps each piece under the 500-line limit.
  */
+
+type Tab = "view" | "post";
+const TABS: { id: Tab; label: string }[] = [
+  { id: "view", label: "View" },
+  { id: "post", label: "Post" },
+];
+
 export function ViewSettingsModal({
   pane,
   vs,
@@ -54,9 +39,8 @@ export function ViewSettingsModal({
   onClose: () => void;
 }) {
   const disp = useAtomValue(paneDisplaysAtom)[pane] ?? defaultPaneDisplay(pane);
-  const thickness = useAtomValue(splineThicknessAtom);
-  const isPbr = disp.shading === "pbr";
   const set = (patch: Partial<PaneDisplay>) => editorState.setPaneDisplay(pane, patch);
+  const [tab, setTab] = useState<Tab>("view");
 
   const [pos, setPos] = useState(initialPos);
   const onHeaderDown = (e: React.PointerEvent) => {
@@ -88,376 +72,27 @@ export function ViewSettingsModal({
         </button>
       </div>
 
-      <div className="max-h-[min(60vh,32rem)] overflow-auto">
-        <Section title="Shading" defaultOpen>
-          <Row label="Mode">
-            <Select
-              value={disp.shading}
-              options={SHADING}
-              onChange={(v) => set({ shading: v as ShadingMode })}
-            />
-          </Row>
-          <Row label="Tone Map">
-            <Select
-              value={disp.toneMapping}
-              options={TONE}
-              disabled={!isPbr}
-              onChange={(v) => set({ toneMapping: v as ToneMappingMode })}
-            />
-          </Row>
-          <Toggle
-            label="Shadows"
-            checked={disp.shadows}
-            disabled={!isPbr}
-            onChange={(v) => set({ shadows: v })}
-          />
-          <Toggle
-            label="Backfaces"
-            checked={disp.backfaces}
-            onChange={(v) => set({ backfaces: v })}
-          />
-        </Section>
-
-        <Section title="Ambient Shadows" defaultOpen>
-          <Toggle
-            label="Enabled"
-            checked={disp.ssao}
-            disabled={disp.shading === "wireframe"}
-            onChange={(v) => set({ ssao: v })}
-          />
-          <Row label="Radius">
-            <NumberDrag
-              value={disp.aoRadius}
-              step={0.02}
-              min={0.01}
-              max={10}
-              onChange={(v) => set({ aoRadius: v })}
-            />
-          </Row>
-          <Row label="Thickness">
-            <NumberDrag
-              value={disp.aoBias}
-              step={0.02}
-              min={0.01}
-              max={5}
-              onChange={(v) => set({ aoBias: v })}
-            />
-          </Row>
-          <Row label="Quality">
-            <NumberDrag
-              value={disp.aoSamples}
-              step={1}
-              integer
-              min={4}
-              max={32}
-              onChange={(v) => set({ aoSamples: v })}
-            />
-          </Row>
-          <Row label="Falloff">
-            <NumberDrag
-              value={disp.aoFalloff}
-              step={0.02}
-              min={0}
-              max={1}
-              onChange={(v) => set({ aoFalloff: v })}
-            />
-          </Row>
-          <Row label="Distance Exp">
-            <NumberDrag
-              value={disp.aoDistanceExp}
-              step={0.05}
-              min={0.1}
-              max={4}
-              onChange={(v) => set({ aoDistanceExp: v })}
-            />
-          </Row>
-          <Row label="Contrast">
-            <NumberDrag
-              value={disp.aoScale}
-              step={0.05}
-              min={0.1}
-              max={4}
-              onChange={(v) => set({ aoScale: v })}
-            />
-          </Row>
-          <Row label="Resolution">
-            <NumberDrag
-              value={disp.aoResolution}
-              step={0.05}
-              min={0.25}
-              max={1}
-              onChange={(v) => set({ aoResolution: v })}
-            />
-          </Row>
-          <Row label="Strength">
-            <NumberDrag
-              value={aoStrength(disp.aoTint)}
-              step={0.02}
-              min={0}
-              max={1}
-              onChange={(v) => set({ aoTint: aoTint(v) })}
-            />
-          </Row>
-        </Section>
-
-        <Section title="Reflections">
-          <Toggle
-            label="Enabled"
-            checked={disp.ssr}
-            disabled={!isPbr}
-            onChange={(v) => set({ ssr: v })}
-          />
-          <Row label="Mode">
-            <Select
-              value={disp.ssrMode}
-              options={SSR_MODE}
-              disabled={!isPbr}
-              onChange={(v) => set({ ssrMode: v as "fast" | "high" })}
-            />
-          </Row>
-          <Row label="Max Distance">
-            <NumberDrag
-              value={disp.ssrMaxDistance}
-              step={0.1}
-              min={0.1}
-              max={100}
-              onChange={(v) => set({ ssrMaxDistance: v })}
-            />
-          </Row>
-          <Row label="Thickness">
-            <NumberDrag
-              value={disp.ssrThickness}
-              step={0.01}
-              min={0.001}
-              max={5}
-              onChange={(v) => set({ ssrThickness: v })}
-            />
-          </Row>
-          <Row label="Intensity">
-            <NumberDrag
-              value={disp.ssrIntensity}
-              step={0.05}
-              min={0}
-              max={5}
-              onChange={(v) => set({ ssrIntensity: v })}
-            />
-          </Row>
-          <Row label={disp.ssrMode === "high" ? "Rays" : "Quality"}>
-            <NumberDrag
-              value={disp.ssrQuality}
-              step={0.02}
-              min={0}
-              max={1}
-              onChange={(v) => set({ ssrQuality: v })}
-            />
-          </Row>
-          <Row label="Edge Fade">
-            <NumberDrag
-              value={disp.ssrEdgeFade}
-              step={0.02}
-              min={0}
-              max={1}
-              onChange={(v) => set({ ssrEdgeFade: v })}
-            />
-          </Row>
-          <Row label="Max Luminance">
-            <NumberDrag
-              value={disp.ssrMaxLuminance}
-              step={0.5}
-              min={0.5}
-              max={100}
-              onChange={(v) => set({ ssrMaxLuminance: v })}
-            />
-          </Row>
-          <Row label="Resolution">
-            <NumberDrag
-              value={disp.ssrResolution}
-              step={0.05}
-              min={0.25}
-              max={1}
-              onChange={(v) => set({ ssrResolution: v })}
-            />
-          </Row>
-          {disp.ssrMode === "high" ? (
-            <>
-              <Row label="Denoise">
-                <NumberDrag
-                  value={disp.ssrDenoise}
-                  step={0.02}
-                  min={0}
-                  max={1}
-                  onChange={(v) => set({ ssrDenoise: v })}
-                />
-              </Row>
-              <Row label="Max Frames">
-                <NumberDrag
-                  value={disp.ssrMaxFrames}
-                  step={1}
-                  integer
-                  min={1}
-                  max={128}
-                  onChange={(v) => set({ ssrMaxFrames: v })}
-                />
-              </Row>
-            </>
-          ) : (
-            <>
-              <Toggle
-                label="Reflect Non-Metals"
-                checked={disp.ssrReflectNonMetals}
-                disabled={!isPbr}
-                onChange={(v) => set({ ssrReflectNonMetals: v })}
-              />
-              <Row label="Blur Quality">
-                <NumberDrag
-                  value={disp.ssrBlurQuality}
-                  step={1}
-                  integer
-                  min={1}
-                  max={3}
-                  onChange={(v) => set({ ssrBlurQuality: v })}
-                />
-              </Row>
-              <Row label="Roughness Fade">
-                <NumberDrag
-                  value={disp.ssrRoughnessFade}
-                  step={0.02}
-                  min={0}
-                  max={1}
-                  onChange={(v) => set({ ssrRoughnessFade: v })}
-                />
-              </Row>
-            </>
-          )}
-        </Section>
-
-        <Section title="Overlays">
-          <Toggle label="Grid" checked={disp.grid} onChange={(v) => set({ grid: v })} />
-          <Toggle
-            label="Lines"
-            checked={disp.lines}
-            disabled={disp.shading === "wireframe"}
-            onChange={(v) => set({ lines: v })}
-          />
-          <Toggle
-            label="Hidden Lines"
-            checked={disp.hiddenLines}
-            disabled={disp.shading === "wireframe" || !disp.lines}
-            onChange={(v) => set({ hiddenLines: v })}
-          />
-          <Row label="Spline px">
-            <NumberDrag
-              value={thickness}
-              step={0.1}
-              min={1}
-              max={8}
-              onChange={(v) => {
-                appStore.set(splineThicknessAtom, v);
-                vs.setSplineThickness(v);
-              }}
-            />
-          </Row>
-        </Section>
-
-        <Section title="Camera">
+      <div role="tablist" className="tabs tabs-box tabs-xs m-1">
+        {TABS.map((t) => (
           <button
+            key={t.id}
             type="button"
-            className="btn btn-xs btn-block"
-            onClick={() => vs.resetPaneCamera(pane)}
+            role="tab"
+            className={`tab flex-1 ${tab === t.id ? "tab-active" : ""}`}
+            onClick={() => setTab(t.id)}
           >
-            Reset Camera PSR
+            {t.label}
           </button>
-        </Section>
+        ))}
       </div>
-    </div>
-  );
-}
 
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="grid grid-cols-[72px_1fr] items-center gap-1">
-      <span className="opacity-60">{label}</span>
-      {children}
-    </div>
-  );
-}
-
-function Toggle({
-  label,
-  checked,
-  disabled = false,
-  onChange,
-}: {
-  label: string;
-  checked: boolean;
-  disabled?: boolean;
-  onChange: (v: boolean) => void;
-}) {
-  return (
-    <Row label={label}>
-      <input
-        type="checkbox"
-        className="toggle toggle-xs"
-        checked={checked}
-        disabled={disabled}
-        onChange={(e) => onChange(e.target.checked)}
-      />
-    </Row>
-  );
-}
-
-function Select({
-  value,
-  options,
-  disabled = false,
-  onChange,
-}: {
-  value: string;
-  options: { value: string; label: string }[];
-  disabled?: boolean;
-  onChange: (v: string) => void;
-}) {
-  return (
-    <select
-      className="select select-xs w-full"
-      value={value}
-      disabled={disabled}
-      onChange={(e) => onChange(e.target.value)}
-    >
-      {options.map((o) => (
-        <option key={o.value} value={o.value}>
-          {o.label}
-        </option>
-      ))}
-    </select>
-  );
-}
-
-function Section({
-  title,
-  defaultOpen = false,
-  children,
-}: {
-  title: string;
-  defaultOpen?: boolean;
-  children: React.ReactNode;
-}) {
-  const [open, setOpen] = useState(defaultOpen);
-  return (
-    <div className="border-t border-base-300/60 first:border-t-0">
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center gap-1.5 px-2 py-1 text-left hover:bg-base-300/40"
-      >
-        <span className={`text-[8px] opacity-60 transition-transform ${open ? "rotate-90" : ""}`}>
-          ▶
-        </span>
-        <span className="text-[10px] font-semibold uppercase tracking-wide opacity-70">
-          {title}
-        </span>
-      </button>
-      {open ? <div className="flex flex-col gap-1.5 px-2 pb-2">{children}</div> : null}
+      <div className="max-h-[min(60vh,32rem)] overflow-auto">
+        {tab === "view" ? (
+          <ViewTab pane={pane} vs={vs} disp={disp} set={set} />
+        ) : (
+          <PostProcessingTab disp={disp} set={set} />
+        )}
+      </div>
     </div>
   );
 }
