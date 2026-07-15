@@ -17,6 +17,8 @@ const CHANNEL_SLOT: Record<ProceduralChannel, string> = {
   roughness: "roughnessNode",
   metalness: "metalnessNode",
   emissive: "emissiveNode",
+  // the compiler already converted the height stack to a view-space normal
+  normal: "normalNode",
 };
 
 const SCALAR_CHANNEL = new Set(PROCEDURAL_CHANNELS.filter((c) => c.scalar).map((c) => c.channel));

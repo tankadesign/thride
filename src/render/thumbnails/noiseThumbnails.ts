@@ -1,7 +1,9 @@
 import { Mesh, OrthographicCamera, PlaneGeometry, Scene } from "three";
 import { MeshBasicNodeMaterial, WebGPURenderer } from "three/webgpu";
+import type { ProceduralLayer } from "@/types/core";
 import { float } from "@/materials/tsl";
 import { previewNode, type NoiseDef } from "@/materials/noises";
+import { compile } from "@/materials/procedural";
 
 /**
  * Offscreen noise preview: a full-frame quad shaded by a noise def's `preview`
@@ -46,6 +48,31 @@ export class NoiseThumbnails {
     this.quad.material = mat;
     await this.renderer.renderAsync(this.scene, this.camera);
     const url = this.canvas.toDataURL("image/png");
+    (Array.isArray(prev) ? prev : [prev]).forEach((m) => m.dispose());
+    return url;
+  }
+
+  /**
+   * Render a channel layer's full look — shaping, seed, ramp/tint — via the E3
+   * compiler (single-layer color-channel doc), for the material editor's noise
+   * chip. Normal-channel layers preview as their height field, which is the
+   * useful view of them.
+   */
+  async renderLayer(layer: ProceduralLayer): Promise<string> {
+    await this.ready;
+    if (this.disposed) return "";
+    const compiled = compile({ channels: { color: { layers: [{ ...layer, enabled: true }] } } });
+    if (!compiled.nodes.color) {
+      compiled.dispose();
+      return "";
+    }
+    const mat = new MeshBasicNodeMaterial();
+    mat.colorNode = compiled.nodes.color;
+    const prev = this.quad.material;
+    this.quad.material = mat;
+    await this.renderer.renderAsync(this.scene, this.camera);
+    const url = this.canvas.toDataURL("image/png");
+    compiled.dispose();
     (Array.isArray(prev) ? prev : [prev]).forEach((m) => m.dispose());
     return url;
   }

@@ -1,5 +1,5 @@
 import type { Uuid } from "./ids";
-import type { ProceduralMaterialDoc } from "./procedural";
+import type { ProceduralChannel, ProceduralMaterialDoc } from "./procedural";
 
 /**
  * Built-in three.js material families the manager can create. Each maps to a
@@ -69,6 +69,19 @@ export const TEXTURE_CHANNELS: {
   },
   { channel: "emissiveMap", label: "Emissive", applies: HAS_EMISSIVE, colorSpace: "srgb" },
 ];
+
+/**
+ * Which procedural channel occupies the same slot as each image-map channel.
+ * A channel holds an image OR a noise, never both — the material editor's map
+ * slot enforces the exclusivity through this correspondence.
+ */
+export const TEXTURE_TO_PROCEDURAL: Record<TextureChannel, ProceduralChannel> = {
+  map: "color",
+  roughnessMap: "roughness",
+  metalnessMap: "metalness",
+  normalMap: "normal",
+  emissiveMap: "emissive",
+};
 
 /**
  * A bitmap texture asset in the project library. `bytes` is the raw encoded

@@ -5,6 +5,7 @@ export { defaultPlanarReflection, identityTransform } from "./scene";
 export type { ThrideDocumentDTO } from "./document";
 export { FORMAT_VERSION } from "./document";
 export type { MaterialDTO, MaterialType, TextureChannel, TextureAssetDTO } from "./material";
+export { TEXTURE_TO_PROCEDURAL } from "./material";
 export type { EnvironmentDTO } from "./environment";
 export { defaultEnvironment, environmentAssets } from "./environment";
 export {
@@ -32,11 +33,14 @@ export {
   BLEND_MODES,
   PROCEDURAL_CHANNELS,
   PROJECTIONS,
+  SHAPING_DEFAULTS,
   SOLID_SOURCE,
+  channelLayer,
   defaultLayer,
   defaultProjectionTransform,
   defaultRamp,
   structureKey,
+  withChannelLayer,
 } from "./procedural";
 export type { SliceId, DocEventMap } from "./events";
 export type { EditMode, ComponentMode } from "./selection";

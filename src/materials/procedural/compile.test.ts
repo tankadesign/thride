@@ -180,4 +180,53 @@ describe("layer-stack compiler", () => {
     expect(c.nodes.roughness).toBeTruthy();
     expect(c.nodes.metalness).toBeUndefined();
   });
+
+  it("shaping edits (seed/clip/contrast/bias) poke uniforms, never recompile", () => {
+    const d = doc(layer("a"));
+    const c = compile(d);
+    expect(getCompileCount()).toBe(1);
+
+    const edited = clone(d);
+    const l = edited.channels.color!.layers[0]!;
+    l.seed = 42;
+    l.clipLow = 0.2;
+    l.clipHigh = 0.8;
+    l.contrast = 2;
+    l.bias = -0.1;
+
+    expect(c.applies(edited)).toBe(true); // shaping is not structural
+    expect(structureKey(edited)).toBe(structureKey(d));
+    c.update(edited);
+    expect(getCompileCount()).toBe(1);
+
+    expect(c.uniforms.getFloat("a/seed")).toBe(42);
+    expect(c.uniforms.getFloat("a/clipLow")).toBe(0.2);
+    expect(c.uniforms.getFloat("a/clipHigh")).toBe(0.8);
+    expect(c.uniforms.getFloat("a/contrast")).toBe(2);
+    expect(c.uniforms.getFloat("a/bias")).toBe(-0.1);
+  });
+
+  it("the normal channel compiles a height stack to a normal node", () => {
+    const c = compile({ channels: { normal: { layers: [layer("n")] } } });
+    expect(c.nodes.normal).toBeTruthy();
+    expect(typeof c.nodes.normal.xyz).toBe("object"); // vec3 normal, not a scalar
+    expect(c.uniforms.paths()).toContain("n/bumpStrength");
+
+    // bump strength is a live uniform too
+    const edited: ProceduralMaterialDoc = {
+      channels: { normal: { layers: [layer("n", { bumpStrength: 2.5 })] } },
+    };
+    expect(c.applies(edited)).toBe(true);
+    c.update(edited);
+    expect(c.uniforms.getFloat("n/bumpStrength")).toBe(2.5);
+  });
+
+  it("pre-shaping docs (no shaping fields) still compile and update", () => {
+    // documents autosaved before the shaping fields existed
+    const d = doc(layer("a"));
+    const c = compile(d);
+    c.update(clone(d)); // absent fields fall back to defaults, no throw
+    expect(c.uniforms.getFloat("a/contrast")).toBe(1);
+    expect(c.uniforms.getFloat("a/clipHigh")).toBe(1);
+  });
 });

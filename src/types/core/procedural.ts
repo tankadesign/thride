@@ -129,14 +129,40 @@ export interface ProceduralLayer {
   blend: BlendMode;
   /** 0–1 layer strength. */
   opacity: number;
+
+  // ---- Value shaping (the noise-map editor). All optional, all uniform-backed:
+  // editing any of them NEVER recompiles, so none appear in `structureKey`. ----
+  /** Decorrelation seed — shifts the sample position through the 3D field. */
+  seed?: number;
+  /** Levels input window: value at which the output reaches 0. Default 0. */
+  clipLow?: number;
+  /** Levels input window: value at which the output reaches 1. Default 1. */
+  clipHigh?: number;
+  /** Expansion around mid-gray after the clip window (1 = unchanged). */
+  contrast?: number;
+  /** Offset added after contrast (−1…1). Default 0. */
+  bias?: number;
+  /** `normal` channel only: height→normal bump strength. Default 1. */
+  bumpStrength?: number;
 }
+
+/** Defaults for the optional shaping fields — shared by the editor + compiler. */
+export const SHAPING_DEFAULTS = {
+  seed: 0,
+  clipLow: 0,
+  clipHigh: 1,
+  contrast: 1,
+  bias: 0,
+  bumpStrength: 1,
+} as const;
 
 /**
  * Material channels a stack can drive. `color`/`emissive` are RGB; `roughness`/
- * `metalness` are scalar (the compiler takes the red channel). These mirror the
- * node-material slots the compiler assigns (`colorNode`, `roughnessNode`, …).
+ * `metalness` are scalar (the compiler takes the red channel); `normal` is a
+ * height field the compiler converts to a perturbed normal (derivative bump).
+ * These mirror the node-material slots (`colorNode`, `roughnessNode`, …).
  */
-export type ProceduralChannel = "color" | "roughness" | "metalness" | "emissive";
+export type ProceduralChannel = "color" | "roughness" | "metalness" | "emissive" | "normal";
 
 export const PROCEDURAL_CHANNELS: {
   channel: ProceduralChannel;
@@ -148,6 +174,8 @@ export const PROCEDURAL_CHANNELS: {
   { channel: "roughness", label: "Roughness", scalar: true },
   { channel: "metalness", label: "Metalness", scalar: true },
   { channel: "emissive", label: "Emissive", scalar: false },
+  // scalar:false — the compiler emits a finished vec3 normal, never `.r`'d
+  { channel: "normal", label: "Normal", scalar: false },
 ];
 
 /** A channel's layer stack. Empty/absent = the channel falls back to the DTO scalar. */
@@ -191,6 +219,34 @@ export function defaultLayer(id: Uuid, source: string = SOLID_SOURCE): Procedura
  * `opacity`, `transform` and ramp stop values are all uniforms or texture data,
  * so editing them must NOT change this key.
  */
+/**
+ * The single-slot view of a channel used by the noise-map UI: one noise per
+ * channel, occupying the same conceptual slot as an image map. The stack model
+ * stays richer underneath (multi-layer docs remain valid); these helpers just
+ * read/write layer 0.
+ */
+export function channelLayer(
+  doc: ProceduralMaterialDoc | undefined,
+  channel: ProceduralChannel,
+): ProceduralLayer | undefined {
+  return doc?.channels[channel]?.layers[0];
+}
+
+/**
+ * A new doc with `channel`'s slot set to `layer` (or cleared with null). An
+ * emptied doc collapses to `undefined` so plain materials stay `procedural`-free.
+ */
+export function withChannelLayer(
+  doc: ProceduralMaterialDoc | undefined,
+  channel: ProceduralChannel,
+  layer: ProceduralLayer | null,
+): ProceduralMaterialDoc | undefined {
+  const channels = { ...doc?.channels };
+  if (layer) channels[channel] = { layers: [layer] };
+  else delete channels[channel];
+  return Object.keys(channels).length > 0 ? { channels } : undefined;
+}
+
 export function structureKey(doc: ProceduralMaterialDoc | undefined): string {
   if (!doc) return "";
   const parts: string[] = [];

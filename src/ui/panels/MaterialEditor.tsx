@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef } from "react";
 import type { MaterialDTO, MaterialType, TextureChannel, Uuid } from "@/types/core";
 import {
   HAS_COLOR,
@@ -9,10 +9,11 @@ import {
   PHYSICAL_DEFAULTS as PD,
   TEXTURE_CHANNELS,
 } from "@/types/core";
-import { UpdateMaterialCommand, uuidv7 } from "@/core";
-import { textureAssets } from "@/io/storage/textureAssets";
+import { UpdateMaterialCommand } from "@/core";
 import { useDocument, useSliceVersion } from "@/ui/hooks/doc/document";
 import { NumberDrag } from "@/ui/widgets/NumberDrag";
+import { Row, Section } from "./materialEditor/controls";
+import { MapSlot } from "./materialEditor/MapSlot";
 
 type NumKey =
   | "roughness"
@@ -82,32 +83,12 @@ export function MaterialEditor({ id }: { id: Uuid }) {
     </Row>
   );
 
-  const setTexture = async (channel: TextureChannel, file: File | null) => {
-    if (!file) return;
-    const bytes = new Uint8Array(await file.arrayBuffer());
-    const asset = { id: uuidv7(), name: file.name, mime: file.type || "image/png", bytes };
-    textureAssets.register(asset);
-    setMat({ textures: { ...mat.textures, [channel]: asset.id } }, true);
-  };
-  const clearTexture = (channel: TextureChannel) => {
-    const next = { ...mat.textures };
-    delete next[channel];
-    setMat({ textures: next }, true);
-  };
-  // one image-map slot, rendered inline in the section its channel belongs to
-  // (null when the channel doesn't apply to this material type)
+  // one map slot (image OR noise), rendered inline in the section its channel
+  // belongs to (null when the channel doesn't apply to this material type)
   const texSlot = (channel: TextureChannel, label: string) => {
     const meta = TEXTURE_CHANNELS.find((c) => c.channel === channel);
     if (!meta?.applies.has(mat.type)) return null;
-    return (
-      <TextureSlot
-        key={channel}
-        label={label}
-        assetId={mat.textures?.[channel]}
-        onLoad={(file) => setTexture(channel, file)}
-        onClear={() => clearTexture(channel)}
-      />
-    );
+    return <MapSlot key={channel} label={label} channel={channel} mat={mat} setMat={setMat} />;
   };
   // Normal map applies to lit non-PBR types too (lambert/phong/toon), which have
   // no Surface section otherwise — show Surface whenever it has something to hold.
@@ -195,114 +176,6 @@ export function MaterialEditor({ id }: { id: Uuid }) {
           {texSlot("emissiveMap", "Emissive Map")}
         </Section>
       ) : null}
-    </div>
-  );
-}
-
-/** One image-map channel: a thumbnail that opens a file picker, with a clear button. */
-function TextureSlot({
-  label,
-  assetId,
-  onLoad,
-  onClear,
-}: {
-  label: string;
-  assetId: Uuid | undefined;
-  onLoad: (file: File | null) => void;
-  onClear: () => void;
-}) {
-  const inputRef = useRef<HTMLInputElement>(null);
-  const url = useAssetUrl(assetId);
-  return (
-    <Row label={label}>
-      <div className="flex items-center gap-1">
-        <button
-          type="button"
-          className="flex h-7 w-7 items-center justify-center overflow-hidden rounded border border-base-300 bg-base-100"
-          onClick={() => inputRef.current?.click()}
-          title={assetId ? "Replace image" : "Load image"}
-        >
-          {url ? (
-            <img src={url} alt="" className="h-full w-full object-cover" />
-          ) : (
-            <span className="text-sm opacity-40">+</span>
-          )}
-        </button>
-        {assetId ? (
-          <button
-            type="button"
-            className="btn btn-ghost btn-xs px-1 opacity-60"
-            onClick={onClear}
-            title="Clear"
-          >
-            ✕
-          </button>
-        ) : null}
-        <input
-          ref={inputRef}
-          type="file"
-          accept="image/*"
-          className="hidden"
-          onChange={(e) => {
-            onLoad(e.target.files?.[0] ?? null);
-            e.target.value = ""; // allow re-picking the same file
-          }}
-        />
-      </div>
-    </Row>
-  );
-}
-
-/** Object URL for a registered texture asset's preview (revoked on change/unmount). */
-function useAssetUrl(assetId: Uuid | undefined): string | null {
-  const [url, setUrl] = useState<string | null>(null);
-  useEffect(() => {
-    const asset = assetId ? textureAssets.get(assetId) : undefined;
-    if (!asset) {
-      setUrl(null);
-      return;
-    }
-    const u = URL.createObjectURL(new Blob([new Uint8Array(asset.bytes)], { type: asset.mime }));
-    setUrl(u);
-    return () => URL.revokeObjectURL(u);
-  }, [assetId]);
-  return url;
-}
-
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="grid grid-cols-[74px_1fr] items-center gap-1">
-      <span className="opacity-60">{label}</span>
-      {children}
-    </div>
-  );
-}
-
-function Section({
-  title,
-  defaultOpen = false,
-  children,
-}: {
-  title: string;
-  defaultOpen?: boolean;
-  children: React.ReactNode;
-}) {
-  const [open, setOpen] = useState(defaultOpen);
-  return (
-    <div className="border-t border-base-300/60 first:border-t-0">
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center gap-1.5 px-2 py-1 text-left hover:bg-base-300/40"
-      >
-        <span className={`text-[8px] opacity-60 transition-transform ${open ? "rotate-90" : ""}`}>
-          ▶
-        </span>
-        <span className="text-[10px] font-semibold uppercase tracking-wide opacity-70">
-          {title}
-        </span>
-      </button>
-      {open ? <div className="flex flex-col gap-1.5 px-2 pb-2">{children}</div> : null}
     </div>
   );
 }

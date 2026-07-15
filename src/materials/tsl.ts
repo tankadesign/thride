@@ -40,6 +40,8 @@ export { abs, cross, Fn, int, normalize, time, uv } from "three/tsl";
 export { max, min, step } from "three/tsl";
 // E4 projections: angular (cylindrical/spherical), triplanar blend, camera
 export { acos, atan, length, pow, screenUV } from "three/tsl";
+// noise-map normal channel: derivative bump (three's perturbNormalArb inputs)
+export { faceDirection, positionView } from "three/tsl";
 export {
   hash,
   mx_cell_noise_float,
