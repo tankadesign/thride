@@ -266,11 +266,19 @@ export class SceneSynchronizer {
     if (this.objects.has(id)) return;
     const node = this.doc.scene.mustGet(id);
     let obj: Object3D;
-    if (node.kind === "mesh" || node.kind === "generator") obj = this.buildMeshObject(node);
-    else if (node.kind === "spline") obj = buildSplineObject(node);
-    else if (node.kind === "light") obj = this.lights.build(node);
-    else if (node.kind === "camera") obj = this.buildCameraObject();
-    else obj = new Group();
+    try {
+      if (node.kind === "mesh" || node.kind === "generator") obj = this.buildMeshObject(node);
+      else if (node.kind === "spline") obj = buildSplineObject(node);
+      else if (node.kind === "light") obj = this.lights.build(node);
+      else if (node.kind === "camera") obj = this.buildCameraObject();
+      else obj = new Group();
+    } catch (err) {
+      // Corrupt node payload (bad import, format drift, …) — render nothing
+      // for THIS node instead of letting the throw unmount the whole app.
+      // The empty group keeps the hierarchy intact so children still attach.
+      console.warn(`thride: node "${node.name}" (${node.kind}) failed to build — skipped`, err);
+      obj = new Group();
+    }
     obj.name = node.name;
     obj.userData.nodeId = id;
     // splines own their visibility in syncSplineGeometry (a <2-point spline
@@ -333,23 +341,29 @@ export class SceneSynchronizer {
     let obj = this.objects.get(id);
     if (!obj) return;
     const node = this.doc.scene.mustGet(id);
-    if (node.kind === "light") {
-      obj = this.lights.update(node, obj);
-      this.objects.set(id, obj); // type changes rebuild the light object
-    }
-    obj.name = node.name;
-    // splines: see addNode. Consumed = a boolean input (hidden + unpickable).
-    if (!obj.userData.spline) obj.visible = node.visible && !this.isConsumed(id);
-    this.applyTransform(node, obj);
-    if (
-      (node.kind === "mesh" || node.kind === "generator") &&
-      obj instanceof Mesh &&
-      !obj.userData.spline
-    ) {
-      this.syncGeometry(id, node, obj, preview);
-    }
-    if (node.kind === "spline" && obj.userData.spline) {
-      syncSplineGeometry(node, obj as Parameters<typeof syncSplineGeometry>[1]);
+    try {
+      if (node.kind === "light") {
+        obj = this.lights.update(node, obj);
+        this.objects.set(id, obj); // type changes rebuild the light object
+      }
+      obj.name = node.name;
+      // splines: see addNode. Consumed = a boolean input (hidden + unpickable).
+      if (!obj.userData.spline) obj.visible = node.visible && !this.isConsumed(id);
+      this.applyTransform(node, obj);
+      if (
+        (node.kind === "mesh" || node.kind === "generator") &&
+        obj instanceof Mesh &&
+        !obj.userData.spline
+      ) {
+        this.syncGeometry(id, node, obj, preview);
+      }
+      if (node.kind === "spline" && obj.userData.spline) {
+        syncSplineGeometry(node, obj as Parameters<typeof syncSplineGeometry>[1]);
+      }
+    } catch (err) {
+      // corrupt payload on a live edit — keep the stale visual, don't let the
+      // throw take down the event dispatch / undo machinery (see addNode)
+      console.warn(`thride: node "${node.name}" (${node.kind}) failed to update — kept stale`, err);
     }
     // dirty propagation: a change inside a generator's subtree re-evaluates
     // the generator (pull-based — the memo key decides if work happens)
