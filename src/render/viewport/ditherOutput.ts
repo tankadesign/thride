@@ -384,7 +384,13 @@ export class DitherOutput {
       this.ssrFadeStart = fadeStart;
       const fade = smoothstep(fadeStart, float(1), roughNode.r).oneMinus();
       this.applySsrParams(this.ssrParams); // maxDistance/thickness/intensity/quality/fade
-      composite = composite.add(ssrNode.getTextureNode().rgb.mul(fade));
+      // max(0)/min kill NaN/Inf (WGSL returns the non-NaN operand) — see the
+      // temporal branch's sanitizer note
+      const safe = ssrNode
+        .getTextureNode()
+        .rgb.max(vec3(0, 0, 0))
+        .min(vec3(1e4, 1e4, 1e4));
+      composite = composite.add(safe.mul(fade));
     }
 
     if (ssrOn) {
@@ -448,7 +454,13 @@ export class DitherOutput {
       stochastic: true,
       diffuseNode: diffTex,
       metalnessNode: diffTex.a,
-      roughnessNode: normalTex.a,
+      // Floor the roughness: at alpha≈0 (roughness-0 mirrors) the MIS/GGX math
+      // divides 0/0 (D_GTR at perfect alignment) → NaN → the temporal feedback
+      // dilates it into chunky black silhouette blobs. 0.12 keeps alpha safely
+      // above the node's own low-alpha MIS guard (alpha>0.01 ⇔ roughness>0.1)
+      // and is visually still a mirror; the floor only exists inside the SSR
+      // sampling — materials render with their true roughness.
+      roughnessNode: normalTex.a.max(float(0.12)),
       environmentNode: this.ssrEnvTex, // stochastic REQUIRES an equirect HDR
       // MIS (CDF-table) env sampling for rays that miss the screen. Without it,
       // naive BRDF sampling of an HDR is the persistent grain on surfaces whose
