@@ -3,8 +3,9 @@
 **Date:** 2026-07-15
 **Chunks worked:** E3 (layer-stack compiler), E4 (projections), C6 (post-FX stack)
 **Milestone context:** M2 in progress (user-authorized through the milestone).
-E1, E2, E5, E3, E4 done; C6 done except custom shader effects (open scope
-decision, below); A5 remains. E6 bake deferred out of M2.
+E1, E2, E5, E3, E4, C6 done; A5 is the last M2 chunk. C6's "user custom shader
+effects" was **deferred to 1.x by user decision** at this boundary (see
+Decisions). E6 bake deferred out of M2.
 
 ## Completed
 
@@ -85,7 +86,7 @@ inherent to sampling a float position and applies to every noise, not just value
 
 ## Left mid-flight
 
-- **C6 custom shader effects are NOT built** — see the decision below.
+Nothing. C6 closes here on the fixed stack + reorg (custom shaders deferred).
 
 ## Decisions made (and why)
 
@@ -108,6 +109,13 @@ inherent to sampling a float position and applies to every noise, not just value
   land, where ordering becomes meaningful.
 - **Vignette is ours; bloom + CA are three's.** three ships no standalone vignette
   node (only one inside CRT.js), and a radial multiply needs no resampling.
+- **C6's "user custom shader effects" (TSL/GLSL snippet + declared uniforms,
+  animatable) deferred to 1.x — user decision, surfaced at the chunk boundary.**
+  The fixed stack + the Post tab reorg were built as the spine first; custom
+  shaders are a large sub-feature (user code compiled at runtime, declared
+  uniforms, failure handling that must not brick the viewport). PLAN.md's C6 line
+  is updated so this reads as an explicit deferral, not a silent drop. Layer
+  ordering becomes meaningful if/when they land.
 
 ## Files added / changed
 
@@ -139,38 +147,42 @@ inherent to sampling a float position and applies to every noise, not just value
   fresh-tab console clean on the default path.
 - **Post-FX verified in the High-SSR (temporal) path too** — that's the whole
   point of extracting `composeOutput`, and the temporal tail is the one that was
-  rewritten. Bloom + vignette + High SSR compose correctly together. The console
-  there is NOT clean, but the errors are the pre-existing depth-copy bug below,
-  reproduced at `a4e9685` with none of this chunk's code present.
+  rewritten. Bloom + vignette + High SSR compose correctly together. That check
+  is what surfaced the depth-copy bug below (pre-existing, now fixed); the
+  console is clean there now, across Fast→High, High→Fast, resize and idle.
 
 ## Known issues
 
-- **PRE-EXISTING BUG FOUND (High SSR, E5's, not this chunk's): the temporal
-  depth copy fails WebGPU validation every frame.**
+- **FIXED during this session: the High-SSR depth-copy sample-count mismatch.**
+  Found while verifying post-FX in the High-SSR path, and fixed — see the note
+  below for how the first diagnosis was wrong.
 
   ```
   Source [Texture "depth"] sample count (4) and destination ... sample count (1)
   does not match. — CopyTextureToTexture / TemporalReprojectNode
   ```
 
-  Found while verifying post-FX in the High-SSR path. **Confirmed pre-existing,
-  not a C6 regression:** reproduced identically at `a4e9685` (the commit before
-  this session) in a clean worktree on a second dev server, with post-FX absent
-  entirely. It also reproduces with all effects OFF on current main.
+  **Cause:** the gen-1 (Fast) SSR branch built its pass as
+  `pass(scene, camera)` with no options, so it inherited `renderer.samples` (4).
+  It was the ONLY multisampled target in the app — the baseline `hdr` target and
+  the temporal pass are both single-sample — and its depth texture is also named
+  `"depth"`. On a Fast→High graph swap it outlived the switch just long enough to
+  be the source of `TemporalReprojectNode`'s first depth copy, which WebGPU
+  rejected. **Fix:** `{ samples: 0 }` on that pass too, which is also simply
+  consistent with the rest of the pipeline. Beauty AA is unaffected — the
+  baseline was never multisampled either.
 
-  It renders — the image looks correct, which is why it was never caught — but
-  `TemporalReprojectNode` copies `depthNode.value` → `_historyRenderTarget.depthTexture`
-  each frame (TemporalReprojectNode.js:717) and the copy is rejected, so
-  `_previousDepthNode` never receives valid data and the reprojection's
-  depth-based history rejection is running blind. Plausibly related to the
-  ghosting/artifacts fought during E5.
-
-  The puzzle: `buildTemporalSsr` DOES pass `pass(scene, camera, { samples: 0 })`,
-  and `PassNode.setup` honors it (`options.samples === undefined ? renderer.samples
-: options.samples`, PassNode.js:766) — yet the pass's depth texture still reports
-  4 samples at copy time. Suspect the render target's GPU texture is allocated
-  before `setup()` applies `samples`, and the later assignment doesn't force
-  reallocation. Not investigated further; out of scope for E3/E4/C6.
+  **Correcting the first diagnosis (recorded because the error was instructive):**
+  it was initially logged here as failing _every frame_, with the reprojection
+  "running blind". That was wrong, and it was wrong because the browser console
+  buffer accumulates across reloads — the errors looked continuous. Instrumenting
+  `console.error` around specific actions showed the truth: **exactly one error,
+  only on a Fast→High switch**; zero on High→Fast, zero on resize, zero across
+  repeated fresh renders. The impact was one dropped history-depth copy on the
+  first frame of a ~40-frame convergence, not a blind denoiser. Confirmed
+  pre-existing regardless (reproduced at `a4e9685` in a clean worktree). Lesson
+  for the next session: a console buffer is not a timeline — hook `console.error`
+  around the action to attribute an error to it.
 
 - **Procedural materials have no editor UI.** The DTO, compiler and render path
   are complete and proven, but a user can only author a stack via the document

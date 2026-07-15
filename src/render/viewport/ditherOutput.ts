@@ -363,7 +363,14 @@ export class DitherOutput {
     // biome-ignore lint/suspicious/noExplicitAny: TSL node graph — loose by design
     let roughNode: any = null;
     if (ssrOn) {
-      const scenePass = pass(this.ssrScene as Scene, this.ssrCamera as Camera);
+      // samples:0 for the same reason the temporal path needs it, plus one more:
+      // this was the ONLY 4-sample target in the app (the baseline `hdr` and the
+      // temporal pass are both single-sample), and its depth texture — also named
+      // "depth" — outlived the graph swap long enough to be the source of
+      // TemporalReprojectNode's first depth copy on a Fast→High switch, which
+      // WebGPU rejected as a 4-vs-1 sample-count mismatch. Beauty AA is unchanged
+      // because the baseline was never multisampled either.
+      const scenePass = pass(this.ssrScene as Scene, this.ssrCamera as Camera, { samples: 0 });
       scenePass.setMRT(mrt({ output, normal: normalView, metalness, roughness }));
       this.scenePass = scenePass;
       color = scenePass.getTextureNode("output");
