@@ -1,4 +1,5 @@
 import type { Uuid } from "./ids";
+import type { ProceduralMaterialDoc } from "./procedural";
 
 /**
  * Built-in three.js material families the manager can create. Each maps to a
@@ -126,6 +127,13 @@ export interface MaterialDTO {
 
   /** Image-map channels → texture-asset id. Absent/empty = no maps. */
   textures?: Partial<Record<TextureChannel, Uuid>>;
+
+  /**
+   * Procedural layer stacks (E3), compiled to TSL per channel. Absent = a plain
+   * scalar/bitmap material. A channel with a stack overrides the scalar field
+   * above it (a `color` stack drives `colorNode`, not `color`).
+   */
+  procedural?: ProceduralMaterialDoc;
 }
 
 /** Defaults for the optional physical fields — shared by the editor + builder. */

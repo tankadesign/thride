@@ -17,5 +17,26 @@ export {
   TEXTURE_CHANNELS,
   defaultMaterialData,
 } from "./material";
+export type {
+  BlendMode,
+  GradientRamp,
+  GradientStop,
+  ProceduralChannel,
+  ProceduralLayer,
+  ProceduralMaterialDoc,
+  ProceduralStack,
+  Projection,
+  ProjectionTransform,
+} from "./procedural";
+export {
+  BLEND_MODES,
+  PROCEDURAL_CHANNELS,
+  PROJECTIONS,
+  SOLID_SOURCE,
+  defaultLayer,
+  defaultProjectionTransform,
+  defaultRamp,
+  structureKey,
+} from "./procedural";
 export type { SliceId, DocEventMap } from "./events";
 export type { EditMode, ComponentMode } from "./selection";

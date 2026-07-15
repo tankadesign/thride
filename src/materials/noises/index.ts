@@ -14,4 +14,4 @@ export {
   worleyNoise,
 } from "./functions";
 export type { NoiseCategory, NoiseDef, NoiseParam } from "./registry";
-export { defaultNoiseParams, noiseDef, NOISE_DEFS } from "./registry";
+export { defaultNoiseParams, noiseDef, NOISE_DEFS, previewNode } from "./registry";

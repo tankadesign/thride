@@ -2,6 +2,7 @@ import {
   float,
   Fn,
   hash,
+  int,
   mix,
   mx_cell_noise_float,
   mx_fractal_noise_float,
@@ -95,24 +96,41 @@ export const triNoise = (opts: TriNoiseOpts = {}): Node => {
 };
 
 /**
- * Lattice bias for {@link valueNoise3}. `hash()` starts with `seed.toUint()`,
- * and WGSL clamps a negative float to 0 there — so every cell with a negative
- * seed would hash identically (a flat blob over the negative octant). Shifting
- * the lattice keeps the seed positive for any sample within ±BIAS.
+ * Lattice-corner seeds for {@link valueNoise3} (Teschner spatial hash: per-axis
+ * large-prime multiply, xor-combined).
+ *
+ * Why this and not a float dot product: `hash()` opens with `seed.toUint()`. In
+ * WGSL a **float**→u32 conversion clamps a negative value to 0, so a float seed
+ * makes every cell in the negative octant hash identically — a flat blob. An
+ * **int**→u32 conversion is a bit reinterpretation instead, so staying in int
+ * space the whole way keeps negative lattice coords hashing correctly.
+ *
+ * The remaining limit is f32 precision in the *coordinate*, not the hash: past
+ * ~100k the mantissa has too few bits left for the fractional part and the
+ * lattice blurs out (measured: fine at ±9k, degenerate at 500k). That bound is
+ * inherent to sampling a float position and applies to every noise here, not
+ * just this one.
  */
-const LATTICE_BIAS = 4096;
+const PRIMES: [number, number, number] = [73856093, 19349663, 83492791];
 
 /**
  * Custom 3D value noise — hash-lattice with a smoothstep-interpolated trilinear
  * blend. Distinct from Perlin (value vs gradient): blockier, cheaper. [0,1].
  */
 const valueNoise3 = /*@__PURE__*/ Fn(([p]: [Node]): Node => {
-  const i = p.floor().add(vec3(LATTICE_BIAS, LATTICE_BIAS, LATTICE_BIAS));
+  const i = p.floor();
   const f = p.fract();
   const u = f.mul(f).mul(f.mul(-2).add(3)); // 3f²−2f³ smoothstep
-  // hash of an integer lattice corner → scalar seed via a large-prime dot
-  const h = (ox: number, oy: number, oz: number): Node =>
-    hash(i.add(vec3(ox, oy, oz)).dot(vec3(1, 57, 113)));
+  const h = (ox: number, oy: number, oz: number): Node => {
+    const c = i.add(vec3(ox, oy, oz));
+    return hash(
+      c.x
+        .toInt()
+        .mul(int(PRIMES[0]))
+        .bitXor(c.y.toInt().mul(int(PRIMES[1])))
+        .bitXor(c.z.toInt().mul(int(PRIMES[2]))),
+    );
+  };
   return mix(
     mix(mix(h(0, 0, 0), h(1, 0, 0), u.x), mix(h(0, 1, 0), h(1, 1, 0), u.x), u.y),
     mix(mix(h(0, 0, 1), h(1, 0, 1), u.x), mix(h(0, 1, 1), h(1, 1, 1), u.x), u.y),

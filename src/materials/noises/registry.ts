@@ -1,4 +1,4 @@
-import { vec3 } from "@/materials/tsl";
+import { float, positionLocal, vec3 } from "@/materials/tsl";
 import {
   cellNoise,
   curlNoise,
@@ -11,10 +11,13 @@ import {
 
 /**
  * Declarative catalog of the noise library (chunk E2): one {@link NoiseDef} per
- * noise, with its tunable params and a preview color node. Drives the noise
- * gallery and is the menu the layer-stack compiler (E3) offers. `preview`
- * builds a display-ready vec3 (grayscale for scalar noises, remapped flow for
- * curl) from slider values + an animation `phase` node.
+ * noise, with its tunable params and a `sample` node builder. Drives the noise
+ * gallery and is the menu the layer-stack compiler (E3) compiles from.
+ *
+ * `sample` takes **nodes**, not numbers — that's what lets E3 wire every param
+ * to a live uniform so slider drags poke `.value` instead of recompiling. The
+ * gallery's number-valued previews go through {@link previewNode}, which just
+ * wraps its values in constant nodes.
  */
 
 // biome-ignore lint/suspicious/noExplicitAny: TSL node
@@ -38,8 +41,13 @@ export interface NoiseDef {
   label: string;
   category: NoiseCategory;
   params: NoiseParam[];
-  /** Display color (vec3) from param values + a phase node — for the gallery. */
-  preview: (v: Record<string, number>, phase: Node) => Node;
+  /**
+   * The noise as a **vec3** in [0,1] — grayscale for the scalar noises, the
+   * remapped field for curl. `pos` is the (already projected) sample coordinate
+   * the noise scales internally; `params` are nodes keyed by `NoiseParam.key`;
+   * `phase` animates (folded into z, except where a noise documents otherwise).
+   */
+  sample: (pos: Node, params: Record<string, Node>, phase: Node) => Node;
 }
 
 const SCALE: NoiseParam = {
@@ -57,7 +65,7 @@ export const NOISE_DEFS: NoiseDef[] = [
     label: "Perlin",
     category: "gradient",
     params: [SCALE],
-    preview: (v, phase) => vec3(perlinNoise({ scale: v.scale, phase })),
+    sample: (pos, p, phase) => vec3(perlinNoise({ pos, scale: p.scale, phase })),
   },
   {
     id: "fractal",
@@ -69,14 +77,15 @@ export const NOISE_DEFS: NoiseDef[] = [
       { key: "lacunarity", label: "Lacunarity", default: 2, min: 1, max: 4, step: 0.1 },
       { key: "gain", label: "Gain", default: 0.5, min: 0, max: 1, step: 0.02 },
     ],
-    preview: (v, phase) =>
+    sample: (pos, p, phase) =>
       vec3(
         fractalNoise({
-          scale: v.scale,
+          pos,
+          scale: p.scale,
           phase,
-          octaves: v.octaves,
-          lacunarity: v.lacunarity,
-          gain: v.gain,
+          octaves: p.octaves,
+          lacunarity: p.lacunarity,
+          gain: p.gain,
         }),
       ),
   },
@@ -85,28 +94,28 @@ export const NOISE_DEFS: NoiseDef[] = [
     label: "Worley (cellular)",
     category: "cellular",
     params: [SCALE, { key: "jitter", label: "Jitter", default: 1, min: 0, max: 1, step: 0.02 }],
-    preview: (v, phase) => vec3(worleyNoise({ scale: v.scale, phase, jitter: v.jitter })),
+    sample: (pos, p, phase) => vec3(worleyNoise({ pos, scale: p.scale, phase, jitter: p.jitter })),
   },
   {
     id: "cell",
     label: "Cell",
     category: "cellular",
     params: [SCALE],
-    preview: (v, phase) => vec3(cellNoise({ scale: v.scale, phase })),
+    sample: (pos, p, phase) => vec3(cellNoise({ pos, scale: p.scale, phase })),
   },
   {
     id: "value",
     label: "Value",
     category: "gradient",
     params: [SCALE],
-    preview: (v, phase) => vec3(valueNoise({ scale: v.scale, phase })),
+    sample: (pos, p, phase) => vec3(valueNoise({ pos, scale: p.scale, phase })),
   },
   {
     id: "tri",
     label: "Tri (animated)",
     category: "gradient",
     params: [SCALE, { key: "speed", label: "Speed", default: 0.2, min: 0, max: 2, step: 0.02 }],
-    preview: (v, phase) => vec3(triNoise({ scale: v.scale, phase, speed: v.speed })),
+    sample: (pos, p, phase) => vec3(triNoise({ pos, scale: p.scale, phase, speed: p.speed })),
   },
   {
     id: "curl",
@@ -114,13 +123,24 @@ export const NOISE_DEFS: NoiseDef[] = [
     category: "flow",
     params: [SCALE],
     // vec3 flow field → color: remap the signed components to [0,1]
-    preview: (v, phase) => curlNoise({ scale: v.scale, phase }).mul(0.5).add(0.5),
+    sample: (pos, p, phase) => curlNoise({ pos, scale: p.scale, phase }).mul(0.5).add(0.5),
   },
 ];
 
 /** Default param values for a noise def. */
 export function defaultNoiseParams(def: NoiseDef): Record<string, number> {
   return Object.fromEntries(def.params.map((p) => [p.key, p.default]));
+}
+
+/**
+ * A gallery preview: {@link NoiseDef.sample} over `positionLocal` with plain
+ * numbers wrapped as constant nodes. E3 calls `sample` directly instead, with
+ * uniform nodes and a projected coordinate.
+ */
+export function previewNode(def: NoiseDef, v: Record<string, number>, phase: Node): Node {
+  const params: Record<string, Node> = {};
+  for (const p of def.params) params[p.key] = float(v[p.key] ?? p.default);
+  return def.sample(positionLocal, params, phase);
 }
 
 export function noiseDef(id: string): NoiseDef | undefined {

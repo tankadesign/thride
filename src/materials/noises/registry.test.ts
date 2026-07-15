@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { float } from "@/materials/tsl";
-import { defaultNoiseParams, noiseDef, NOISE_DEFS } from "./registry";
+import { defaultNoiseParams, noiseDef, NOISE_DEFS, previewNode } from "./registry";
 
 describe("noise registry", () => {
   it("has entries with unique ids", () => {
@@ -36,7 +36,7 @@ describe("noise registry", () => {
   it("preview builds a TSL node graph for every noise (no compile, no GPU)", () => {
     const phase = float(0);
     for (const def of NOISE_DEFS) {
-      const node = def.preview(defaultNoiseParams(def), phase);
+      const node = previewNode(def, defaultNoiseParams(def), phase);
       expect(node).toBeTruthy();
       // a TSL node exposes swizzles; a vec3 preview must have .r/.g/.b accessors
       expect(typeof node.rgb).toBe("object");

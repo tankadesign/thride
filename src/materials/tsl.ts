@@ -36,6 +36,8 @@ export { lengthSq, select } from "three/tsl";
 // E2 noise library — raw primitives the `noises/` factories build on. Kept here
 // so three/tsl API drift stays absorbed in one file (see header).
 export { abs, cross, Fn, int, normalize, time, uv } from "three/tsl";
+// E3 layer-stack compiler: blend-mode operators + projection math
+export { max, min, step } from "three/tsl";
 export {
   hash,
   mx_cell_noise_float,
