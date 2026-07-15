@@ -17,6 +17,16 @@ import { recurrentDenoise } from "three/examples/jsm/tsl/display/RecurrentDenois
 import { ssr } from "three/examples/jsm/tsl/display/SSRNode.js";
 import { temporalReproject } from "three/examples/jsm/tsl/display/TemporalReprojectNode.js";
 import {
+  applyDisplayEffects,
+  applyHdrEffects,
+  buildPostFx,
+  defaultPostFxParams,
+  effectsDiffer,
+  updatePostFx,
+  type PostFxParams,
+  type PostFxState,
+} from "./postEffects";
+import {
   diffuseColor,
   dot,
   float,
@@ -134,6 +144,9 @@ export class DitherOutput {
   private tempReproject: any = null;
   // biome-ignore lint/suspicious/noExplicitAny: RecurrentDenoiseNode not exported
   private denoise: any = null;
+  /** C6 post-FX stack (bloom / chromatic aberration / vignette). */
+  private fxParams: PostFxParams = defaultPostFxParams();
+  private fx: PostFxState | null = null;
   private width = 1;
   private height = 1;
 
@@ -191,6 +204,22 @@ export class DitherOutput {
     if (mode === this.mode) return;
     this.mode = mode;
     this.rebuild();
+  }
+
+  /**
+   * Post-FX stack (C6). Follows the AO shape, not SSR's: continuous params are
+   * live uniforms and poke through with no rebuild; only an on/off toggle (or
+   * bloom's build-time threshold) changes the graph. ViewportSystem hands a
+   * fresh params object every frame, so this compares by value.
+   */
+  setPostFx(params: PostFxParams): void {
+    const structural = !this.fx || effectsDiffer(params, this.fxParams);
+    this.fxParams = params;
+    if (structural) {
+      this.rebuild();
+      return;
+    }
+    if (this.fx) updatePostFx(this.fx, params);
   }
 
   /**
@@ -401,12 +430,37 @@ export class DitherOutput {
       const helpers = texture(this.hdr.texture);
       composite = mix(composite.rgb, helpers.rgb, helpers.a);
     }
-    const display = renderOutput(composite, THREE_TONE_MAPPING[this.mode]);
+    this.composeOutput(composite);
+  }
+
+  /**
+   * THE output tail, shared by both graph modes: post-FX → tone map → dither.
+   *
+   * Both `rebuild` and `buildTemporalSsr` end here, and they must — an effect
+   * added to only one of them silently would not apply in the other's mode. That
+   * is exactly what this being one function prevents (it was duplicated
+   * byte-for-byte before C6).
+   *
+   * Order is not stylistic:
+   * - bloom runs in the HDR domain, BEFORE `renderOutput`, because it needs
+   *   pre-tone-map luminance to bloom highlights correctly;
+   * - vignette + chromatic aberration run in display space, AFTER it;
+   * - the dither is ALWAYS last — it's a ±1-LSB correction for the 8-bit write
+   *   and is meaningless anywhere else in the chain.
+   */
+  // biome-ignore lint/suspicious/noExplicitAny: TSL node graph — loose by design
+  private composeOutput(color: any): void {
+    // rebuilt with the graph: bloom binds to THIS color node, so it can't
+    // outlive the rebuild that produced it
+    this.fx = buildPostFx(this.fxParams, color);
+    const graded = applyHdrEffects(color, this.fx);
+    const display = renderOutput(graded, THREE_TONE_MAPPING[this.mode]);
+    const shaped = applyDisplayEffects(display, this.fx);
     // interleaved-gradient-noise dither, ±1 LSB, added in display space
     const p = screenCoordinate;
     const ign = fract(float(52.9829189).mul(fract(dot(p, vec2(0.06711056, 0.00583715)))));
     const d = ign.sub(0.5).mul(1 / 255);
-    this.post.outputNode = display.add(vec3(d));
+    this.post.outputNode = shaped.add(vec3(d));
     this.post.needsUpdate = true;
   }
 
@@ -570,12 +624,7 @@ export class DitherOutput {
     const helpers = texture(this.hdr.texture);
     const withHelpers = mix(litColor, helpers.rgb, helpers.a);
     // biome-ignore-end lint/suspicious/noExplicitAny: TSL node graph — loose by design
-    const display = renderOutput(withHelpers, THREE_TONE_MAPPING[this.mode]);
-    const p = screenCoordinate;
-    const ign = fract(float(52.9829189).mul(fract(dot(p, vec2(0.06711056, 0.00583715)))));
-    const d = ign.sub(0.5).mul(1 / 255);
-    this.post.outputNode = display.add(vec3(d));
-    this.post.needsUpdate = true;
+    this.composeOutput(withHelpers);
   }
 
   /** Blit the HDR buffer (or render the SSR pass graph) to the canvas. */

@@ -96,6 +96,26 @@ export interface PaneDisplay {
    * Screen-space reflections can't diffuse fully; past this, hand off to the
    * env/PMREM reflection. Higher = SSR persists onto rougher surfaces. */
   ssrRoughnessFade: number;
+  // ---- Post-processing (C6). Ambient Shadows + Reflections above are post too;
+  // the View Settings modal groups them all under one Post Processing tab. ----
+  /** Bloom — HDR glow around highlights. Applied before tone mapping. */
+  bloom: boolean;
+  /** Luminance above which pixels bloom. */
+  bloomThreshold: number;
+  /** Bloom intensity. */
+  bloomStrength: number;
+  /** Bloom spread. */
+  bloomRadius: number;
+  /** Chromatic aberration — lens colour fringing, strongest at the frame edge. */
+  chromatic: boolean;
+  /** Fringing strength. */
+  chromaticAmount: number;
+  /** Vignette — corner darkening. Applied after tone mapping. */
+  vignette: boolean;
+  /** Vignette strength (0 = none, 1 = heavy). */
+  vignetteAmount: number;
+  /** Where the vignette falloff starts (0 = center, 1 = corners only). */
+  vignetteRadius: number;
   grid: boolean;
   /** Wireframe overlay on top of PBR/Flat. No effect in Wireframe mode (already all lines). */
   lines: boolean;
@@ -133,6 +153,15 @@ export const defaultPaneDisplay = (pane = 0): PaneDisplay => ({
   ssrMaxLuminance: 10,
   ssrResolution: 1,
   ssrRoughnessFade: 0.5,
+  bloom: false,
+  bloomThreshold: 0.9,
+  bloomStrength: 0.35,
+  bloomRadius: 0.6,
+  chromatic: false,
+  chromaticAmount: 1,
+  vignette: false,
+  vignetteAmount: 0.4,
+  vignetteRadius: 0.5,
   grid: true,
   lines: false,
   hiddenLines: false,

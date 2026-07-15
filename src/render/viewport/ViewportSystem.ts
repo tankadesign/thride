@@ -664,6 +664,22 @@ export class ViewportSystem {
         : null,
       ssrEnv,
     );
+    // Post-FX last: it wraps whatever graph the setters above just settled on
+    // (composeOutput is shared by both modes), and its continuous params are
+    // live uniforms, so a steady frame costs a value compare and nothing else.
+    // Wireframe has no lit image worth grading, so the stack is off there.
+    const fxOn = activeDisp.shading !== "wireframe";
+    output.setPostFx({
+      bloom: fxOn && activeDisp.bloom,
+      bloomThreshold: activeDisp.bloomThreshold,
+      bloomStrength: activeDisp.bloomStrength,
+      bloomRadius: activeDisp.bloomRadius,
+      chromatic: fxOn && activeDisp.chromatic,
+      chromaticAmount: activeDisp.chromaticAmount,
+      vignette: fxOn && activeDisp.vignette,
+      vignetteAmount: activeDisp.vignetteAmount,
+      vignetteRadius: activeDisp.vignetteRadius,
+    });
     output.render();
     this.onAxes?.(axesPerSlot);
     this.frames++;
