@@ -107,9 +107,31 @@ bumpStrength`) are all optional + uniform-backed: **none are in `structureKey`,
   verified by code-path equivalence + JS dispatch, not by real drag automation
   (the browser tool doesn't synthesize pointer events).
 
+## Follow-up (`ab02850`) — user feedback round
+
+Three items, each resolved per the user's explicit choice:
+
+1. **"Tri (animated)" → "Turbulence"** (id stays `tri` for persisted docs); its
+   speed param is hidden until chunk G gives phase a time source. The user chose
+   rename-over-animate-now; a universal per-noise Animate toggle was offered and
+   declined for now.
+2. **Image channels gained per-channel projections** (UV default, the user chose
+   per-channel over one material-wide dropdown). UV = untouched map-property fast
+   path; non-UV binds a TSL node via the same `projectedSample` as noises. The
+   binder became ONE function (`assignChannelNodes`: noise > projected image >
+   null) with projected-image nodes **identity-cached** per (texture, projection)
+   — slots compare by identity for `needsUpdate`, so an uncached node = a shader
+   recompile per slider drag (verified held: material.version constant across 10
+   edits). Planar variants key their rebuild on the color image's (asset,
+   projection, decoded) fingerprint since the mirror mix bakes the base node.
+   **Normal maps stay UV-only** (tangent-space maps need a UV frame).
+3. **Camera projection removed from the UI** until scene cameras exist (F4);
+   union member + compiler case kept so persisted docs still render.
+
 ## Next steps (exact, resumable cold)
 
 1. **A5 (icons)** — the last M2 chunk; then the M2 hard stop (progress file, QA
    checklist, user sign-off).
 2. Later polish candidates: transform controls (offset/rotation per layer) in the
-   editor — the uniforms already exist; phase/animation hookup lands with chunk G.
+   editor — the uniforms already exist; phase/animation hookup lands with chunk G;
+   true camera projection with a picker when F4 cameras land.
