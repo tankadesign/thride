@@ -136,9 +136,41 @@ inherent to sampling a float position and applies to every noise, not just value
 - Browser (MCP): procedural material renders + live-updates + swaps; all six
   projections on a sphere; flat-vs-triplanar on a cube; bloom/CA/vignette each
   verified on; Post tab drives the renderer; bloom persists across reload;
-  fresh-tab console clean.
+  fresh-tab console clean on the default path.
+- **Post-FX verified in the High-SSR (temporal) path too** — that's the whole
+  point of extracting `composeOutput`, and the temporal tail is the one that was
+  rewritten. Bloom + vignette + High SSR compose correctly together. The console
+  there is NOT clean, but the errors are the pre-existing depth-copy bug below,
+  reproduced at `a4e9685` with none of this chunk's code present.
 
 ## Known issues
+
+- **PRE-EXISTING BUG FOUND (High SSR, E5's, not this chunk's): the temporal
+  depth copy fails WebGPU validation every frame.**
+
+  ```
+  Source [Texture "depth"] sample count (4) and destination ... sample count (1)
+  does not match. — CopyTextureToTexture / TemporalReprojectNode
+  ```
+
+  Found while verifying post-FX in the High-SSR path. **Confirmed pre-existing,
+  not a C6 regression:** reproduced identically at `a4e9685` (the commit before
+  this session) in a clean worktree on a second dev server, with post-FX absent
+  entirely. It also reproduces with all effects OFF on current main.
+
+  It renders — the image looks correct, which is why it was never caught — but
+  `TemporalReprojectNode` copies `depthNode.value` → `_historyRenderTarget.depthTexture`
+  each frame (TemporalReprojectNode.js:717) and the copy is rejected, so
+  `_previousDepthNode` never receives valid data and the reprojection's
+  depth-based history rejection is running blind. Plausibly related to the
+  ghosting/artifacts fought during E5.
+
+  The puzzle: `buildTemporalSsr` DOES pass `pass(scene, camera, { samples: 0 })`,
+  and `PassNode.setup` honors it (`options.samples === undefined ? renderer.samples
+: options.samples`, PassNode.js:766) — yet the pass's depth texture still reports
+  4 samples at copy time. Suspect the render target's GPU texture is allocated
+  before `setup()` applies `samples`, and the later assignment doesn't force
+  reallocation. Not investigated further; out of scope for E3/E4/C6.
 
 - **Procedural materials have no editor UI.** The DTO, compiler and render path
   are complete and proven, but a user can only author a stack via the document
