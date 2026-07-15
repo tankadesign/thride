@@ -8,7 +8,7 @@ import { PROCEDURAL_CHANNELS, SOLID_SOURCE, structureKey } from "@/types/core";
 import { texture, vec2, vec3 } from "@/materials/tsl";
 import { noiseDef } from "@/materials/noises";
 import { blendLayer } from "./blend";
-import { projectionCoord } from "./projections";
+import { projectedSample } from "./projections";
 import { RampTexture } from "./ramp";
 import { UniformTable } from "./uniforms";
 
@@ -126,7 +126,7 @@ export class CompiledStacks {
     if (!def) return vec3(0.5);
 
     const t = layer.transform;
-    const pos = projectionCoord(layer.projection, {
+    const transform = {
       offset: this.uniforms.vec3(uPath(layer.id, "offset"), t.offset[0], t.offset[1], t.offset[2]),
       rotation: this.uniforms.vec3(
         uPath(layer.id, "rotation"),
@@ -135,7 +135,7 @@ export class CompiledStacks {
         t.rotation[2],
       ),
       scale: this.uniforms.vec3(uPath(layer.id, "scale"), t.scale[0], t.scale[1], t.scale[2]),
-    });
+    };
 
     // every declared param becomes a live uniform, so slider drags never recompile
     const params: Record<string, Node> = {};
@@ -146,7 +146,11 @@ export class CompiledStacks {
     // phase is a live uniform per layer: animation (chunk G) drives it, and a
     // static material simply leaves it at 0 — either way, never a recompile
     const phase = this.uniforms.float(uPath(layer.id, "phase"), 0);
-    return def.sample(pos, params, phase);
+    // the projection invokes the noise (three times, for triplanar) rather than
+    // handing back one coordinate — see projections.ts
+    return projectedSample(layer.projection, transform, (coord) =>
+      def.sample(coord, params, phase),
+    );
   }
 
   dispose(): void {

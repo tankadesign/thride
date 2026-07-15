@@ -5,6 +5,6 @@
  */
 export { blendLayer } from "./blend";
 export { CompiledStacks, compile, getCompileCount, resetCompileCount } from "./compile";
-export { projectionCoord, type TransformNodes } from "./projections";
+export { projectedSample, type TransformNodes } from "./projections";
 export { RampTexture } from "./ramp";
 export { UniformTable } from "./uniforms";

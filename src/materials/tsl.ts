@@ -38,6 +38,8 @@ export { lengthSq, select } from "three/tsl";
 export { abs, cross, Fn, int, normalize, time, uv } from "three/tsl";
 // E3 layer-stack compiler: blend-mode operators + projection math
 export { max, min, step } from "three/tsl";
+// E4 projections: angular (cylindrical/spherical), triplanar blend, camera
+export { acos, atan, length, pow, screenUV } from "three/tsl";
 export {
   hash,
   mx_cell_noise_float,
