@@ -13,6 +13,7 @@ import { setRegistry, usePalette } from "@/ui/hooks/editor/shell";
 import { useSelectObjectMaterial } from "@/ui/hooks/editor/materials";
 import { AttributesPanel } from "@/ui/panels/AttributesPanel";
 import { GalleryPanel } from "@/ui/panels/GalleryPanel";
+import { NoiseGalleryPanel } from "@/ui/panels/NoiseGalleryPanel";
 import { MaterialManagerPanel } from "@/ui/panels/MaterialManagerPanel";
 import { EnvironmentPanel } from "@/ui/panels/EnvironmentPanel";
 import { ObjectManagerPanel } from "@/ui/panels/ObjectManagerPanel";
@@ -44,6 +45,18 @@ export function Shell({ doc }: { doc: Document }) {
             id: "gallery",
             component: "gallery",
             title: "UI Gallery",
+            position: { direction: "right" },
+          });
+      },
+      openNoiseGallery: () => {
+        const api = apiRef.current;
+        if (!api) return;
+        if (api.getPanel("noiseGallery")) api.getPanel("noiseGallery")!.focus();
+        else
+          api.addPanel({
+            id: "noiseGallery",
+            component: "noiseGallery",
+            title: "Noise Gallery",
             position: { direction: "right" },
           });
       },
@@ -118,6 +131,7 @@ export function Shell({ doc }: { doc: Document }) {
       materials: (_p: IDockviewPanelProps) => <MaterialManagerPanel />,
       environment: (_p: IDockviewPanelProps) => <EnvironmentPanel />,
       gallery: (_p: IDockviewPanelProps) => <GalleryPanel />,
+      noiseGallery: (_p: IDockviewPanelProps) => <NoiseGalleryPanel />,
     }),
     [],
   );

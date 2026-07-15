@@ -95,6 +95,7 @@ const LIGHT_TYPES: LightType[] = ["spot", "point", "directional", "ambient", "he
 export interface ShellApi {
   getViewport: () => ViewportSystem | null;
   openGallery: () => void;
+  openNoiseGallery: () => void;
   openMaterials: () => void;
   openEnvironment: () => void;
   resetLayout: () => void;
@@ -639,6 +640,12 @@ export function buildCommands(doc: Document, shell: ShellApi): AppCommand[] {
       title: "UI Gallery",
       menu: "View",
       run: () => shell.openGallery(),
+    },
+    {
+      id: "view.noiseGallery",
+      title: "Noise Gallery",
+      menu: "View",
+      run: () => shell.openNoiseGallery(),
     },
     {
       id: "view.resetLayout",

@@ -33,3 +33,17 @@ export {
 export { materialColor, reflector, textureBicubic } from "three/tsl";
 // degenerate-value guards in the SSR graph
 export { lengthSq, select } from "three/tsl";
+// E2 noise library — raw primitives the `noises/` factories build on. Kept here
+// so three/tsl API drift stays absorbed in one file (see header).
+export { abs, cross, Fn, int, normalize, time, uv } from "three/tsl";
+export {
+  hash,
+  mx_cell_noise_float,
+  mx_fractal_noise_float,
+  mx_fractal_noise_vec3,
+  mx_noise_float,
+  mx_noise_vec3,
+  mx_unifiednoise3d,
+  mx_worley_noise_float,
+  triNoise3D,
+} from "three/tsl";

@@ -10,6 +10,7 @@ E1 + E5 done; E2, E3, E4, C6, A5 remain. E6 bake deferred out of M2.
 ## Completed
 
 **E5 core — HDR/EXR environment loading (`1360477`).**
+
 - `types/core/environment.ts` already held `EnvironmentDTO` + `defaultEnvironment`;
   this wired the load path. `render/environment/EnvironmentSync.ts` decodes an
   HDR/EXR asset via `RGBELoader`/`EXRLoader` (async, falls back to the painted
@@ -23,6 +24,7 @@ E1 + E5 done; E2, E3, E4, C6, A5 remain. E6 bake deferred out of M2.
   scene.environment + background render → autosave → reload).
 
 **Screen-Space Reflections — "Fast" (gen-1) (`801a4e1`, `6a0b16d`).**
+
 - `render/viewport/ditherOutput.ts`: `DitherOutput` gained a **dual-mode graph**.
   Default (SSR off) is unchanged (the manual multi-pane hdr blit + GTAO). SSR-on
   moves the scene render INTO the node graph via `pass(scene,camera).setMRT(...)`
@@ -38,6 +40,7 @@ E1 + E5 done; E2, E3, E4, C6, A5 remain. E6 bake deferred out of M2.
   any value change (field-compared so steady frames skip it).
 
 **SSR — "High" (temporal, example-quality) (`460827b`, `75d3e53`, `67c4f04`).**
+
 - Mirrors three's `webgpu_postprocessing_ssr_denoise`: stochastic GGX `ssr()` →
   `temporalReproject` → `recurrentDenoise`, accumulated across frames via a
   velocity-buffer G-buffer (MRT packs metalness in `diffuse.a`, roughness in the
@@ -80,6 +83,7 @@ alpha — the WebGPU backend force-clears the canvas every render, so you cannot
 draw on top of the composite directly.
 
 **Robustness.**
+
 - Boot hardening (`4d98b99`): `SceneSynchronizer.addNode/updateNode` contain
   per-node throws (empty-group fallback / keep-stale) so one corrupt node payload
   can't unmount the whole app.
@@ -124,9 +128,9 @@ draw on top of the composite directly.
 - render: `layers.ts` (new), `environment/defaultHdr.ts` (new),
   `environment/EnvironmentSync.ts`, `viewport/ditherOutput.ts` (the bulk — dual
   graph, temporal chain, NaN guards), `viewport/ViewportSystem.ts` (converge loop
-  + helper layers + SSR env), `scene-sync/MaterialSync.ts` (planar variants),
-  `scene-sync/SceneSynchronizer.ts` (planar hook + boot containment),
-  `scene-sync/SelectionOutline.ts`, `scene-sync/LightSync.ts`, `scene-sync/SplineSync.ts`
+  - helper layers + SSR env), `scene-sync/MaterialSync.ts` (planar variants),
+    `scene-sync/SceneSynchronizer.ts` (planar hook + boot containment),
+    `scene-sync/SelectionOutline.ts`, `scene-sync/LightSync.ts`, `scene-sync/SplineSync.ts`
 - materials: `tsl.ts` (MRT / reflector / guard node re-exports)
 - ui: `panels/EnvironmentPanel.tsx` (HDR source + loader),
   `panels/ViewSettingsModal.tsx` (Reflections section, Fast/High),
