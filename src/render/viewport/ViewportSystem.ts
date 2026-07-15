@@ -259,6 +259,15 @@ export class ViewportSystem {
     }
     this.renderer = renderer;
     this.output = new DitherOutput(renderer);
+    // E3 hitch-free swap: compile a replacement procedural material's pipeline
+    // off the critical path. `compileAsync(probe, camera, scene)` is three's own
+    // compile-a-single-object form — the probe is never in the scene, so it
+    // creates the pipeline without ever drawing; the scene supplies the lights.
+    this.sync.setMaterialWarm(async (mat, matId) => {
+      const probe = this.sync.warmProbe(matId, mat);
+      if (!probe) return;
+      await renderer.compileAsync(probe, this.rigFor(this.editor.activePane).camera, this.scene);
+    });
     this.resize();
     const loop = () => {
       if (this.disposed) return;

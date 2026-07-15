@@ -13,6 +13,7 @@ import type { MaterialDTO, Uuid } from "@/types/core";
 import { TEXTURE_CHANNELS } from "@/types/core";
 import { buildMaterial } from "@/materials/build";
 import { buildStudioEnvironment } from "@/render/environment/studioEnvironment";
+import { assignStackNodes, compileStacks } from "@/render/scene-sync/proceduralBind";
 import { decodeChannelTexture } from "@/render/scene-sync/textureCache";
 
 /**
@@ -66,10 +67,16 @@ export class MaterialThumbnails {
     if (this.disposed) return "";
     const mat = buildMaterial(dto);
     await this.applyTextures(mat, dto);
+    // procedural stacks are compiled HERE too, not shared from the viewport: a
+    // node material's pipeline is per-device, so a thumbnail that skipped this
+    // would silently show the scalar material while the viewport showed layers
+    const proc = compileStacks(dto);
+    if (proc) assignStackNodes(mat, proc);
     const prev = this.sphere.material;
     this.sphere.material = mat;
     await this.renderer.renderAsync(this.scene, this.camera);
     const url = this.canvas.toDataURL("image/png");
+    proc?.dispose();
     if (Array.isArray(prev)) prev.forEach((m) => m.dispose());
     else prev.dispose();
     return url;

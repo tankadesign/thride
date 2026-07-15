@@ -8,6 +8,7 @@ import {
   Group,
   LineBasicMaterial,
   LineSegments,
+  type Material,
   Matrix4,
   Mesh,
   MeshBasicMaterial,
@@ -32,7 +33,7 @@ import { HELPER_LAYER } from "@/render/layers";
 import { viewportTheme } from "@/render/theme/viewportTheme";
 import { evaluateGenerator } from "@/generators/graph";
 import { LightSync } from "./LightSync";
-import { MaterialSync } from "./MaterialSync";
+import { MaterialSync, type WarmFn } from "./MaterialSync";
 import { SelectionOutline } from "./SelectionOutline";
 import { buildSplineObject, syncSplineGeometry } from "./SplineSync";
 
@@ -440,6 +441,35 @@ export class SceneSynchronizer {
   }
 
   /** Per-pane shading override (viewport Display menu). */
+  /**
+   * Install the material pipeline-warm hook. Only the render layer has the
+   * renderer, so it injects the compile; MaterialSync decides when to call it.
+   */
+  setMaterialWarm(fn: WarmFn | null): void {
+    this.materials.setWarm(fn);
+  }
+
+  /**
+   * A detached mesh carrying `mat` on the geometry of a real mesh that uses
+   * `matId` — for warming a pipeline before swapping the material in. Using the
+   * REAL geometry matters: the compiled pipeline is keyed partly on the vertex
+   * attribute layout, so a stand-in box could warm the wrong variant.
+   *
+   * Never added to the scene (so it never draws) and `frustumCulled` off, since
+   * `compileAsync` runs the same frustum test `render` does and would otherwise
+   * skip it.
+   */
+  warmProbe(matId: Uuid, mat: Material): Mesh | null {
+    for (const [id, obj] of this.objects) {
+      if (!(obj instanceof Mesh) || obj.userData.outline || obj.userData.spline) continue;
+      if ((this.doc.scene.get(id)?.data?.material as Uuid | undefined) !== matId) continue;
+      const probe = new Mesh(obj.geometry, mat);
+      probe.frustumCulled = false;
+      return probe;
+    }
+    return null;
+  }
+
   applyShading(
     mode: "pbr" | "flat" | "wireframe",
     backfaces: boolean,

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import type { ProceduralLayer, ProceduralMaterialDoc, Uuid } from "@/types/core";
 import { defaultLayer, defaultRamp, structureKey } from "@/types/core";
+import { NOISE_DEFS } from "@/materials/noises";
 import { compile, getCompileCount, resetCompileCount } from "./compile";
 
 /**
@@ -145,6 +146,27 @@ describe("layer-stack compiler", () => {
   it("an unknown noise source still compiles (forward-compat docs)", () => {
     const c = compile(doc(layer("a", { source: "noise-from-the-future" })));
     expect(c.nodes.color).toBeTruthy();
+  });
+
+  /**
+   * Structural coverage: every registry noise compiles in both the ramped and
+   * rampless paths.
+   *
+   * NOTE what this does NOT prove. Node-graph *construction* is all that happens
+   * here — three only validates component counts when it generates WGSL, on a
+   * real device. A ramp lookup fed a vec3 instead of `.r` builds a 4-component
+   * vec2: three logs an error at build and still renders something plausible,
+   * so neither this test nor a screenshot catches it (both were green while it
+   * was broken). That class of bug needs the live console — see the E2/E3 note
+   * about there being no rendered-output regression guard.
+   */
+  it("compiles every noise source, rampless and ramped", () => {
+    for (const def of NOISE_DEFS) {
+      for (const ramp of [undefined, defaultRamp()]) {
+        const c = compile(doc(layer(`n-${def.id}`, { source: def.id, ramp })));
+        expect(c.nodes.color, `${def.id} ramp=${!!ramp}`).toBeTruthy();
+      }
+    }
   });
 
   it("compiles every channel independently", () => {

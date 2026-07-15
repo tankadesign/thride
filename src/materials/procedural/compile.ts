@@ -5,7 +5,7 @@ import type {
   ProceduralStack,
 } from "@/types/core";
 import { PROCEDURAL_CHANNELS, SOLID_SOURCE, structureKey } from "@/types/core";
-import { float, texture, vec2, vec3 } from "@/materials/tsl";
+import { texture, vec2, vec3 } from "@/materials/tsl";
 import { noiseDef } from "@/materials/noises";
 import { blendLayer } from "./blend";
 import { projectionCoord } from "./projections";
@@ -105,23 +105,25 @@ export class CompiledStacks {
     const tint = this.uniforms.color(uPath(layer.id, "color"), layer.color);
     if (layer.source === SOLID_SOURCE) return vec3(tint);
 
-    const scalar = this.compileSource(layer, channel);
+    const value = this.compileSource(layer, channel);
     if (!layer.ramp) {
-      // no ramp: the scalar modulates the layer's tint
-      return vec3(tint).mul(scalar);
+      // no ramp: the noise modulates the layer's tint
+      return vec3(tint).mul(value);
     }
     const ramp = new RampTexture(layer.ramp);
     this.ramps.set(layer.id, ramp);
-    // 256×1 lookup — v is arbitrary, u carries the value
-    return texture(ramp.texture, vec2(scalar.clamp(0, 1), 0.5)).rgb;
+    // 256×1 lookup — u carries the value, v is arbitrary. `.r` matters: sources
+    // are vec3 (curl is a genuine vector field), and a vec3 here would build a
+    // 4-component vec2 and blow up at graph build.
+    return texture(ramp.texture, vec2(value.r.clamp(0, 1), 0.5)).rgb;
   }
 
-  /** The layer's raw scalar noise value, sampled through its projection. */
+  /** The layer's noise value (vec3), sampled through its projection. */
   private compileSource(layer: ProceduralLayer, _channel: ProceduralChannel): Node {
     const def = noiseDef(layer.source);
     // an unknown source id (a doc from a newer build) reads as mid-gray rather
     // than throwing — a material must always render
-    if (!def) return float(0.5);
+    if (!def) return vec3(0.5);
 
     const t = layer.transform;
     const pos = projectionCoord(layer.projection, {
