@@ -111,11 +111,15 @@ export const NOISE_DEFS: NoiseDef[] = [
     sample: (pos, p, phase) => vec3(valueNoise({ pos, scale: p.scale, phase })),
   },
   {
+    // three's triNoise3D. Label avoids "Tri" — users read it as triplanar (a
+    // projection). Its speed param is hidden until the animation system (chunk
+    // G) gives phase a time source; a speed knob with no way to play it is
+    // just confusing.
     id: "tri",
-    label: "Tri (animated)",
+    label: "Turbulence",
     category: "gradient",
-    params: [SCALE, { key: "speed", label: "Speed", default: 0.2, min: 0, max: 2, step: 0.02 }],
-    sample: (pos, p, phase) => vec3(triNoise({ pos, scale: p.scale, phase, speed: p.speed })),
+    params: [SCALE],
+    sample: (pos, p, phase) => vec3(triNoise({ pos, scale: p.scale, phase })),
   },
   {
     id: "curl",

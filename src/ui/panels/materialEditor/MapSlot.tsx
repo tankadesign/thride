@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import type { MaterialDTO, TextureChannel, Uuid } from "@/types/core";
+import type { MaterialDTO, Projection, TextureChannel, Uuid } from "@/types/core";
 import {
+  PROJECTIONS,
   TEXTURE_TO_PROCEDURAL,
   channelLayer,
   defaultLayer,
@@ -73,7 +74,17 @@ export function MapSlot({
   const clearImage = () => {
     const textures = { ...mat.textures };
     delete textures[channel];
-    setMat({ textures }, true);
+    const textureProjections = { ...mat.textureProjections };
+    delete textureProjections[channel];
+    setMat({ textures, textureProjections }, true);
+  };
+
+  const setImageProjection = (projection: Projection) => {
+    const textureProjections = { ...mat.textureProjections };
+    if (projection === "uv")
+      delete textureProjections[channel]; // uv is the default
+    else textureProjections[channel] = projection;
+    setMat({ textureProjections }, true);
   };
 
   const filePicker = (
@@ -135,28 +146,60 @@ export function MapSlot({
   }
 
   if (assetId) {
+    // tangent-space normal maps only make sense in a UV frame — no projection row
+    const projectable = channel !== "normalMap";
+    const projection = mat.textureProjections?.[channel] ?? "uv";
     return (
-      <Row label={label}>
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            className="flex h-7 w-7 items-center justify-center overflow-hidden rounded border border-base-300 bg-base-100"
-            onClick={() => inputRef.current?.click()}
-            title="Replace image"
-          >
-            {imageUrl ? <img src={imageUrl} alt="" className="h-full w-full object-cover" /> : null}
-          </button>
-          <button
-            type="button"
-            className="btn btn-ghost btn-xs px-1 opacity-60"
-            onClick={clearImage}
-            title="Clear"
-          >
-            ✕
-          </button>
-          {filePicker}
-        </div>
-      </Row>
+      <>
+        <Row label={label}>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              className="flex h-7 w-7 flex-none items-center justify-center overflow-hidden rounded border border-base-300 bg-base-100"
+              onClick={() => inputRef.current?.click()}
+              title="Replace image"
+            >
+              {imageUrl ? (
+                <img src={imageUrl} alt="" className="h-full w-full object-cover" />
+              ) : null}
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost btn-xs min-w-0 flex-1 justify-start truncate px-1 font-normal"
+              onClick={() => projectable && setOpen((o) => !o)}
+              title={projectable ? "Image settings" : undefined}
+            >
+              {textureAssets.get(assetId)?.name ?? "Image"}
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost btn-xs px-1 opacity-60"
+              onClick={clearImage}
+              title="Clear"
+            >
+              ✕
+            </button>
+            {filePicker}
+          </div>
+        </Row>
+        {open && projectable ? (
+          <div className="flex flex-col gap-1.5 border-l border-base-300/60 pl-2">
+            <Row label="Projection">
+              <select
+                className="select select-xs w-full"
+                value={projection}
+                onChange={(e) => setImageProjection(e.target.value as Projection)}
+              >
+                {PROJECTIONS.map((p) => (
+                  <option key={p.projection} value={p.projection}>
+                    {p.label}
+                  </option>
+                ))}
+              </select>
+            </Row>
+          </div>
+        ) : null}
+      </>
     );
   }
 

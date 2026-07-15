@@ -55,13 +55,18 @@ export const BLEND_MODES: { mode: BlendMode; label: string }[] = [
  */
 export type Projection = "uv" | "flat" | "triplanar" | "cylindrical" | "spherical" | "camera";
 
+/**
+ * The projections offered in the UI. `camera` is deliberately absent: without
+ * scene camera objects (chunk F4) it can only project from the *viewing*
+ * camera, which reads as broken. The union member and its compiler case stay,
+ * so a persisted doc that references it still renders (as screen-space).
+ */
 export const PROJECTIONS: { projection: Projection; label: string }[] = [
   { projection: "uv", label: "UV" },
   { projection: "flat", label: "Flat" },
   { projection: "triplanar", label: "Triplanar" },
   { projection: "cylindrical", label: "Cylindrical" },
   { projection: "spherical", label: "Spherical" },
-  { projection: "camera", label: "Camera" },
 ];
 
 /** Placement of a layer's projection in object space (the E4 gizmo edits this). */

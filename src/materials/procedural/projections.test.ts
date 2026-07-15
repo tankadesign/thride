@@ -1,8 +1,16 @@
 import { describe, expect, it } from "vitest";
+import type { Projection } from "@/types/core";
 import { PROJECTIONS } from "@/types/core";
 import { uniform, vec3 } from "@/materials/tsl";
 import { projectedSample, type TransformNodes } from "./projections";
 import { Vector3 } from "three";
+
+/**
+ * Every projection the COMPILER supports — the UI list plus `camera`, which was
+ * pulled from PROJECTIONS until scene cameras exist (F4) but must keep building
+ * for persisted docs that reference it.
+ */
+const ALL_PROJECTIONS: Projection[] = [...PROJECTIONS.map((p) => p.projection), "camera"];
 
 /**
  * What's assertable here without a GPU: that every projection builds a graph,
@@ -20,7 +28,7 @@ const nodes = (): TransformNodes => ({
 
 describe("projections", () => {
   it("every projection builds a graph", () => {
-    for (const { projection } of PROJECTIONS) {
+    for (const projection of ALL_PROJECTIONS) {
       const out = projectedSample(projection, nodes(), (coord) => vec3(coord));
       expect(out, projection).toBeTruthy();
       expect(typeof out.rgb, projection).toBe("object");
@@ -28,7 +36,7 @@ describe("projections", () => {
   });
 
   it("triplanar samples the noise 3x; every other projection samples once", () => {
-    for (const { projection } of PROJECTIONS) {
+    for (const projection of ALL_PROJECTIONS) {
       let calls = 0;
       projectedSample(projection, nodes(), (coord) => {
         calls++;
@@ -41,7 +49,7 @@ describe("projections", () => {
   it("passes a 3-component coordinate to the noise in every projection", () => {
     // noises index .x/.y/.z — a vec2 coord would break them at WGSL generation,
     // which no logic test can see, so pin the shape at construction instead
-    for (const { projection } of PROJECTIONS) {
+    for (const projection of ALL_PROJECTIONS) {
       projectedSample(projection, nodes(), (coord) => {
         expect(coord.x, projection).toBeTruthy();
         expect(coord.y, projection).toBeTruthy();

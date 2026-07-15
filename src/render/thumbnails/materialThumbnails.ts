@@ -9,11 +9,15 @@ import {
 } from "three";
 import type { NodeMaterial } from "three/webgpu";
 import { WebGPURenderer } from "three/webgpu";
-import type { MaterialDTO, Uuid } from "@/types/core";
-import { TEXTURE_CHANNELS } from "@/types/core";
+import type { MaterialDTO, ProceduralChannel, Uuid } from "@/types/core";
+import { TEXTURE_CHANNELS, TEXTURE_TO_PROCEDURAL } from "@/types/core";
 import { buildMaterial } from "@/materials/build";
 import { buildStudioEnvironment } from "@/render/environment/studioEnvironment";
-import { assignStackNodes, compileStacks } from "@/render/scene-sync/proceduralBind";
+import {
+  assignChannelNodes,
+  compileStacks,
+  type ImageSpec,
+} from "@/render/scene-sync/proceduralBind";
 import { decodeChannelTexture } from "@/render/scene-sync/textureCache";
 
 /**
@@ -66,12 +70,12 @@ export class MaterialThumbnails {
     await this.ready;
     if (this.disposed) return "";
     const mat = buildMaterial(dto);
-    await this.applyTextures(mat, dto);
-    // procedural stacks are compiled HERE too, not shared from the viewport: a
-    // node material's pipeline is per-device, so a thumbnail that skipped this
-    // would silently show the scalar material while the viewport showed layers
+    // procedural stacks + projected images are compiled HERE too, not shared
+    // from the viewport: a node material's pipeline is per-device, so a
+    // thumbnail that skipped this would silently disagree with the viewport
     const proc = compileStacks(dto);
-    if (proc) assignStackNodes(mat, proc);
+    const specs = await this.applyTextures(mat, dto);
+    assignChannelNodes(mat, proc, specs, new Map());
     const prev = this.sphere.material;
     this.sphere.material = mat;
     await this.renderer.renderAsync(this.scene, this.camera);
@@ -82,16 +86,29 @@ export class MaterialThumbnails {
     return url;
   }
 
-  /** Decode + bind this material's image-map channels (own device textures). */
-  private async applyTextures(mat: NodeMaterial, dto: MaterialDTO): Promise<void> {
+  /**
+   * Decode + bind this material's image-map channels (own device textures).
+   * UV channels bind as plain map properties; non-uv return as specs for
+   * {@link assignChannelNodes}, exactly mirroring MaterialSync.bindChannels.
+   */
+  private async applyTextures(
+    mat: NodeMaterial,
+    dto: MaterialDTO,
+  ): Promise<Partial<Record<ProceduralChannel, ImageSpec>>> {
     const m = mat as unknown as Record<string, unknown>;
+    const specs: Partial<Record<ProceduralChannel, ImageSpec>> = {};
     for (const { channel, applies, colorSpace } of TEXTURE_CHANNELS) {
       if (!(channel in mat)) continue;
       const id = applies.has(dto.type) ? dto.textures?.[channel] : undefined;
       if (!id) continue;
       const tex = await this.loadTexture(id, colorSpace);
-      if (tex) m[channel] = tex;
+      if (!tex) continue;
+      const projection =
+        channel === "normalMap" ? "uv" : (dto.textureProjections?.[channel] ?? "uv");
+      if (projection !== "uv") specs[TEXTURE_TO_PROCEDURAL[channel]] = { tex, projection };
+      else m[channel] = tex;
     }
+    return specs;
   }
 
   private async loadTexture(id: Uuid, colorSpace: "srgb" | "linear"): Promise<Texture | null> {

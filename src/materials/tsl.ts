@@ -42,6 +42,8 @@ export { max, min, step } from "three/tsl";
 export { acos, atan, length, pow, screenUV } from "three/tsl";
 // noise-map normal channel: derivative bump (three's perturbNormalArb inputs)
 export { faceDirection, positionView } from "three/tsl";
+// projected image maps: material property accessors the samples modulate
+export { materialEmissive } from "three/tsl";
 export {
   hash,
   mx_cell_noise_float,

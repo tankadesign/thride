@@ -1,5 +1,5 @@
 import type { Uuid } from "./ids";
-import type { ProceduralChannel, ProceduralMaterialDoc } from "./procedural";
+import type { ProceduralChannel, ProceduralMaterialDoc, Projection } from "./procedural";
 
 /**
  * Built-in three.js material families the manager can create. Each maps to a
@@ -140,6 +140,14 @@ export interface MaterialDTO {
 
   /** Image-map channels → texture-asset id. Absent/empty = no maps. */
   textures?: Partial<Record<TextureChannel, Uuid>>;
+
+  /**
+   * How each image channel derives its sample coordinate. Absent = `uv` (the
+   * plain three map-property path). Non-uv channels sample through the same
+   * projections as noises. `normalMap` is always uv — tangent-space normal
+   * maps need a UV frame.
+   */
+  textureProjections?: Partial<Record<TextureChannel, Projection>>;
 
   /**
    * Procedural layer stacks (E3), compiled to TSL per channel. Absent = a plain

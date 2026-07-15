@@ -1,11 +1,23 @@
 import { type Material, MathUtils, type Object3D } from "three";
 import type { NodeMaterial } from "three/webgpu";
-import type { MaterialDTO, MaterialType, PlanarReflectionDTO, Uuid } from "@/types/core";
-import { structureKey, TEXTURE_CHANNELS } from "@/types/core";
+import type {
+  MaterialDTO,
+  MaterialType,
+  PlanarReflectionDTO,
+  ProceduralChannel,
+  Uuid,
+} from "@/types/core";
+import { structureKey, TEXTURE_CHANNELS, TEXTURE_TO_PROCEDURAL } from "@/types/core";
 import type { Document } from "@/core";
 import { applyMaterialParams, buildMaterial } from "@/materials/build";
 import type { CompiledStacks } from "@/materials/procedural";
-import { assignStackNodes, compileStacks, hasStacks } from "./proceduralBind";
+import {
+  assignChannelNodes,
+  compileStacks,
+  hasStacks,
+  type ImageNodeCache,
+  type ImageSpec,
+} from "./proceduralBind";
 import {
   materialColor,
   materialRoughness,
@@ -52,6 +64,9 @@ interface PlanarEntry {
   axis: PlanarReflectionDTO["axis"];
   /** This variant's own compiled stacks (its material is separate from the cache's). */
   proc?: CompiledStacks;
+  imgCache: ImageNodeCache;
+  /** Color-channel image fingerprint — the mirror mix bakes the base color node. */
+  imgColorKey: string;
 }
 
 interface Entry {
@@ -59,6 +74,8 @@ interface Entry {
   type: MaterialType;
   /** Compiled procedural stacks (E3), when the DTO has any. */
   proc?: CompiledStacks;
+  /** Identity-stable projected-image nodes (see {@link ImageNodeCache}). */
+  imgCache: ImageNodeCache;
 }
 
 export class MaterialSync {
@@ -103,9 +120,8 @@ export class MaterialSync {
     if (!dto) return this.defaultMat;
     let entry = this.cache.get(id);
     if (!entry || entry.type !== dto.type) {
-      entry = { mat: buildMaterial(dto), type: dto.type };
+      entry = { mat: buildMaterial(dto), type: dto.type, imgCache: new Map() };
       this.cache.set(id, entry);
-      this.applyTextures(entry.mat, dto);
       this.compileProcedural(entry, dto);
     }
     return entry.mat;
@@ -128,30 +144,47 @@ export class MaterialSync {
     const type: MaterialType | "default" = dto?.type ?? "default";
     let e = this.planar.get(nodeId);
     // the procedural structure key joins type/id here: a structural stack edit
-    // changes neither of those, so without it this variant would go stale
+    // changes neither of those, so without it this variant would go stale. The
+    // color-image key does the same for a projected color map — the mirror mix
+    // bakes the base color node, so a new image/projection needs a rebuild.
     const procKey = structureKey(dto?.procedural);
+    // decode state is part of the key: a projected color image that finishes
+    // decoding after this variant built must still trigger the rebuild
+    const mapReady = dto?.textures?.map ? !!this.textures.get(dto.textures.map, "srgb") : false;
+    const imgColorKey = `${dto?.textures?.map ?? ""}:${dto?.textureProjections?.map ?? "uv"}:${mapReady ? 1 : 0}`;
     if (
       !e ||
       e.type !== type ||
       e.matId !== (dto ? matId : undefined) ||
-      (e.proc?.key ?? "") !== procKey
+      (e.proc?.key ?? "") !== procKey ||
+      e.imgColorKey !== imgColorKey
     ) {
       if (e) this.disposePlanar(e);
       const refl = reflector({ resolutionScale: cfg.resolution, generateMipmaps: true });
       refl.target.name = "planar-reflector-target";
       const strength = uniform(MathUtils.clamp(cfg.strength, 0, 1));
       const mat = dto ? buildMaterial(dto) : (this.defaultMat.clone() as NodeMaterial);
-      if (dto) this.applyTextures(mat, dto);
-      // a procedural stack drives this material's other channels, and its color
-      // stack becomes the BASE the mirror composites over — the two must
-      // compose, since both want `colorNode`
+      // a procedural stack (or projected image) drives this material's other
+      // channels, and its color output becomes the BASE the mirror composites
+      // over — they must compose, since both want `colorNode`
       const proc = dto ? compileStacks(dto) : undefined;
-      if (proc) assignStackNodes(mat, proc);
-      const base = proc?.nodes.color ?? materialColor;
+      const imgCache: ImageNodeCache = new Map();
+      if (dto) this.bindChannels(mat, dto, proc, imgCache);
+      const base = proc?.nodes.color ?? imgCache.get("color")?.node ?? materialColor;
       // mirror color over the base color; mipmapped bicubic sampling blurs the
       // reflection by the material's roughness (frosted mirrors for free)
       mat.colorNode = mix(base, textureBicubic(refl, materialRoughness).rgb, strength);
-      e = { mat, matId: dto ? matId : undefined, type, refl, strength, axis: cfg.axis, proc };
+      e = {
+        mat,
+        matId: dto ? matId : undefined,
+        type,
+        refl,
+        strength,
+        axis: cfg.axis,
+        proc,
+        imgCache,
+        imgColorKey,
+      };
       this.planar.set(nodeId, e);
     }
     // live tweaks — no rebuild
@@ -193,9 +226,11 @@ export class MaterialSync {
       for (const e of this.planar.values()) {
         if (e.matId === id && e.type === dto.type) {
           applyMaterialParams(e.mat, dto);
-          this.applyTextures(e.mat, dto);
+          // keepColor: the mirror mix owns colorNode; a color-image change
+          // rebuilds the variant via the imgColorKey compare in resolvePlanar
+          this.bindChannels(e.mat, dto, e.proc, e.imgCache, true);
           // param-only procedural edits poke this variant's uniforms too; a
-          // structural one is left to the type/id compare in resolvePlanar
+          // structural one is left to the key compares in resolvePlanar
           const proc = dto.procedural;
           if (e.proc && proc && e.proc.applies(proc)) e.proc.update(proc);
         }
@@ -203,14 +238,12 @@ export class MaterialSync {
     }
     if (!dto || !entry) return; // uncached → resolve() builds fresh with current params
     if (entry.type !== dto.type) {
-      const rebuilt: Entry = { mat: buildMaterial(dto), type: dto.type };
+      const rebuilt: Entry = { mat: buildMaterial(dto), type: dto.type, imgCache: new Map() };
       this.cache.set(id, rebuilt);
-      this.applyTextures(rebuilt.mat, dto);
       this.compileProcedural(rebuilt, dto);
       return;
     }
     applyMaterialParams(entry.mat, dto);
-    this.applyTextures(entry.mat, dto);
 
     // Procedural stacks are the third branch (E3): a param-only edit pokes live
     // uniforms on the SAME graph and must not recompile; only a structural edit
@@ -218,6 +251,7 @@ export class MaterialSync {
     const proc = dto.procedural;
     if (entry.proc && proc && entry.proc.applies(proc)) {
       entry.proc.update(proc);
+      this.bindChannels(entry.mat, dto, entry.proc, entry.imgCache);
       return;
     }
     if (hasStacks(dto) && entry.proc && this.warm) {
@@ -235,7 +269,7 @@ export class MaterialSync {
   private compileProcedural(entry: Entry, dto: MaterialDTO): void {
     entry.proc?.dispose();
     entry.proc = compileStacks(dto);
-    assignStackNodes(entry.mat, entry.proc);
+    this.bindChannels(entry.mat, dto, entry.proc, entry.imgCache);
   }
 
   /**
@@ -251,10 +285,9 @@ export class MaterialSync {
     const token = (this.swapToken.get(id) ?? 0) + 1;
     this.swapToken.set(id, token);
 
-    const next: Entry = { mat: buildMaterial(dto), type: dto.type };
-    this.applyTextures(next.mat, dto);
+    const next: Entry = { mat: buildMaterial(dto), type: dto.type, imgCache: new Map() };
     next.proc = compileStacks(dto);
-    assignStackNodes(next.mat, next.proc);
+    this.bindChannels(next.mat, dto, next.proc, next.imgCache);
 
     try {
       await this.warm?.(next.mat, id);
@@ -290,30 +323,52 @@ export class MaterialSync {
   }
 
   /**
-   * Bind each image-map channel to its decoded texture (or null). Adding/removing
-   * a map changes the compiled shader, so `needsUpdate` is required on any change.
-   * A channel whose texture is still decoding binds null now and is re-bound when
-   * the cache fires ready (see the constructor).
+   * Bind every channel of `mat` from `dto`: UV images ride the plain three map
+   * properties (the fast path — unchanged behavior), projected images and noise
+   * stacks bind TSL nodes into the channel slots via {@link assignChannelNodes}.
+   * Adding/removing either changes the compiled shader (`needsUpdate`). A
+   * channel whose texture is still decoding binds nothing now and is re-bound
+   * when the cache fires ready (see the constructor).
    */
-  private applyTextures(mat: NodeMaterial, dto: MaterialDTO): void {
+  private bindChannels(
+    mat: NodeMaterial,
+    dto: MaterialDTO,
+    proc: CompiledStacks | undefined,
+    imgCache: ImageNodeCache,
+    keepColor = false,
+  ): void {
     const m = mat as unknown as Record<string, unknown>;
+    const specs: Partial<Record<ProceduralChannel, ImageSpec>> = {};
     let changed = false;
     for (const { channel, applies, colorSpace } of TEXTURE_CHANNELS) {
       if (!(channel in mat)) continue;
       const id = applies.has(dto.type) ? dto.textures?.[channel] : undefined;
+      // normal maps are tangent-space — they only make sense in a UV frame
+      const projection =
+        channel === "normalMap" ? "uv" : (dto.textureProjections?.[channel] ?? "uv");
       const tex = id ? (this.textures.get(id, colorSpace) ?? null) : null;
-      if (m[channel] !== tex) {
-        m[channel] = tex;
+      const projected = tex !== null && projection !== "uv";
+      if (projected) specs[TEXTURE_TO_PROCEDURAL[channel]] = { tex, projection };
+      const prop = projected ? null : tex;
+      if (m[channel] !== prop) {
+        m[channel] = prop;
         changed = true;
       }
     }
     if (changed) mat.needsUpdate = true;
+    assignChannelNodes(mat, proc, specs, imgCache, keepColor);
   }
 
   private reapplyTextures(): void {
     for (const [id, entry] of this.cache) {
       const dto = this.doc.materials.get(id);
-      if (dto) this.applyTextures(entry.mat, dto);
+      if (dto) this.bindChannels(entry.mat, dto, entry.proc, entry.imgCache);
+    }
+    // planar variants re-bind their non-color channels too; a projected COLOR
+    // image that finished decoding rebuilds via imgColorKey on the next resolve
+    for (const e of this.planar.values()) {
+      const dto = e.matId ? this.doc.materials.get(e.matId) : undefined;
+      if (dto) this.bindChannels(e.mat, dto, e.proc, e.imgCache, true);
     }
   }
 }
