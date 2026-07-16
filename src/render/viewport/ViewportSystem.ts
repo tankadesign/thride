@@ -60,6 +60,14 @@ export interface AxisProjection {
 /** Per visible pane slot: X/Y/Z projections. */
 export type PaneAxes = [AxisProjection, AxisProjection, AxisProjection];
 
+/**
+ * How long (ms) to keep the on-demand loop rendering after a generator's async
+ * geometry arrives, so a WebGPU pipeline that compiles a few frames late still
+ * redraws the mesh. Covers slower machines where compilation misses the first
+ * frame; only ever armed on the rare geometry-arrival event, never per edit.
+ */
+const BURST_MS = 400;
+
 const BUILTINS: BuiltinCamera[] = [
   "persp",
   "ortho",
@@ -128,6 +136,8 @@ export class ViewportSystem {
   // reproject/denoise nodes self-manage their own frame counters via updateBefore.
   private accumFrame = 0;
   private accumTarget = 0;
+  /** `performance.now()` deadline for the post-geometry render burst (see {@link invalidate}). */
+  private burstUntil = 0;
   /** Canvas-relative 2D position of the active nav pivot marker (the "+"). */
   onNavMarker: ((pos: { x: number; y: number } | null) => void) | null = null;
   /** Canvas-relative 2D position of the active magnet snap marker, or null. */
@@ -164,7 +174,7 @@ export class ViewportSystem {
     // value the per-pane clear uses below.
     this.envSync = new EnvironmentSync(this.scene, doc, () => this.invalidate());
 
-    this.sync = new SceneSynchronizer(doc, () => this.invalidate());
+    this.sync = new SceneSynchronizer(doc, (burst) => this.invalidate(burst));
     this.scene.add(this.sync.root);
     this.gizmo = new TransformGizmo(doc);
     this.scene.add(this.gizmo.group);
@@ -280,9 +290,15 @@ export class ViewportSystem {
 
   private async renderIfNeeded(): Promise<void> {
     if (this.rendering || !this.renderer) return;
-    // Render when dirty OR while still converging a temporal-SSR burst. When
-    // temporal SSR is off, accumTarget is 0, so this is pure on-demand.
-    if (!this.needsRender && this.accumFrame >= this.accumTarget) return;
+    // Render when dirty OR while still converging a temporal-SSR burst OR while
+    // a post-geometry burst window is open. When temporal SSR is off and no
+    // burst is pending, accumTarget is 0, so this is pure on-demand.
+    if (
+      !this.needsRender &&
+      this.accumFrame >= this.accumTarget &&
+      performance.now() >= this.burstUntil
+    )
+      return;
     this.needsRender = false;
     this.rendering = true;
     try {
@@ -293,9 +309,19 @@ export class ViewportSystem {
     this.tickStats();
   }
 
-  invalidate(): void {
+  invalidate(burst = false): void {
     this.needsRender = true;
     this.accumFrame = 0; // any change restarts temporal convergence
+    // Secondary safeguard for async generator geometry (a boolean's Manifold
+    // worker result on load). SceneSynchronizer already forces the stale
+    // pipeline to rebuild (material.needsUpdate) when the real geometry swaps in
+    // over the empty placeholder — that's the actual fix for the "boolean
+    // vanishes on reload" bug. But WebGPU may compile the rebuilt pipeline in
+    // the background and SKIP the mesh on the frame it isn't ready; a single
+    // on-demand frame would then still miss it (machine-dependent). Holding the
+    // loop rendering for a short window guarantees whichever frame the pipeline
+    // finishes on redraws the mesh.
+    if (burst) this.burstUntil = performance.now() + BURST_MS;
     // rAF is heavily throttled in occluded/unfocused windows (Chrome can
     // drop it to ~1Hz), which left on-demand renders — e.g. the frame that
     // repositions primitive handles after an undo — stuck until a refresh.

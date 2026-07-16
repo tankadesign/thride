@@ -106,10 +106,10 @@ export class SceneSynchronizer {
   private readonly lookPos = new Vector3();
   private readonly lookQuat = new Quaternion();
   private readonly doc: Document;
-  private readonly onDirty: () => void;
+  private readonly onDirty: (burst?: boolean) => void;
   private unsubs: (() => void)[] = [];
 
-  constructor(doc: Document, onDirty: () => void) {
+  constructor(doc: Document, onDirty: (burst?: boolean) => void) {
     this.doc = doc;
     this.onDirty = onDirty;
     this.materials = new MaterialSync(doc, BASE_MAT, onDirty);
@@ -550,28 +550,42 @@ export class SceneSynchronizer {
     if (preview && !keyChanged) entry.bvhStale = true;
     else this.rebuildBvh(entry);
     const prevAttrs = attrSignature(obj.geometry);
+    const prevEmpty = (obj.geometry?.attributes?.position?.count ?? 0) === 0;
     obj.geometry = rm.geometry;
     // A generator's geometry arrives ASYNC (a boolean's Manifold worker; a
     // rebuild on a structural change), so its mesh can be EMPTY when the
-    // material's WebGPU pipeline first compiles. A material that samples an
-    // attribute the empty geometry lacked — `uv` (image maps, UV-projected
-    // noise) most often — then binds a stale pipeline and silently fails to
-    // draw once the real geometry swaps in. Recompiling the material against
-    // the new attribute layout fixes it (this is why re-assigning a material
-    // "un-hides" the mesh). Gate on the attribute SET changing so param scrubs
-    // (same attributes, new positions) never thrash the pipeline.
-    if (prevAttrs !== attrSignature(rm.geometry)) this.refreshMeshMaterial(obj);
+    // material's WebGPU pipeline first compiles against it. Once the real
+    // geometry swaps in with a different attribute layout, that pipeline is
+    // stale and the mesh silently fails to draw — even for the default
+    // MeshStandardMaterial (not just uv-sampling image/noise materials). This
+    // is why re-assigning a material "un-hides" the mesh: it forces a rebuild.
+    // Recompiling against the new layout fixes it; gate on the attribute SET
+    // changing so param scrubs (same attributes, new positions) don't thrash.
+    const nowAttrs = attrSignature(rm.geometry);
+    if (prevAttrs !== nowAttrs) this.refreshMeshMaterial(obj);
+    // Geometry that just went from empty→real (a generator's async worker
+    // result on load) — OR whose attribute set changed — needs a fresh WebGPU
+    // pipeline variant, which compiles in the background and can miss the next
+    // on-demand frame. Ask the viewport to hold rendering briefly so the mesh
+    // draws once its pipeline is ready, regardless of material type.
+    if (prevAttrs !== nowAttrs || (prevEmpty && (rm.geometry.attributes.position?.count ?? 0) > 0))
+      this.onDirty(true);
     this.selectionOutline.updateGeometry(id, rm.geometry);
     this.rebuildEdgeWire(id, source.mesh);
   }
 
-  /** Force the mesh's node material(s) to recompile against current geometry. */
+  /** Force the mesh's material(s) to recompile their pipeline against current geometry. */
   private refreshMeshMaterial(obj: Mesh): void {
     const mat = obj.material;
     for (const m of Array.isArray(mat) ? mat : [mat]) {
-      // only node materials carry the attribute-dependent pipeline; skip the
-      // shared flat/wireframe overrides (recompiling those is pointless churn)
-      if (m && (m as { isNodeMaterial?: boolean }).isNodeMaterial) m.needsUpdate = true;
+      // WebGPU caches each material's render pipeline against the geometry's
+      // attribute layout. When a generator's async geometry swaps in over the
+      // empty placeholder (boolean worker result on load), that cached pipeline
+      // is stale and the mesh silently stops drawing until a material change
+      // rebuilds it. Bump needsUpdate to force the rebuild — for the DEFAULT
+      // MeshStandardMaterial too, not only node materials: a no-material boolean
+      // vanished on reload precisely because the standard material was skipped.
+      if (m) m.needsUpdate = true;
     }
   }
 
