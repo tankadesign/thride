@@ -349,8 +349,16 @@ export class ViewportInput {
     const vs = this.vs;
     const rect = vs.canvas.getBoundingClientRect();
     const pane = vs.paneAt(e.clientX - rect.left, e.clientY - rect.top);
-    const rig = vs.rigFor(pane);
-    rig.dolly(e.deltaY * 1.2);
+    // zoom centers on the point under the cursor: scroll toward what you're
+    // pointing at (matching alt-dolly's crosshair pivot). Perspective needs a
+    // real hit for a depth; ortho rays are parallel, so the cursor's camera-
+    // plane point keeps the zoom pointer-centered even over empty space.
+    const rig = vs.setRayFromEvent(e, pane);
+    const delta = -e.deltaY * 1.2; // wheel-up = zoom in
+    const hit = vs.raycaster.intersectObject(vs.sync.root, true)[0];
+    const point = hit?.point ?? (rig.isPerspective ? null : vs.raycaster.ray.origin.clone());
+    if (point) rig.dollyToward(point, delta);
+    else rig.dolly(delta);
     applyCameraNavTick(vs, pane, rig);
     vs.invalidate();
   };

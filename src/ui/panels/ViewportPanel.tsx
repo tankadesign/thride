@@ -5,7 +5,8 @@ import { useAtomValue } from "jotai";
 import { SetNodeDataCommand } from "@/core";
 import { appStore, useDocument, useSliceVersion } from "@/ui/hooks/doc/document";
 import { MATERIAL_DND_MIME } from "@/ui/hooks/editor/materials";
-import { openContextMenu } from "@/ui/hooks/editor/shell";
+import { type MenuEntry, openContextMenu, registryAtom } from "@/ui/hooks/editor/shell";
+import type { CommandRegistry } from "@/ui/commands/CommandRegistry";
 import { splineThicknessAtom } from "@/ui/hooks/editor/settings";
 import {
   bevelActiveAtom,
@@ -31,6 +32,26 @@ const OBJECT_CONTEXT_COMMANDS = [
   "edit.selectAll",
   "edit.deselect",
 ];
+
+/**
+ * The Create menu as a context-menu flyout: the registry's Create commands with
+ * consecutive same-submenu runs nested one level (Primitives/Splines/…), the
+ * same grouping the MenuBar renders — one definition, two surfaces.
+ */
+function createMenuEntry(registry: CommandRegistry): MenuEntry {
+  const children: MenuEntry[] = [];
+  for (const cmd of registry.byMenu("Create")) {
+    const last = children.at(-1);
+    if (!cmd.submenu) {
+      children.push({ commandId: cmd.id, sep: cmd.sep });
+    } else if (last?.children && last.label === cmd.submenu) {
+      last.children.push({ commandId: cmd.id });
+    } else {
+      children.push({ label: cmd.submenu, icon: cmd.icon, children: [{ commandId: cmd.id }] });
+    }
+  }
+  return { label: "Create", children };
+}
 
 /** Shares the gizmo's axis colors (X/Y/Z → error/success/info) via the theme. */
 const AXIS_COLORS = [
@@ -110,15 +131,23 @@ export function ViewportPanel({ onSystem }: Props) {
     vs.onSnapMarker = setSnapMarker;
     vs.onAxes = setAxes;
     vs.onContextMenuRequest = ({ clientX, clientY, nodeId }) => {
-      // background right-click has no menu now — Camera & Display moved to the
-      // View Settings modal (the gear button next to the camera dropdown).
-      if (!nodeId) return;
-      if (!doc.selection.has(nodeId)) doc.selection.selectObjects([nodeId]);
-      openContextMenu({
-        x: clientX,
-        y: clientY,
-        entries: OBJECT_CONTEXT_COMMANDS.map((commandId) => ({ commandId })),
-      });
+      // Object mode leads with the Create tree (background AND object clicks);
+      // component modes keep the old rule — object menu only, nothing on
+      // background. Camera & Display live in the View Settings modal.
+      const registry = appStore.get(registryAtom);
+      const objectMode = doc.selection.editMode === "object";
+      const entries: MenuEntry[] = objectMode && registry ? [createMenuEntry(registry)] : [];
+      if (nodeId) {
+        if (!doc.selection.has(nodeId)) doc.selection.selectObjects([nodeId]);
+        entries.push(
+          ...OBJECT_CONTEXT_COMMANDS.map((commandId, i) => ({
+            commandId,
+            sep: i === 0 && entries.length > 0,
+          })),
+        );
+      }
+      if (entries.length === 0) return;
+      openContextMenu({ x: clientX, y: clientY, entries });
     };
     onSystem(vs);
     // expose a narrow baker so the Attributes target selector can retain the

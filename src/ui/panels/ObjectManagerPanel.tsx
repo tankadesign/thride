@@ -118,7 +118,8 @@ interface DropTarget {
 export function ObjectManagerPanel() {
   const doc = useDocument();
   useSliceVersion("scene");
-  useSelectionInfo();
+  const selectionVersion = useSliceVersion("selection");
+  const { active } = useSelectionInfo();
   const [collapsed, setCollapsed] = useState<Set<Uuid>>(new Set());
   const [renaming, setRenaming] = useState<Uuid | null>(null);
   const [dropTarget, setDropTarget] = useState<DropTarget | null>(null);
@@ -150,6 +151,37 @@ export function ObjectManagerPanel() {
     if (!collapsed.has(id)) for (const c of doc.scene.childrenOf(id)) walk(c, depth + 1);
   };
   for (const r of doc.scene.rootIds()) walk(r, 0);
+
+  // ---- follow the selection (e.g. a viewport click): reveal + scroll ----
+  // Expanding first re-runs this effect with the row now present; the
+  // lastRevealed ref keys on the selection VERSION (one scroll per select
+  // event), so the user can collapse/scroll freely afterwards and re-clicking
+  // the same object still re-reveals it. In-panel clicks are already
+  // on-screen, so the out-of-view check makes them a no-op.
+  const lastRevealed = useRef(-1);
+  useEffect(() => {
+    if (!active || lastRevealed.current === selectionVersion || !doc.scene.has(active)) return;
+    const blocked: Uuid[] = [];
+    for (let p = doc.scene.get(active)?.parent; p; p = doc.scene.get(p)?.parent) {
+      if (collapsed.has(p)) blocked.push(p);
+    }
+    if (blocked.length > 0) {
+      setCollapsed((prev) => {
+        const next = new Set(prev);
+        for (const b of blocked) next.delete(b);
+        return next;
+      });
+      return;
+    }
+    lastRevealed.current = selectionVersion;
+    const rowIndex = rows.findIndex((r) => r.id === active);
+    const el = containerRef.current;
+    if (rowIndex < 0 || !el) return;
+    const top = rowIndex * ROW_H;
+    if (top < el.scrollTop || top + ROW_H > el.scrollTop + el.clientHeight) {
+      el.scrollTo({ top: top - el.clientHeight / 2 + ROW_H / 2, behavior: "smooth" });
+    }
+  });
 
   // ---- collapse/expand (⌘-click = whole subtree) ----
   const descendants = (id: Uuid, out: Uuid[] = []): Uuid[] => {

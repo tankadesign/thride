@@ -16,6 +16,8 @@ interface NumberDragProps {
  * C4D-style numeric field on a daisyUI input: drag horizontally to scrub
  * (streamed with committed=false, one committed=true on release — maps onto
  * interactive sessions), click to type. Shift = fine, Alt = coarse.
+ * In type-mode, ArrowUp/Down step by `step` (⌘ = 0.1×, Shift = 10×) —
+ * streamed like a scrub, with one commit when the key is released.
  */
 export function NumberDrag({
   value,
@@ -35,6 +37,10 @@ export function NumberDrag({
   // click/drag (which may fire on mousedown OR the trailing click) don't trip
   // beginEdit — only a genuine keyboard (Tab) focus should.
   const pointerFocus = useRef(false);
+  // live value across a run of arrow-key steps: key repeats can land inside one
+  // React batch, where each keydown would otherwise read the same stale `text`
+  // closure and the run would only ever advance a single step.
+  const arrowRun = useRef<number | null>(null);
 
   const clamp = (v: number) => {
     const c = Math.min(max ?? Infinity, Math.max(min ?? -Infinity, v));
@@ -129,6 +135,27 @@ export function NumberDrag({
           } else if (e.key === "Escape") {
             setEditing(false); // cancel — revert to the current value
             inputRef.current?.blur();
+          } else if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+            // keyboard stepping: step per press, ⌘ = fine (0.1×), Shift = coarse
+            // (10×). Streamed as previews so a held key doesn't flood history —
+            // onKeyUp commits once, like a scrub release.
+            e.preventDefault();
+            const dir = e.key === "ArrowUp" ? 1 : -1;
+            const scale = e.metaKey ? 0.1 : e.shiftKey ? 10 : 1;
+            const parsed = Number.parseFloat(text.replace(",", "."));
+            const start = arrowRun.current ?? (Number.isNaN(parsed) ? value : parsed);
+            const c = clamp(start + dir * step * scale);
+            arrowRun.current = c;
+            setText(format(c, integer ? 0 : precision));
+            onChange(c, false);
+          }
+          e.stopPropagation();
+        }}
+        onKeyUp={(e) => {
+          if (!editing || (e.key !== "ArrowUp" && e.key !== "ArrowDown")) return;
+          if (arrowRun.current !== null) {
+            onChange(clamp(arrowRun.current), true);
+            arrowRun.current = null;
           }
           e.stopPropagation();
         }}
