@@ -9,6 +9,7 @@ import {
   withChannelLayer,
 } from "@/types/core";
 import { uuidv7 } from "@/core";
+import { IconClose } from "@/icons";
 import { noiseDef } from "@/materials/noises";
 import { textureAssets } from "@/io/storage/textureAssets";
 import { useLayerPreview } from "./noisePreview";
@@ -128,7 +129,7 @@ export function MapSlot({
               onClick={removeNoise}
               title="Remove noise"
             >
-              ✕
+              <IconClose size={11} />
             </button>
           </div>
         </Row>
@@ -177,7 +178,7 @@ export function MapSlot({
               onClick={clearImage}
               title="Clear"
             >
-              ✕
+              <IconClose size={11} />
             </button>
             {filePicker}
           </div>

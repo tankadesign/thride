@@ -22,9 +22,7 @@ import {
 } from "@/render/viewport/ViewportSystem";
 import { themeStyle, viewportTheme } from "@/render/theme/viewportTheme";
 import { ViewSettingsModal } from "./ViewSettingsModal";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { Settings01Icon } from "@hugeicons/core-free-icons";
-import { IconPivotPoint } from "@/icons";
+import { IconPivotPoint, IconSettings } from "@/icons";
 
 const OBJECT_CONTEXT_COMMANDS = [
   "edit.group",
@@ -220,7 +218,7 @@ export function ViewportPanel({ onSystem }: Props) {
               setSettings({ pane, x: Math.max(4, Math.min(x, (box?.width ?? 248) - 248)), y });
             }}
           >
-            <HugeiconsIcon icon={Settings01Icon} size={14} />
+            <IconSettings size={14} />
           </button>
         </div>
       ))}

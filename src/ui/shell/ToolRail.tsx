@@ -30,7 +30,8 @@ const MODES: { mode: EditMode; icon: React.ReactNode; title: string; enabled: bo
   { mode: "point", icon: <IconPoint />, title: "Point mode", enabled: true },
   { mode: "edge", icon: <IconEdge />, title: "Edge mode", enabled: true },
   { mode: "polygon", icon: <IconPolygon />, title: "Polygon mode", enabled: true },
-  { mode: "texture", icon: <IconTexture />, title: "Texture mode (M2)", enabled: false },
+  // needs E4's projection gizmo, which moved to M5 alongside the UV editor
+  { mode: "texture", icon: <IconTexture />, title: "Texture mode (M5)", enabled: false },
 ];
 
 const QUICK_CREATE: { cmd: string; icon: React.ReactNode; title: string }[] = [

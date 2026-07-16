@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { useAtomValue } from "jotai";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { Cancel01Icon } from "@hugeicons/core-free-icons";
+import { IconClose } from "@/icons";
 import type { PaneDisplay } from "@/types/editor";
 import { defaultPaneDisplay } from "@/types/editor";
 import { editorState, paneDisplaysAtom } from "@/ui/hooks/editor/viewport";
@@ -68,7 +67,7 @@ export function ViewSettingsModal({
       >
         <span className="font-semibold opacity-80">View Settings</span>
         <button type="button" className="btn btn-ghost btn-xs btn-square" onClick={onClose}>
-          <HugeiconsIcon icon={Cancel01Icon} size={14} />
+          <IconClose size={14} />
         </button>
       </div>
 

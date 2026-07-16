@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { IconCaretRight } from "@/icons";
 
 /**
  * Row/Section primitives for the material editor. Split out of
@@ -32,9 +33,10 @@ export function Section({
         onClick={() => setOpen((o) => !o)}
         className="flex w-full items-center gap-1.5 px-2 py-1 text-left hover:bg-base-300/40"
       >
-        <span className={`text-[8px] opacity-60 transition-transform ${open ? "rotate-90" : ""}`}>
-          ▶
-        </span>
+        <IconCaretRight
+          size={12}
+          className={`opacity-60 transition-transform ${open ? "rotate-90" : ""}`}
+        />
         <span className="text-[10px] font-semibold uppercase tracking-wide opacity-70">
           {title}
         </span>

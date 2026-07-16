@@ -40,13 +40,16 @@ import {
   IconAmbientLight,
   IconAreaLight,
   IconBevel,
+  IconBoolean,
   IconCamera,
   IconCone,
   IconCube,
   IconCylinder,
+  IconDelete,
   IconDirectionalLight,
   IconCircle,
   IconDisc,
+  IconGroup,
   IconHelix,
   IconNSide,
   IconStar,
@@ -246,6 +249,7 @@ export function buildCommands(doc: Document, shell: ShellApi): AppCommand[] {
       id: "edit.delete",
       title: "Delete",
       menu: "Edit",
+      icon: <IconDelete size={16} />,
       sep: true,
       shortcut: "delete",
       enabled: () => {
@@ -304,6 +308,7 @@ export function buildCommands(doc: Document, shell: ShellApi): AppCommand[] {
       id: "edit.group",
       title: "Group Objects",
       menu: "Edit",
+      icon: <IconGroup size={16} />,
       shortcut: "mod+g",
       enabled: () => doc.selection.objectIds.length > 0,
       run: () => {
@@ -499,7 +504,7 @@ export function buildCommands(doc: Document, shell: ShellApi): AppCommand[] {
       id: "create.boolean",
       title: "Boolean",
       menu: "Create",
-      icon: <IconCube size={16} />,
+      icon: <IconBoolean size={16} />,
       run: () => {
         const kids = doc.selection.objectIds
           .filter((id) => {

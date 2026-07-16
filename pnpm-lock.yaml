@@ -216,9 +216,6 @@ importers:
 
   .:
     dependencies:
-      '@boxicons/react':
-        specifier: ^1.0.3
-        version: 1.0.3(react@19.2.7)
       '@hugeicons/core-free-icons':
         specifier: ^4.2.2
         version: 4.2.2
@@ -318,11 +315,6 @@ packages:
 
   '@blazediff/core@1.9.1':
     resolution: {integrity: sha512-ehg3jIkYKulZh+8om/O25vkvSsXXwC+skXmyA87FFx6A/45eqOkZsBltMw/TVteb0mloiGT8oGRTcjRAz66zaA==}
-
-  '@boxicons/react@1.0.3':
-    resolution: {integrity: sha512-NASJNbk4X6Xi24CIa/Anx7KhMH1KPiBuaq0RJq3HJiFg65Ct9mhIB6j/a/Ciz/ZOTGaGzisWYmbU4jdKKK/YYA==}
-    peerDependencies:
-      react: '>=16.8.0'
 
   '@dimforge/rapier3d-compat@0.12.0':
     resolution: {integrity: sha512-uekIGetywIgopfD97oDL5PfeezkFpNhwlzlaEYNOA0N6ghdsOvh/HYjSMek5Q2O1PYvRSDFcqFVJl4r4ZBwOow==}
@@ -1667,10 +1659,6 @@ snapshots:
   '@babel/runtime@7.29.7': {}
 
   '@blazediff/core@1.9.1': {}
-
-  '@boxicons/react@1.0.3(react@19.2.7)':
-    dependencies:
-      react: 19.2.7
 
   '@dimforge/rapier3d-compat@0.12.0': {}
 

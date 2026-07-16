@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { Uuid } from "@/types/core";
+import type { LightDataDTO, LightType } from "@/types/core/light";
+import type { SceneNode } from "@/core";
 import {
   RenameNodeCommand,
   ReparentNodeCommand,
@@ -10,16 +12,22 @@ import { useDocument, useSliceVersion } from "@/ui/hooks/doc/document";
 import { useSelectionInfo } from "@/ui/hooks/doc/selection";
 import { openContextMenu } from "@/ui/hooks/editor/shell";
 import {
+  IconAmbientLight,
+  IconAreaLight,
   IconCamera,
   IconCollapse,
   IconCube,
+  IconDirectionalLight,
   IconExpand,
   IconEye,
   IconEyeOff,
   IconGenerator,
+  IconHemisphereLight,
   IconLight,
   IconNull,
+  IconPointLight,
   IconSpline,
+  IconSpotlight,
 } from "@/icons";
 
 const ROW_H = 24;
@@ -33,6 +41,33 @@ const KIND_ICON: Record<string, React.ReactNode> = {
   light: <IconLight size={14} className="opacity-60" />,
   camera: <IconCamera size={14} className="opacity-60" />,
 };
+
+/** Per-light-type tree glyphs — the Create menu already distinguishes all six. */
+const LIGHT_KIND_ICON: Record<LightType, React.ReactNode> = {
+  spot: <IconSpotlight size={14} className="opacity-60" />,
+  point: <IconPointLight size={14} className="opacity-60" />,
+  directional: <IconDirectionalLight size={14} className="opacity-60" />,
+  ambient: <IconAmbientLight size={14} className="opacity-60" />,
+  hemisphere: <IconHemisphereLight size={14} className="opacity-60" />,
+  area: <IconAreaLight size={14} className="opacity-60" />,
+};
+
+/**
+ * Tree glyph for a node. Lights resolve to their TYPE — a scene of six lights
+ * all showing the same bulb is unreadable. Falls back to the generic bulb if
+ * the payload is missing or its type is unrecognized.
+ *
+ * The payload lives at `data.light` (see LightDataDTO), NOT `data.type` — the
+ * wrong path here fails silently as "every light is a bulb", exactly the state
+ * this replaces.
+ */
+function nodeIcon(node: SceneNode): React.ReactNode {
+  if (node.kind === "light") {
+    const type = (node.data?.light as LightDataDTO | undefined)?.type;
+    return (type && LIGHT_KIND_ICON[type]) ?? KIND_ICON.light;
+  }
+  return KIND_ICON[node.kind] ?? null;
+}
 
 const CONTEXT_COMMANDS = [
   "edit.group",
@@ -277,7 +312,7 @@ export function ObjectManagerPanel() {
             >
               {collapsed.has(id) ? <IconExpand size={13} /> : <IconCollapse size={13} />}
             </button>
-            {KIND_ICON[node.kind] ?? null}
+            {nodeIcon(node)}
             {renaming === id ? (
               <input
                 autoFocus

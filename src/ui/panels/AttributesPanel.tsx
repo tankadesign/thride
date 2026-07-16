@@ -28,6 +28,7 @@ import {
   SetTransformCommand,
 } from "@/core/history/commands/scene";
 import { TransformDragSession } from "@/core/session/TransformDragSession";
+import { IconCaretDown } from "@/icons";
 import { appStore, useDocument, useSliceVersion } from "@/ui/hooks/doc/document";
 import { useSelectionInfo } from "@/ui/hooks/doc/selection";
 import { targetRotationBakerAtom } from "@/ui/hooks/editor/viewport";
@@ -578,7 +579,7 @@ function MaterialSelector({ id }: { id: Uuid }) {
             {current ? <Swatch color={current.color} /> : null}
             <span className="truncate">{current ? current.name : "None"}</span>
           </span>
-          <span className="opacity-50">▾</span>
+          <IconCaretDown size={12} className="opacity-50" />
         </div>
         <ul
           tabIndex={0}

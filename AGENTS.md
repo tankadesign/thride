@@ -38,5 +38,8 @@ Thride is a browser 3D IDE on Three.js WebGPU/TSL — an open-source Spline with
 - 2D UI is **Tailwind CSS 4 + daisyUI 5** (theme: `sunset`). Always reach for a daisyUI component class before a bare HTML element; use the smallest size variants (`btn-xs`, `menu-xs`, `input-xs`, …) to keep the UI compact. No custom CSS unless genuinely impossible with utilities (current exceptions: dockview theme glue, scrub cursor in `src/index.css`).
 - App/UI state is **jotai**. All state logic lives under `src/ui/hooks/` in nested domain dirs (`doc/`, `editor/`, …). Combine related hooks in one file named for the domain (`history.ts`, `viewport.ts`) — never one file per hook, never `use*.ts` filenames.
 - The render layer never imports `src/ui`; it consumes editor state via the `EditorViewportState` contract in `src/types/editor.ts` (implemented over jotai's default store in `ui/hooks/editor/viewport.ts`).
-- Icons are original SVG components in `src/icons` (16px grid, currentColor).
+- Icons are hugeicons wrapped as `Icon<Concept>` components in `src/icons` (global size via
+  `iconSizeAtom`, default 20px; `strokeWidth` 1.6; currentColor). **Add icons to that barrel
+  only — never import `@hugeicons/*` elsewhere**, or the icon stops honoring the global size.
+  Grep the `hugeicons` skill's `references/icon-list.md` for exact names; never guess one.
 - Use the DaisyUI theme color in ThreeJS where possible, especially for primary, secondary, and accent colors. Maintain a ThreeJS color system in a centralized place. Do not hard code colors in various files.

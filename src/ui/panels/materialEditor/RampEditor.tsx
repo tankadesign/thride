@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { IconClose } from "@/icons";
 import type { GradientRamp, GradientStop } from "@/types/core";
 import { NumberDrag } from "@/ui/widgets/NumberDrag";
 import { Row } from "./controls";
@@ -122,7 +123,7 @@ export function RampEditor({
               }}
               title="Delete stop"
             >
-              ✕
+              <IconClose size={11} />
             </button>
           </div>
         </Row>

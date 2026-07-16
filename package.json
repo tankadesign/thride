@@ -11,7 +11,6 @@
     "prepare": "vp config"
   },
   "dependencies": {
-    "@boxicons/react": "^1.0.3",
     "@hugeicons/core-free-icons": "^4.2.2",
     "@hugeicons/react": "^1.1.9",
     "@tailwindcss/vite": "^4.3.2",

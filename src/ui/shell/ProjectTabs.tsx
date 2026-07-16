@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { IconClose } from "@/icons";
 import type { Uuid } from "@/types/core";
 import {
   closeProject,
@@ -68,7 +69,7 @@ export function ProjectTabs() {
                 }}
                 title="Close project"
               >
-                ✕
+                <IconClose size={11} />
               </span>
             ) : null}
           </button>
