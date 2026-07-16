@@ -5,8 +5,8 @@ import { MaterialThumbnails } from "@/render/thumbnails/materialThumbnails";
 import { useDocument } from "@/ui/hooks/doc/document";
 import { useSelectionInfo } from "@/ui/hooks/doc/selection";
 
-/** Material selected in the Material Manager (ephemeral UI state). */
-export const selectedMaterialAtom = atom<Uuid | null>(null);
+/** Materials selected in the Material Manager (ephemeral UI state, grid order-independent). */
+export const selectedMaterialsAtom = atom<Uuid[]>([]);
 
 /**
  * Keep the Material Manager's selection in sync with the viewport: selecting a
@@ -18,11 +18,11 @@ export const selectedMaterialAtom = atom<Uuid | null>(null);
 export function useSelectObjectMaterial(): void {
   const doc = useDocument();
   const { objectIds } = useSelectionInfo();
-  const setSelected = useSetAtom(selectedMaterialAtom);
+  const setSelected = useSetAtom(selectedMaterialsAtom);
   useEffect(() => {
     if (objectIds.length !== 1) return;
     const matId = doc.scene.get(objectIds[0]!)?.data?.material as Uuid | undefined;
-    if (matId && doc.materials.has(matId)) setSelected(matId);
+    if (matId && doc.materials.has(matId)) setSelected([matId]);
   }, [objectIds, doc, setSelected]);
 }
 

@@ -38,8 +38,20 @@ type ColorKey = "color" | "emissive" | "sheenColor" | "specularColor";
  * Sheen, Iridescence, Emission) gated by type. Slider scrubs are one undo step
  * (preview during drag, UpdateMaterialCommand on release). Optional physical
  * fields fall back to three's defaults until edited.
+ *
+ * `title` overrides the name header (the Material Manager passes the comma
+ * list of a multi-selection); `disabled` grays the sections out and blocks
+ * input — a multi-selection has no single value set to edit.
  */
-export function MaterialEditor({ id }: { id: Uuid }) {
+export function MaterialEditor({
+  id,
+  title,
+  disabled = false,
+}: {
+  id: Uuid;
+  title?: string;
+  disabled?: boolean;
+}) {
   const doc = useDocument();
   useSliceVersion("materials");
   const scrub = useRef<{ before: MaterialDTO } | null>(null);
@@ -97,85 +109,93 @@ export function MaterialEditor({ id }: { id: Uuid }) {
   );
 
   return (
-    <div className="flex max-h-[55%] flex-col overflow-auto border-t border-base-300 bg-base-200/40 text-xs">
-      <div className="truncate px-2 py-1.5 font-semibold opacity-80 flex-none">{mat.name}</div>
-
-      <Section title="Base" defaultOpen>
-        <Row label="Type">
-          <select
-            className="select select-xs w-full"
-            value={mat.type}
-            onChange={(e) => setMat({ type: e.target.value as MaterialType }, true)}
-          >
-            {MATERIAL_TYPES.map((t) => (
-              <option key={t.type} value={t.type}>
-                {t.label}
-              </option>
-            ))}
-          </select>
-        </Row>
-        {HAS_COLOR.has(mat.type) ? color("Color", "color") : null}
-        {texSlot("map", "Color Map")}
-        {slider("Opacity", "opacity", 0.01, 1, 1)}
-        <Row label="Transparent">
-          <input
-            type="checkbox"
-            className="toggle toggle-xs"
-            checked={mat.transparent}
-            onChange={(e) => setMat({ transparent: e.target.checked }, true)}
-          />
-        </Row>
-      </Section>
-
-      {HAS_PBR.has(mat.type) || hasNormalMap ? (
-        <Section title="Surface" defaultOpen>
-          {HAS_PBR.has(mat.type) ? slider("Roughness", "roughness", 0.01, 1) : null}
-          {texSlot("roughnessMap", "Roughness Map")}
-          {HAS_PBR.has(mat.type) ? slider("Metalness", "metalness", 0.01, 1) : null}
-          {texSlot("metalnessMap", "Metalness Map")}
-          {physical ? slider("Specular", "specularIntensity", 0.01, 1, PD.specularIntensity) : null}
-          {physical ? color("Spec. Tint", "specularColor", PD.specularColor) : null}
-          {texSlot("normalMap", "Normal Map")}
+    <div className="flex max-h-[55%] flex-col overflow-auto bg-base-200/40 text-xs">
+      <div className="flex-none truncate px-2 py-1.5 font-semibold opacity-80" title={title}>
+        {title ?? mat.name}
+      </div>
+      <fieldset
+        disabled={disabled}
+        className={`flex min-w-0 flex-col ${disabled ? "pointer-events-none opacity-45" : ""}`}
+      >
+        <Section title="Base" defaultOpen>
+          <Row label="Type">
+            <select
+              className="select select-xs w-full"
+              value={mat.type}
+              onChange={(e) => setMat({ type: e.target.value as MaterialType }, true)}
+            >
+              {MATERIAL_TYPES.map((t) => (
+                <option key={t.type} value={t.type}>
+                  {t.label}
+                </option>
+              ))}
+            </select>
+          </Row>
+          {HAS_COLOR.has(mat.type) ? color("Color", "color") : null}
+          {texSlot("map", "Color Map")}
+          {slider("Opacity", "opacity", 0.01, 1, 1)}
+          <Row label="Transparent">
+            <input
+              type="checkbox"
+              className="toggle toggle-xs"
+              checked={mat.transparent}
+              onChange={(e) => setMat({ transparent: e.target.checked }, true)}
+            />
+          </Row>
         </Section>
-      ) : null}
 
-      {physical ? (
-        <Section title="Clearcoat">
-          {slider("Clearcoat", "clearcoat", 0.01, 1)}
-          {slider("Roughness", "clearcoatRoughness", 0.01, 1)}
-        </Section>
-      ) : null}
+        {HAS_PBR.has(mat.type) || hasNormalMap ? (
+          <Section title="Surface" defaultOpen>
+            {HAS_PBR.has(mat.type) ? slider("Roughness", "roughness", 0.01, 1) : null}
+            {texSlot("roughnessMap", "Roughness Map")}
+            {HAS_PBR.has(mat.type) ? slider("Metalness", "metalness", 0.01, 1) : null}
+            {texSlot("metalnessMap", "Metalness Map")}
+            {physical
+              ? slider("Specular", "specularIntensity", 0.01, 1, PD.specularIntensity)
+              : null}
+            {physical ? color("Spec. Tint", "specularColor", PD.specularColor) : null}
+            {texSlot("normalMap", "Normal Map")}
+          </Section>
+        ) : null}
 
-      {physical ? (
-        <Section title="Transmission">
-          {slider("Transmission", "transmission", 0.01, 1)}
-          {slider("IOR", "ior", 0.01, 2.5, PD.ior)}
-          {slider("Thickness", "thickness", 0.02, 5)}
-        </Section>
-      ) : null}
+        {physical ? (
+          <Section title="Clearcoat">
+            {slider("Clearcoat", "clearcoat", 0.01, 1)}
+            {slider("Roughness", "clearcoatRoughness", 0.01, 1)}
+          </Section>
+        ) : null}
 
-      {physical ? (
-        <Section title="Sheen">
-          {slider("Sheen", "sheen", 0.01, 1)}
-          {slider("Roughness", "sheenRoughness", 0.01, 1, PD.sheenRoughness)}
-          {color("Color", "sheenColor", PD.sheenColor)}
-        </Section>
-      ) : null}
+        {physical ? (
+          <Section title="Transmission">
+            {slider("Transmission", "transmission", 0.01, 1)}
+            {slider("IOR", "ior", 0.01, 2.5, PD.ior)}
+            {slider("Thickness", "thickness", 0.02, 5)}
+          </Section>
+        ) : null}
 
-      {physical ? (
-        <Section title="Iridescence">
-          {slider("Iridescence", "iridescence", 0.01, 1)}
-          {slider("IOR", "iridescenceIOR", 0.01, 2.5, PD.iridescenceIOR)}
-        </Section>
-      ) : null}
+        {physical ? (
+          <Section title="Sheen">
+            {slider("Sheen", "sheen", 0.01, 1)}
+            {slider("Roughness", "sheenRoughness", 0.01, 1, PD.sheenRoughness)}
+            {color("Color", "sheenColor", PD.sheenColor)}
+          </Section>
+        ) : null}
 
-      {HAS_EMISSIVE.has(mat.type) ? (
-        <Section title="Emission">
-          {color("Emissive", "emissive", "#000000")}
-          {slider("Strength", "emissiveIntensity", 0.05, 10, 1)}
-          {texSlot("emissiveMap", "Emissive Map")}
-        </Section>
-      ) : null}
+        {physical ? (
+          <Section title="Iridescence">
+            {slider("Iridescence", "iridescence", 0.01, 1)}
+            {slider("IOR", "iridescenceIOR", 0.01, 2.5, PD.iridescenceIOR)}
+          </Section>
+        ) : null}
+
+        {HAS_EMISSIVE.has(mat.type) ? (
+          <Section title="Emission">
+            {color("Emissive", "emissive", "#000000")}
+            {slider("Strength", "emissiveIntensity", 0.05, 10, 1)}
+            {texSlot("emissiveMap", "Emissive Map")}
+          </Section>
+        ) : null}
+      </fieldset>
     </div>
   );
 }

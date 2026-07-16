@@ -1,9 +1,11 @@
 import {
   BoxGeometry,
+  type BufferGeometry,
   Camera,
   Color,
   ConeGeometry,
   CylinderGeometry,
+  DoubleSide,
   Euler,
   Group,
   type Intersection,
@@ -12,6 +14,7 @@ import {
   Object3D,
   OrthographicCamera,
   Plane,
+  PlaneGeometry,
   Quaternion,
   Raycaster,
   SphereGeometry,
@@ -50,8 +53,16 @@ const PICK_MIN_RADIUS = 0.06;
 /** Raycastable but never rendered (material-invisible keeps raycasting intact). */
 const PICKER_MAT = new MeshBasicMaterial({ visible: false, depthTest: false, depthWrite: false });
 
-type HandleKind = "translate" | "rotate" | "scale" | "translate-view";
+type HandleKind = "translate" | "rotate" | "scale" | "translate-view" | "translate-plane";
 type Axis = 0 | 1 | 2;
+
+/** Which handle kinds each gizmo mode shows (V=all, E=move, R=rotate, T=scale). */
+export type GizmoMode = "all" | "translate" | "rotate" | "scale";
+const MODE_KINDS: Record<Exclude<GizmoMode, "all">, ReadonlySet<HandleKind>> = {
+  translate: new Set(["translate", "translate-view", "translate-plane"]),
+  rotate: new Set(["rotate"]),
+  scale: new Set(["scale"]),
+};
 
 interface Handle {
   kind: HandleKind;
@@ -62,14 +73,16 @@ interface Handle {
  * Pick precedence when handles overlap in screen space (higher wins,
  * independent of camera distance). In an orthographic top/side view the
  * edge-on rotation rings project onto the move axes and would otherwise
- * steal their clicks; scale cubes (inside the rings) and move arrows
- * (outside them) must win so translate/scale stay usable head-on. Ties at
- * equal priority fall back to nearest-first (raycaster hit order).
+ * steal their clicks; scale cubes and move arrows (both outside the rings)
+ * and the near-center plane quads must win so translate/scale stay usable
+ * head-on. Ties at equal priority fall back to nearest-first (raycaster
+ * hit order).
  */
 const HANDLE_PRIORITY: Record<HandleKind, number> = {
   scale: 3,
   translate: 2,
   "translate-view": 2,
+  "translate-plane": 2,
   rotate: 1,
 };
 
@@ -105,6 +118,7 @@ export class TransformGizmo {
   private hovered: Mesh | null = null;
   private activeObject: Object3D | null = null;
   private readonly hoverColor = viewportTheme.primary;
+  private mode: GizmoMode = "all";
 
   constructor(doc: Document) {
     this.doc = doc;
@@ -116,6 +130,26 @@ export class TransformGizmo {
 
   get isDragging(): boolean {
     return this.drag !== null;
+  }
+
+  get currentMode(): GizmoMode {
+    return this.mode;
+  }
+
+  /** Show only one handle family (E move / R rotate / T scale) or all (V). */
+  setMode(mode: GizmoMode): void {
+    if (mode === this.mode) return;
+    this.mode = mode;
+    this.group.traverse((o) => {
+      const handle = (o as Mesh).userData.handle as Handle | undefined;
+      // top-level handle meshes only — pickers are children and follow along
+      if (handle && o.parent === this.group) o.visible = this.kindEnabled(handle.kind);
+    });
+  }
+
+  /** three's raycaster ignores visibility, so mode filtering gates picks too. */
+  private kindEnabled(kind: HandleKind): boolean {
+    return this.mode === "all" || MODE_KINDS[this.mode].has(kind);
   }
 
   /** Reposition/orient on the active selection; hide when nothing is selected. */
@@ -152,8 +186,8 @@ export class TransformGizmo {
     // screen-constant size: perspective scales by distance, ortho by frustum height
     const ortho = camera as OrthographicCamera;
     const scale = ortho.isOrthographicCamera
-      ? Math.max(0.0001, (ortho.top - ortho.bottom) * 0.08)
-      : Math.max(0.0001, camera.position.distanceTo(this.group.position) * 0.07);
+      ? Math.max(0.0001, (ortho.top - ortho.bottom) * 0.092)
+      : Math.max(0.0001, camera.position.distanceTo(this.group.position) * 0.0805);
     this.group.scale.setScalar(scale);
   }
 
@@ -168,7 +202,7 @@ export class TransformGizmo {
     for (const h of hits) {
       const obj = h.object as Mesh;
       const handle = obj.userData.handle as Handle | undefined;
-      if (!handle) continue;
+      if (!handle || !this.kindEnabled(handle.kind)) continue;
       const priority = HANDLE_PRIORITY[handle.kind];
       if (priority > bestPriority) {
         best = obj;
@@ -197,7 +231,8 @@ export class TransformGizmo {
     const viewDir = raycaster.ray.direction.clone();
 
     let plane: Plane;
-    if (handle.kind === "rotate") {
+    if (handle.kind === "rotate" || handle.kind === "translate-plane") {
+      // plane translate slides IN the plane whose normal is the handle's axis
       plane = new Plane().setFromNormalAndCoplanarPoint(axisWorld, pivot);
     } else if (handle.kind === "translate-view") {
       plane = new Plane().setFromNormalAndCoplanarPoint(viewDir.clone().negate(), pivot);
@@ -247,7 +282,12 @@ export class TransformGizmo {
     const snapSize = mods.snapSize ?? 0.1;
 
     const updates = new Map<Uuid, TransformDTO>();
-    if (d.handle.kind === "translate" || d.handle.kind === "translate-view") {
+    if (
+      d.handle.kind === "translate" ||
+      d.handle.kind === "translate-view" ||
+      d.handle.kind === "translate-plane"
+    ) {
+      // plane/view handles take the raw in-plane delta; axis handles project it
       const delta = point.clone().sub(d.startPoint);
       if (d.handle.kind === "translate") {
         let along = delta.dot(d.axisWorld);
@@ -256,14 +296,17 @@ export class TransformGizmo {
       } else if (mods.snap) {
         delta.set(snapTo(delta.x, snapSize), snapTo(delta.y, snapSize), snapTo(delta.z, snapSize));
       }
-      // magnet: snap the moved pivot to nearby scene geometry (axis handles
-      // keep their constraint — only the along-axis component snaps)
+      // magnet: snap the moved pivot to nearby scene geometry (constrained
+      // handles keep their constraint — axis handles take the along-axis
+      // component, plane handles the in-plane one)
       if (mods.snapWorld) {
         const snapped = mods.snapWorld(d.pivot.clone().add(delta));
         if (snapped) {
           const sd = snapped.sub(d.pivot);
           if (d.handle.kind === "translate")
             delta.copy(d.axisWorld).multiplyScalar(sd.dot(d.axisWorld));
+          else if (d.handle.kind === "translate-plane")
+            delta.copy(sd).addScaledVector(d.axisWorld, -sd.dot(d.axisWorld));
           else delta.copy(sd);
         }
       }
@@ -340,7 +383,7 @@ export class TransformGizmo {
     if (mesh === this.hovered) return;
     if (this.hovered) {
       const m = this.hovered.material as MeshBasicMaterial;
-      m.opacity = BASE_OPACITY;
+      m.opacity = (this.hovered.userData.baseOpacity as number | undefined) ?? BASE_OPACITY;
       m.color.copy(this.hovered.userData.baseColor as Color);
     }
     this.hovered = mesh;
@@ -373,15 +416,18 @@ export class TransformGizmo {
   }
 
   private build(): void {
-    // Radial layout (gizmo units): scale cubes sit INSIDE the rotation rings,
-    // move arrows OUTSIDE them, so an edge-on ring in an ortho view never
-    // covers the translate/scale handles. See HANDLE_PRIORITY for the
-    // matching hit-test precedence.
+    // Radial layout (gizmo units), inside → out: plane quads near the center,
+    // rotation rings, scale cubes just OUTSIDE the rings, move arrowheads
+    // beyond those — so an edge-on ring in an ortho view never covers the
+    // translate/scale handles and each family stays separately grabbable on a
+    // crowded selection. See HANDLE_PRIORITY for the matching hit precedence.
+    const PLANE_OFF = 0.35; // plane-quad center, along both in-plane axes
+    const PLANE_SIZE = 0.22;
     const RING_R = 1.0;
-    const SCALE_R = 0.5; // inside the ring
-    const SHAFT_LEN = 1.12; // spans ~0.16 → 1.28, threading the scale cube
-    const SHAFT_MID = 0.72;
-    const ARROW_R = 1.4; // arrowhead clear outside the ring
+    const SCALE_R = 1.18; // just outside the ring
+    const SHAFT_LEN = 1.36; // spans ~0.16 → 1.52, threading the scale cube
+    const SHAFT_MID = 0.84;
+    const ARROW_R = 1.6; // arrowhead clear beyond the scale cubes
     for (let axis = 0 as Axis; axis < 3; axis = (axis + 1) as Axis) {
       const color = AXIS_COLORS[axis];
       const dir = AXIS_VECS[axis];
@@ -420,6 +466,23 @@ export class TransformGizmo {
         new BoxGeometry(0.09 * PICK_SCALE, 0.09 * PICK_SCALE, 0.09 * PICK_SCALE),
       );
       cube.position.copy(dir).multiplyScalar(SCALE_R);
+
+      // two-axis plane handle: a quad in the plane NORMAL to this axis, offset
+      // along both in-plane axes (Blender-style). Edge-on quads (2D ortho
+      // views) degenerate to hairlines and give way to the facing one, which
+      // is exactly the pane's natural pan plane. Semi-transparent + DoubleSide
+      // so it reads as a surface from either side.
+      const u = AXIS_VECS[((axis + 1) % 3) as Axis];
+      const v = AXIS_VECS[((axis + 2) % 3) as Axis];
+      const quad = this.handleMesh(
+        new PlaneGeometry(PLANE_SIZE, PLANE_SIZE),
+        color,
+        { kind: "translate-plane", axis },
+        new BoxGeometry(PLANE_SIZE * 1.6, PLANE_SIZE * 1.6, 0.04),
+        { opacity: 0.4, doubleSide: true },
+      );
+      quad.quaternion.setFromUnitVectors(new Vector3(0, 0, 1), dir);
+      quad.position.addScaledVector(u, PLANE_OFF).addScaledVector(v, PLANE_OFF);
     }
     const center = this.handleMesh(
       new SphereGeometry(0.07, 16, 12),
@@ -436,21 +499,26 @@ export class TransformGizmo {
    * same trick three's TransformControls uses).
    */
   private handleMesh(
-    geometry: BoxGeometry | ConeGeometry | CylinderGeometry | SphereGeometry | TorusGeometry,
+    geometry: BufferGeometry,
     color: Color,
     handle: Handle,
-    pickerGeometry: BoxGeometry | ConeGeometry | CylinderGeometry | SphereGeometry | TorusGeometry,
+    pickerGeometry: BufferGeometry,
+    opts: { opacity?: number; doubleSide?: boolean } = {},
   ): Mesh {
+    const opacity = opts.opacity ?? BASE_OPACITY;
     const mat = new MeshBasicMaterial({
       color,
       transparent: true,
-      opacity: BASE_OPACITY,
+      opacity,
       depthTest: false,
       depthWrite: false,
+      // three's setValues warns on explicit undefined — only pass when set
+      ...(opts.doubleSide ? { side: DoubleSide } : {}),
     });
     const mesh = new Mesh(geometry, mat);
     mesh.userData.handle = handle;
     mesh.userData.baseColor = color.clone();
+    mesh.userData.baseOpacity = opacity;
     mesh.renderOrder = 1000;
 
     const picker = new Mesh(pickerGeometry, PICKER_MAT);

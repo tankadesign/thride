@@ -5,7 +5,9 @@ import {
   RemoveNodeCommand,
   ReparentNodeCommand,
   SetNodeDataCommand,
+  SetTransformCommand,
 } from "@/core/history/commands/scene";
+import { Euler, Matrix4, Quaternion, Vector3 } from "three";
 import { ConvertToMeshCommand } from "@/geometry/commands/convert";
 import { MeshTopologyCommand } from "@/geometry/commands/topology";
 import { HEMesh } from "@/geometry/kernel/HEMesh";
@@ -35,7 +37,7 @@ import { openPalette } from "@/ui/hooks/editor/shell";
 import { editorState } from "@/ui/hooks/editor/viewport";
 import type { AmountKind } from "@/render/tools/AmountTool";
 import type { ViewportSystem } from "@/render/viewport/ViewportSystem";
-import type { ComponentMode, Uuid } from "@/types/core";
+import type { ComponentMode, TransformDTO, Uuid } from "@/types/core";
 import {
   IconAmbientLight,
   IconAreaLight,
@@ -116,6 +118,33 @@ const PRIMITIVES: PrimitiveType[] = [
   "disc",
   "pyramid",
 ];
+
+/** A node Ungroup applies to: a null (group) that actually has children. */
+function ungroupable(doc: Document, id: Uuid): boolean {
+  const n = doc.scene.get(id);
+  return n?.kind === "null" && doc.scene.childrenOf(id).length > 0;
+}
+
+/**
+ * parent ∘ child as one local TRS — the child's new local transform after its
+ * parent is removed from the chain. Rotation+non-uniform-scale composition can
+ * shear, which TRS can't hold; Matrix4.decompose's nearest-TRS is the standard
+ * approximation (same one reparenting DCCs use).
+ */
+function composeTransforms(parent: TransformDTO, child: TransformDTO): TransformDTO {
+  const m = (t: TransformDTO) =>
+    new Matrix4().compose(
+      new Vector3(...t.position),
+      new Quaternion().setFromEuler(new Euler(t.rotation[0], t.rotation[1], t.rotation[2], "XYZ")),
+      new Vector3(...t.scale),
+    );
+  const p = new Vector3();
+  const q = new Quaternion();
+  const s = new Vector3();
+  m(parent).multiply(m(child)).decompose(p, q, s);
+  const e = new Euler().setFromQuaternion(q, "XYZ");
+  return { position: [p.x, p.y, p.z], rotation: [e.x, e.y, e.z], scale: [s.x, s.y, s.z] };
+}
 
 export function buildCommands(doc: Document, shell: ShellApi): AppCommand[] {
   const createPrimitive = (type: PrimitiveType) => {
@@ -322,6 +351,38 @@ export function buildCommands(doc: Document, shell: ShellApi): AppCommand[] {
           for (const id of ids) doc.history.run(new ReparentNodeCommand(id, groupId));
         });
         if (groupId) doc.selection.selectObjects([groupId]);
+      },
+    },
+    {
+      id: "edit.ungroup",
+      title: "Ungroup Objects",
+      menu: "Edit",
+      icon: <IconGroup size={16} />,
+      shortcut: "shift+mod+g",
+      enabled: () => doc.selection.objectIds.some((id) => ungroupable(doc, id)),
+      run: () => {
+        const groups = doc.selection.objectIds.filter((id) => ungroupable(doc, id));
+        if (groups.length === 0) return;
+        const freed: Uuid[] = [];
+        doc.history.transact("Ungroup Objects", () => {
+          for (const gid of groups) {
+            const g = doc.scene.mustGet(gid);
+            const parent = g.parent;
+            // children land at the group's own sibling slot, keeping tree order
+            let index = doc.scene.childrenOf(parent).indexOf(gid);
+            const groupT = g.transform;
+            for (const cid of [...doc.scene.childrenOf(gid)]) {
+              // bake the group's transform into the child so its WORLD placement
+              // survives the reparent (reparenting alone keeps local transforms)
+              const t = composeTransforms(groupT, doc.scene.mustGet(cid).transform);
+              doc.history.run(new SetTransformCommand(cid, t));
+              doc.history.run(new ReparentNodeCommand(cid, parent, index++));
+              freed.push(cid);
+            }
+            doc.history.run(new RemoveNodeCommand(gid));
+          }
+        });
+        doc.selection.selectObjects(freed);
       },
     },
     {

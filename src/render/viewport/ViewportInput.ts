@@ -1,5 +1,6 @@
 import { Raycaster, Vector3 } from "three";
 import type { Uuid } from "@/types/core";
+import type { GizmoMode } from "@/render/gizmo/TransformGizmo";
 import { selectAll } from "@/geometry/selection/selectAll";
 import type { SnapHit } from "@/render/picking/snapPoint";
 import { componentClick } from "./componentClick";
@@ -13,6 +14,14 @@ import { snapPivot, snapScreen } from "./inputSnap";
 import type { ViewportSystem } from "./ViewportSystem";
 
 type NavMode = "orbit" | "pan" | "dolly" | null;
+
+/** Bare-key gizmo modes (C4D-flavored): E move, R rotate, T scale, V multi. */
+const GIZMO_MODE_KEYS: Record<string, GizmoMode | undefined> = {
+  e: "translate",
+  r: "rotate",
+  t: "scale",
+  v: "all",
+};
 
 /**
  * All pointer/wheel/key input for a ViewportSystem: C4D navigation
@@ -448,6 +457,16 @@ export class ViewportInput {
     if (e.key.toLowerCase() === "a" && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey) {
       if (!this.pointerInside || this.isBusy() || this.typingTarget(e)) return;
       selectAll(vs.doc);
+      vs.invalidate();
+      e.preventDefault();
+      return;
+    }
+    // Gizmo modes (bare key, pointer over the viewport): E move-only,
+    // R rotate-only, T scale-only, V back to the full multi gizmo
+    const gizmoMode = GIZMO_MODE_KEYS[e.key.toLowerCase()];
+    if (gizmoMode && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey) {
+      if (!this.pointerInside || this.isBusy() || this.typingTarget(e)) return;
+      vs.gizmo.setMode(gizmoMode);
       vs.invalidate();
       e.preventDefault();
       return;
