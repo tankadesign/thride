@@ -67,10 +67,14 @@ function applyShadowSettings(light: Light, data: LightDataDTO): void {
   // So no dispose/realloc dance is needed (and that dance is what produced the
   // "Destroyed texture used in a submit" warning).
   light.shadow.mapSize.set(px, px);
-  light.shadow.bias = -0.00005;
-  light.shadow.normalBias = 0.03;
   light.shadow.radius = Math.max(0, data.shadowBlur ?? 4);
   const size = Math.max(1, data.shadowSize ?? (light instanceof DirectionalLight ? 20 : 60));
+  // World-space footprint of ONE shadow-map texel on a mid-frustum receiver.
+  // The acne bias must scale with it: a fixed normalBias tuned for the default
+  // cone/resolution collapses once the texel outgrows it (wide spot angle —
+  // fov is 2·angle, so tan explodes past ~1 rad — or a low-res map), painting
+  // the texel grid onto every surface as terraced bands / "voxel" crosshatch.
+  let texel: number;
   if (light instanceof DirectionalLight) {
     const c = light.shadow.camera as OrthographicCamera;
     c.left = -size;
@@ -80,12 +84,22 @@ function applyShadowSettings(light: Light, data: LightDataDTO): void {
     c.near = 0.5;
     c.far = Math.max(size * 4, 80);
     c.updateProjectionMatrix();
+    texel = (2 * size) / px;
   } else {
     const c = light.shadow.camera as PerspectiveCamera;
     c.near = 0.5;
     c.far = size;
     c.updateProjectionMatrix();
+    // spot: the shadow camera's half-fov IS the cone angle (clamped short of
+    // π/2, where tan → ∞ and no single map can help); point: six 90° faces.
+    const halfFov = light instanceof SpotLight ? Math.min(light.angle, 1.35) : Math.PI / 4;
+    texel = (2 * Math.tan(halfFov) * (size / 2)) / px;
   }
+  light.shadow.bias = -0.00005;
+  // ~1.5 texels of offset along the normal clears the acne. Floor at the old
+  // hand-tuned 0.03 so every currently-clean case renders exactly as before;
+  // cap so an extreme cone can't push shadows visibly off their contact points.
+  light.shadow.normalBias = Math.min(Math.max(0.03, 1.5 * texel), 0.5);
 }
 
 /**

@@ -5,6 +5,7 @@ import {
   Axis3DIcon,
   BulbIcon,
   Cancel01Icon,
+  CenterFocusIcon,
   ChartSplineIcon,
   CircleIcon,
   Cone01Icon,
@@ -13,10 +14,11 @@ import {
   Cylinder01Icon,
   Delete02Icon,
   DiamondIcon,
-  EyeIcon,
   EyeClosedIcon,
+  EyeIcon,
   Folder01Icon,
   GitMergeIcon,
+  GridTableIcon,
   HexagonIcon,
   Idea01Icon,
   LayerMask01Icon,
@@ -33,7 +35,6 @@ import {
   PillIcon,
   PipelineIcon,
   PlusSignSquareIcon,
-  PolygonIcon,
   PyramidIcon,
   RecordIcon,
   Search01Icon,
@@ -43,15 +44,14 @@ import {
   SpiralsIcon,
   SplinePointerIcon,
   SpotlightIcon,
-  StarIcon,
   SquareArrowShrink01Icon,
   SquareArrowUp01Icon,
+  StarIcon,
   SunCloud02Icon,
   SunsetIcon,
   TorusIcon,
   TriangleIcon,
   Video02Icon,
-  CenterFocusIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon, type HugeiconsIconProps } from "@hugeicons/react";
 import { useAtomValue } from "jotai";
@@ -97,7 +97,7 @@ export const IconGroup = makeIcon(Folder01Icon);
 export const IconIcosphere = makeIcon(PentagonIcon);
 export const IconLight = makeIcon(Idea01Icon);
 /** Generic editable (non-parametric) mesh — vs the {@link IconCube} primitive. */
-export const IconMesh = makeIcon(PolygonIcon);
+export const IconMesh = makeIcon(GridTableIcon);
 export const IconNull = makeIcon(Axis3DIcon);
 export const IconPlane = makeIcon(DiamondIcon);
 export const IconPyramid = makeIcon(PyramidIcon);
