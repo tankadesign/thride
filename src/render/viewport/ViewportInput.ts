@@ -189,13 +189,24 @@ export class ViewportInput {
         vs.invalidate();
         return;
       }
-      vs.setRayFromEvent(e, pane);
+      const rig = vs.setRayFromEvent(e, pane);
       // primitive adjustment handles take priority over the gizmo
       if (vs.handles.pointerDown(vs.raycaster, vs.activeObject())) {
         vs.invalidate();
         return;
       }
       if (vs.gizmo.pointerDown(vs.raycaster)) {
+        vs.invalidate();
+        return;
+      }
+      // move-only mode in a 2D pane: a drag ANYWHERE slides the selection in
+      // the pane's plane (handles and gizmo picks above keep precedence)
+      if (
+        !rig.isPerspective &&
+        vs.gizmo.currentMode === "translate" &&
+        vs.doc.selection.editMode === "object" &&
+        vs.gizmo.beginViewDrag(vs.raycaster)
+      ) {
         vs.invalidate();
         return;
       }

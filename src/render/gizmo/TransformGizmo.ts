@@ -53,15 +53,22 @@ const PICK_MIN_RADIUS = 0.06;
 /** Raycastable but never rendered (material-invisible keeps raycasting intact). */
 const PICKER_MAT = new MeshBasicMaterial({ visible: false, depthTest: false, depthWrite: false });
 
-type HandleKind = "translate" | "rotate" | "scale" | "translate-view" | "translate-plane";
+type HandleKind =
+  | "translate"
+  | "rotate"
+  | "scale"
+  | "translate-view"
+  | "translate-plane"
+  | "scale-plane"
+  | "rotate-free";
 type Axis = 0 | 1 | 2;
 
 /** Which handle kinds each gizmo mode shows (V=all, E=move, R=rotate, T=scale). */
 export type GizmoMode = "all" | "translate" | "rotate" | "scale";
 const MODE_KINDS: Record<Exclude<GizmoMode, "all">, ReadonlySet<HandleKind>> = {
   translate: new Set(["translate", "translate-view", "translate-plane"]),
-  rotate: new Set(["rotate"]),
-  scale: new Set(["scale"]),
+  rotate: new Set(["rotate", "rotate-free"]),
+  scale: new Set(["scale", "scale-plane"]),
 };
 
 interface Handle {
@@ -75,16 +82,22 @@ interface Handle {
  * edge-on rotation rings project onto the move axes and would otherwise
  * steal their clicks; scale cubes and move arrows (both outside the rings)
  * and the near-center plane quads must win so translate/scale stay usable
- * head-on. Ties at equal priority fall back to nearest-first (raycaster
- * hit order).
+ * head-on. rotate-free (the fill of the rotate sphere) sits BELOW the rings
+ * so touching a ring always wins over the trackball. Ties at equal priority
+ * fall back to nearest-first (raycaster hit order).
  */
 const HANDLE_PRIORITY: Record<HandleKind, number> = {
   scale: 3,
+  "scale-plane": 3,
   translate: 2,
   "translate-view": 2,
   "translate-plane": 2,
   rotate: 1,
+  "rotate-free": 0,
 };
+
+/** Rotate-ring radius in gizmo units — the whole radial layout keys off it. */
+const RING_R = 1.0;
 
 // X/Y/Z axis colors from the viewport theme (error/success/info).
 const AXIS_COLORS = [viewportTheme.gizmo.x, viewportTheme.gizmo.y, viewportTheme.gizmo.z] as const;
@@ -101,6 +114,8 @@ interface DragState {
   plane: Plane;
   startPoint: Vector3;
   startAngle: number;
+  /** Gizmo world radius at drag start — trackball drag-to-angle scale. */
+  freeRadius: number;
   /** Set in component edit modes: the drag drives vertices, not transforms. */
   component?: ComponentDrag;
 }
@@ -143,13 +158,20 @@ export class TransformGizmo {
     this.group.traverse((o) => {
       const handle = (o as Mesh).userData.handle as Handle | undefined;
       // top-level handle meshes only — pickers are children and follow along
-      if (handle && o.parent === this.group) o.visible = this.kindEnabled(handle.kind);
+      if (handle && o.parent === this.group) o.visible = this.handleShown(o as Mesh);
     });
   }
 
-  /** three's raycaster ignores visibility, so mode filtering gates picks too. */
-  private kindEnabled(kind: HandleKind): boolean {
-    return this.mode === "all" || MODE_KINDS[this.mode].has(kind);
+  /**
+   * Mode gate for one handle mesh: its kind must belong to the mode, and
+   * single-mode extras (scale shafts/quads, the trackball fill) only exist in
+   * their own mode — the multi gizmo already fills those spots.
+   */
+  private handleShown(mesh: Mesh): boolean {
+    const handle = mesh.userData.handle as Handle;
+    const only = mesh.userData.onlyMode as GizmoMode | undefined;
+    if (only) return this.mode === only;
+    return this.mode === "all" || MODE_KINDS[this.mode].has(handle.kind);
   }
 
   /** Reposition/orient on the active selection; hide when nothing is selected. */
@@ -202,7 +224,11 @@ export class TransformGizmo {
     for (const h of hits) {
       const obj = h.object as Mesh;
       const handle = obj.userData.handle as Handle | undefined;
-      if (!handle || !this.kindEnabled(handle.kind)) continue;
+      if (!handle) continue;
+      // three's raycaster ignores .visible — enforce the mode gate here via
+      // the visual mesh's visibility (pickers are children of the visual)
+      const visual = (obj.userData.visual as Mesh | undefined) ?? obj;
+      if (!visual.visible) continue;
       const priority = HANDLE_PRIORITY[handle.kind];
       if (priority > bestPriority) {
         best = obj;
@@ -217,8 +243,20 @@ export class TransformGizmo {
     if (!this.group.visible) return false;
     const hitObj = this.pickHandle(raycaster.intersectObject(this.group, true));
     if (!hitObj) return false;
-    const handle = hitObj.userData.handle as Handle;
+    return this.startDrag(hitObj.userData.handle as Handle, raycaster);
+  }
 
+  /**
+   * Start a view-plane move WITHOUT a handle hit — move-only mode in a 2D
+   * viewport lets a drag anywhere slide the selection in the pane's plane
+   * (the caller has already given handles/gizmo picks their precedence).
+   */
+  beginViewDrag(raycaster: Raycaster): boolean {
+    if (!this.group.visible) return false;
+    return this.startDrag({ kind: "translate-view", axis: 0 }, raycaster);
+  }
+
+  private startDrag(handle: Handle, raycaster: Raycaster): boolean {
     const mode = this.doc.selection.editMode;
     const componentMode = mode === "point" || mode === "edge" || mode === "polygon";
     const ids = componentMode ? [] : [...this.doc.selection.objectIds];
@@ -231,10 +269,15 @@ export class TransformGizmo {
     const viewDir = raycaster.ray.direction.clone();
 
     let plane: Plane;
-    if (handle.kind === "rotate" || handle.kind === "translate-plane") {
-      // plane translate slides IN the plane whose normal is the handle's axis
+    if (
+      handle.kind === "rotate" ||
+      handle.kind === "translate-plane" ||
+      handle.kind === "scale-plane"
+    ) {
+      // plane translate/scale works IN the plane whose normal is the handle's axis
       plane = new Plane().setFromNormalAndCoplanarPoint(axisWorld, pivot);
-    } else if (handle.kind === "translate-view") {
+    } else if (handle.kind === "translate-view" || handle.kind === "rotate-free") {
+      // view plane through the pivot: free move / C4D trackball rotate
       plane = new Plane().setFromNormalAndCoplanarPoint(viewDir.clone().negate(), pivot);
     } else {
       // plane containing the axis, facing the camera as much as possible
@@ -269,6 +312,7 @@ export class TransformGizmo {
       plane,
       startPoint,
       startAngle,
+      freeRadius: Math.max(1e-6, this.group.scale.x * RING_R),
       component,
     };
     return true;
@@ -321,15 +365,27 @@ export class TransformGizmo {
         t.position[2] = t0.position[2] + delta.z;
         updates.set(id, t);
       }
-    } else if (d.handle.kind === "rotate") {
-      let angle =
-        this.angleOnPlane(point.clone().sub(d.pivot), d.handle.axis, d.basis) - d.startAngle;
+    } else if (d.handle.kind === "rotate" || d.handle.kind === "rotate-free") {
+      let axis = d.axisWorld;
+      let angle: number;
+      if (d.handle.kind === "rotate-free") {
+        // C4D trackball: drag in the view plane spins about the in-plane axis
+        // PERPENDICULAR to the drag (normal × delta) — the grabbed point
+        // follows the cursor. One ring-radius of drag = 1 radian.
+        const delta = point.clone().sub(d.startPoint);
+        if (delta.lengthSq() < 1e-12) return;
+        axis = new Vector3().crossVectors(d.plane.normal, delta).normalize();
+        angle = delta.length() / d.freeRadius;
+      } else {
+        angle =
+          this.angleOnPlane(point.clone().sub(d.pivot), d.handle.axis, d.basis) - d.startAngle;
+      }
       if (mods.snap) angle = snapTo(angle, ROTATE_SNAP);
       if (d.component) {
-        d.component.applyRotate(d.axisWorld, angle, d.pivot);
+        d.component.applyRotate(axis, angle, d.pivot);
         return;
       }
-      const dq = new Quaternion().setFromAxisAngle(d.axisWorld, angle);
+      const dq = new Quaternion().setFromAxisAngle(axis, angle);
       for (const [id, t0] of d.begin) {
         const t = structuredClone(t0);
         const q0 = new Quaternion().setFromEuler(
@@ -337,6 +393,30 @@ export class TransformGizmo {
         );
         const e = new Euler().setFromQuaternion(dq.clone().multiply(q0), "XYZ");
         t.rotation = [e.x, e.y, e.z];
+        updates.set(id, t);
+      }
+    } else if (d.handle.kind === "scale-plane") {
+      // two-axis scale: ratio of pivot distances within the plane, applied to
+      // both in-plane axes (Shift still = uniform on all three)
+      const r0 = d.startPoint.clone().sub(d.pivot).length();
+      const r1 = point.clone().sub(d.pivot).length();
+      let ratio = r0 > 1e-6 ? r1 / r0 : 1;
+      if (mods.snap) ratio = Math.max(SCALE_SNAP, snapTo(ratio, SCALE_SNAP));
+      if (d.component) {
+        // component drags have no per-axis-pair path — uniform reads best
+        d.component.applyScale(d.basis, d.handle.axis, ratio, true, d.pivot);
+        return;
+      }
+      const u = ((d.handle.axis + 1) % 3) as Axis;
+      const v = ((d.handle.axis + 2) % 3) as Axis;
+      for (const [id, t0] of d.begin) {
+        const t = structuredClone(t0);
+        if (mods.uniformScale) {
+          t.scale = [t0.scale[0] * ratio, t0.scale[1] * ratio, t0.scale[2] * ratio];
+        } else {
+          t.scale[u] = t0.scale[u]! * ratio;
+          t.scale[v] = t0.scale[v]! * ratio;
+        }
         updates.set(id, t);
       }
     } else {
@@ -423,7 +503,6 @@ export class TransformGizmo {
     // crowded selection. See HANDLE_PRIORITY for the matching hit precedence.
     const PLANE_OFF = 0.35; // plane-quad center, along both in-plane axes
     const PLANE_SIZE = 0.22;
-    const RING_R = 1.0;
     const SCALE_R = 1.18; // just outside the ring
     const SHAFT_LEN = 1.36; // spans ~0.16 → 1.52, threading the scale cube
     const SHAFT_MID = 0.84;
@@ -467,6 +546,19 @@ export class TransformGizmo {
       );
       cube.position.copy(dir).multiplyScalar(SCALE_R);
 
+      // scale-only mode extras: the multi gizmo's translate shafts/quads fill
+      // these spots, so the scale-mode gizmo brings its own — axis lines out
+      // to the cubes, and near-center quads scaling both in-plane axes.
+      const scaleShaft = this.handleMesh(
+        new CylinderGeometry(0.012, 0.012, SCALE_R, 6),
+        color,
+        { kind: "scale", axis },
+        new CylinderGeometry(PICK_MIN_RADIUS, PICK_MIN_RADIUS, SCALE_R, 6),
+        { onlyMode: "scale" },
+      );
+      scaleShaft.position.copy(dir).multiplyScalar(SCALE_R / 2);
+      scaleShaft.quaternion.copy(quat);
+
       // two-axis plane handle: a quad in the plane NORMAL to this axis, offset
       // along both in-plane axes (Blender-style). Edge-on quads (2D ortho
       // views) degenerate to hairlines and give way to the facing one, which
@@ -474,16 +566,28 @@ export class TransformGizmo {
       // so it reads as a surface from either side.
       const u = AXIS_VECS[((axis + 1) % 3) as Axis];
       const v = AXIS_VECS[((axis + 2) % 3) as Axis];
-      const quad = this.handleMesh(
-        new PlaneGeometry(PLANE_SIZE, PLANE_SIZE),
-        color,
-        { kind: "translate-plane", axis },
-        new BoxGeometry(PLANE_SIZE * 1.6, PLANE_SIZE * 1.6, 0.04),
-        { opacity: 0.4, doubleSide: true },
-      );
-      quad.quaternion.setFromUnitVectors(new Vector3(0, 0, 1), dir);
-      quad.position.addScaledVector(u, PLANE_OFF).addScaledVector(v, PLANE_OFF);
+      const planeQuad = (kind: "translate-plane" | "scale-plane", onlyMode?: GizmoMode) => {
+        const quad = this.handleMesh(
+          new PlaneGeometry(PLANE_SIZE, PLANE_SIZE),
+          color,
+          { kind, axis },
+          new BoxGeometry(PLANE_SIZE * 1.6, PLANE_SIZE * 1.6, 0.04),
+          { opacity: 0.4, doubleSide: true, onlyMode },
+        );
+        quad.quaternion.setFromUnitVectors(new Vector3(0, 0, 1), dir);
+        quad.position.addScaledVector(u, PLANE_OFF).addScaledVector(v, PLANE_OFF);
+      };
+      planeQuad("translate-plane");
+      planeQuad("scale-plane", "scale"); // same spot — only one mode shows each
     }
+    // C4D free-rotate: the fill of the rotate sphere (rotate-only mode).
+    // Never rendered (picker material) — clicking inside the rings without
+    // touching one starts a trackball drag; rings out-prioritize it.
+    const trackball = new Mesh(new SphereGeometry(RING_R * 0.95, 16, 12), PICKER_MAT);
+    trackball.userData.handle = { kind: "rotate-free", axis: 0 } satisfies Handle;
+    trackball.userData.onlyMode = "rotate" satisfies GizmoMode;
+    trackball.visible = false; // mode is "all" at build
+    this.group.add(trackball);
     const center = this.handleMesh(
       new SphereGeometry(0.07, 16, 12),
       viewportTheme.gizmo.center,
@@ -503,7 +607,7 @@ export class TransformGizmo {
     color: Color,
     handle: Handle,
     pickerGeometry: BufferGeometry,
-    opts: { opacity?: number; doubleSide?: boolean } = {},
+    opts: { opacity?: number; doubleSide?: boolean; onlyMode?: GizmoMode } = {},
   ): Mesh {
     const opacity = opts.opacity ?? BASE_OPACITY;
     const mat = new MeshBasicMaterial({
@@ -519,6 +623,8 @@ export class TransformGizmo {
     mesh.userData.handle = handle;
     mesh.userData.baseColor = color.clone();
     mesh.userData.baseOpacity = opacity;
+    if (opts.onlyMode) mesh.userData.onlyMode = opts.onlyMode;
+    mesh.visible = this.handleShown(mesh);
     mesh.renderOrder = 1000;
 
     const picker = new Mesh(pickerGeometry, PICKER_MAT);
@@ -534,5 +640,5 @@ export class TransformGizmo {
 const BASE_OPACITY = 0.82;
 
 function labelFor(kind: HandleKind): string {
-  return kind === "rotate" ? "Rotate" : kind === "scale" ? "Scale" : "Move";
+  return kind.startsWith("rotate") ? "Rotate" : kind.startsWith("scale") ? "Scale" : "Move";
 }

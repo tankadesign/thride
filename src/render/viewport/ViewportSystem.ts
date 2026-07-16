@@ -417,6 +417,18 @@ export class ViewportSystem {
     const ndc = new Vector2(((x - p.x) / p.w) * 2 - 1, -(((y - p.y) / p.h) * 2 - 1));
     const rig = this.rigFor(pane);
     this.raycaster.setFromCamera(ndc, rig.camera);
+    // 4-up: the render loop re-fits the gizmo/handles PER PANE, so after a
+    // frame they hold the LAST pane's screen-constant scale — picking in any
+    // other pane (the perspective one, typically) then misses what that pane
+    // actually displays. Re-fit them to THIS pane's camera before the ray is
+    // used. Skip mid-drag: drags work off state captured at pointer-down, and
+    // the render loop keeps visuals in sync.
+    if (!this.gizmo.isDragging && !this.handles.isDragging) {
+      if (!this.modalTool && !this.bevelTool.isActive) {
+        this.gizmo.update(rig.camera, this.activeObject(), this.editor.gizmoSpace);
+      }
+      this.handles.update(rig.camera, this.activeObject());
+    }
     return rig;
   }
 
