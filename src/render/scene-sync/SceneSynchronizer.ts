@@ -69,6 +69,15 @@ const WIRE_EDGE_MAT = new LineBasicMaterial({
   depthTest: false,
 });
 
+/**
+ * Sorted attribute names of a geometry — the material-pipeline-relevant part of
+ * its layout. Changes here (notably `uv` appearing) mean a node material must
+ * recompile; a positions-only edit leaves this identical (see syncGeometry).
+ */
+function attrSignature(geometry: { attributes?: Record<string, unknown> } | undefined): string {
+  return geometry?.attributes ? Object.keys(geometry.attributes).sort().join(",") : "";
+}
+
 /** Re-apply theme colors to the shared mesh materials (see viewportTheme). */
 export function applyMeshMaterialsTheme(): void {
   BASE_MAT.color.copy(viewportTheme.polygonColor);
@@ -540,9 +549,30 @@ export class SceneSynchronizer {
     // there would leave picking stuck on the old shape.
     if (preview && !keyChanged) entry.bvhStale = true;
     else this.rebuildBvh(entry);
+    const prevAttrs = attrSignature(obj.geometry);
     obj.geometry = rm.geometry;
+    // A generator's geometry arrives ASYNC (a boolean's Manifold worker; a
+    // rebuild on a structural change), so its mesh can be EMPTY when the
+    // material's WebGPU pipeline first compiles. A material that samples an
+    // attribute the empty geometry lacked — `uv` (image maps, UV-projected
+    // noise) most often — then binds a stale pipeline and silently fails to
+    // draw once the real geometry swaps in. Recompiling the material against
+    // the new attribute layout fixes it (this is why re-assigning a material
+    // "un-hides" the mesh). Gate on the attribute SET changing so param scrubs
+    // (same attributes, new positions) never thrash the pipeline.
+    if (prevAttrs !== attrSignature(rm.geometry)) this.refreshMeshMaterial(obj);
     this.selectionOutline.updateGeometry(id, rm.geometry);
     this.rebuildEdgeWire(id, source.mesh);
+  }
+
+  /** Force the mesh's node material(s) to recompile against current geometry. */
+  private refreshMeshMaterial(obj: Mesh): void {
+    const mat = obj.material;
+    for (const m of Array.isArray(mat) ? mat : [mat]) {
+      // only node materials carry the attribute-dependent pipeline; skip the
+      // shared flat/wireframe overrides (recompiling those is pointless churn)
+      if (m && (m as { isNodeMaterial?: boolean }).isNodeMaterial) m.needsUpdate = true;
+    }
   }
 
   /** Drop a node's render geometry (generator input removed → renders empty). */
