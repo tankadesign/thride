@@ -101,17 +101,22 @@ export function Shell({ doc }: { doc: Document }) {
     setRegistry(registry);
   }, [registry]);
 
-  // global shortcuts (skip while typing)
+  // global shortcuts (skip while typing — but only for BARE keys: modifier
+  // combos like ⌘Z/⇧⌘Z must keep working from a focused field, except the
+  // native text-editing ops ⌘A/C/V/X, which stay the input's own)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement;
-      if (
+      const typing =
         t.tagName === "INPUT" ||
         t.tagName === "TEXTAREA" ||
         t.tagName === "SELECT" ||
-        t.isContentEditable
-      ) {
-        return;
+        t.isContentEditable;
+      if (typing) {
+        const mod = e.metaKey || e.ctrlKey;
+        const nativeTextOp =
+          mod && !e.shiftKey && !e.altKey && ["a", "c", "v", "x"].includes(e.key.toLowerCase());
+        if (!mod || nativeTextOp) return;
       }
       if (palette.open) return;
       registry.handleKey(e);

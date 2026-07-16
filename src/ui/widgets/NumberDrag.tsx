@@ -41,13 +41,36 @@ export function NumberDrag({
   // React batch, where each keydown would otherwise read the same stale `text`
   // closure and the run would only ever advance a single step.
   const arrowRun = useRef<number | null>(null);
+  // last value THIS field sent, so an incoming `value` change can be told apart
+  // from our own echo (see the refresh effect below)
+  const lastSent = useRef<number | null>(null);
 
   const clamp = (v: number) => {
     const c = Math.min(max ?? Infinity, Math.max(min ?? -Infinity, v));
     return integer ? Math.round(c) : c;
   };
+  const send = (v: number, committed: boolean) => {
+    lastSent.current = v;
+    onChange(v, committed);
+  };
   const shown = editing ? text : format(value, integer ? 0 : precision);
   const fmt = () => format(value, integer ? 0 : precision);
+
+  // The value changed under an open type-edit and it wasn't our own echo —
+  // undo/redo landing while the field is focused (⌘Z passes through, see
+  // onKeyDown). Refresh the shown text, else blur would commit the stale
+  // pre-undo number right back. Epsilon: unit-converting parents (deg↔rad)
+  // may echo our sends back with float round-trip error.
+  useEffect(() => {
+    if (!editing) return;
+    const sent = lastSent.current;
+    if (sent !== null && Math.abs(value - sent) <= Math.max(1e-9, Math.abs(value) * 1e-9)) return;
+    // rebaseline: an undo followed by a redo BACK to the last-sent number must
+    // read as external too, not as this field's own echo
+    lastSent.current = value;
+    arrowRun.current = null;
+    setText(format(value, integer ? 0 : precision));
+  }, [value, editing, integer, precision]);
 
   /** Enter type-mode seeded with the current value (from a click OR keyboard focus). */
   const beginEdit = () => {
@@ -76,7 +99,7 @@ export function NumberDrag({
     if (Math.abs(dx) > 2) drag.current.moved = true;
     if (drag.current.moved) {
       const scale = e.shiftKey ? 0.1 : e.altKey ? 10 : 1;
-      onChange(clamp(drag.current.startValue + dx * step * scale), false);
+      send(clamp(drag.current.startValue + dx * step * scale), false);
     }
   };
   const onPointerUp = () => {
@@ -87,7 +110,7 @@ export function NumberDrag({
     setTimeout(() => {
       pointerFocus.current = false;
     }, 0);
-    if (wasDrag) onChange(clamp(value), true);
+    if (wasDrag) send(clamp(value), true);
     else beginEdit();
   };
 
@@ -96,7 +119,7 @@ export function NumberDrag({
     const parsed = Number.parseFloat(text.replace(",", "."));
     if (Number.isNaN(parsed)) return null;
     const c = clamp(parsed);
-    onChange(c, true);
+    send(c, true);
     return c;
   };
 
@@ -147,14 +170,18 @@ export function NumberDrag({
             const c = clamp(start + dir * step * scale);
             arrowRun.current = c;
             setText(format(c, integer ? 0 : precision));
-            onChange(c, false);
+            send(c, false);
           }
-          e.stopPropagation();
+          // modifier combos we didn't handle (⌘Z undo, ⇧⌘Z redo, …) must reach
+          // the Shell's global shortcut handler — swallow only bare typing keys
+          // and our own arrow steps (whose ⌘/⇧ are step-size modifiers).
+          const arrow = e.key === "ArrowUp" || e.key === "ArrowDown";
+          if (arrow || !(e.metaKey || e.ctrlKey)) e.stopPropagation();
         }}
         onKeyUp={(e) => {
           if (!editing || (e.key !== "ArrowUp" && e.key !== "ArrowDown")) return;
           if (arrowRun.current !== null) {
-            onChange(clamp(arrowRun.current), true);
+            send(clamp(arrowRun.current), true);
             arrowRun.current = null;
           }
           e.stopPropagation();
