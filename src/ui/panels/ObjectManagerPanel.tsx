@@ -26,6 +26,7 @@ import {
   IconGenerator,
   IconHemisphereLight,
   IconLight,
+  IconMesh,
   IconNull,
   IconPointLight,
   IconSpline,
@@ -35,6 +36,9 @@ import {
 
 const ROW_H = 24;
 const INDENT = 14;
+
+/** Generic editable (non-parametric) mesh — any node carrying a baked kernel mesh. */
+const MESH_ICON = <IconMesh size={14} className="opacity-60" />;
 
 const KIND_ICON: Record<string, React.ReactNode> = {
   null: <IconNull size={14} className="opacity-60" />,
@@ -76,6 +80,11 @@ function nodeIcon(node: SceneNode): React.ReactNode {
     const type = (node.data?.light as LightDataDTO | undefined)?.type;
     return (type && LIGHT_KIND_ICON[type]) ?? KIND_ICON.light;
   }
+  // A baked kernel mesh (Convert to Mesh) carries `data.mesh` — a static,
+  // non-parametric mesh. This includes a make-editable GENERATOR, whose node
+  // keeps kind "generator" but drops `data.generator`, so it would otherwise
+  // fall through to the generic generator gear. Show the mesh glyph instead.
+  if (node.data?.mesh !== undefined) return MESH_ICON;
   if (node.kind === "generator") {
     const type = (node.data?.generator as { type?: string } | undefined)?.type;
     return (type && GENERATOR_KIND_ICON[type]) ?? KIND_ICON.generator;

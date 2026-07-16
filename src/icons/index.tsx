@@ -33,6 +33,7 @@ import {
   PillIcon,
   PipelineIcon,
   PlusSignSquareIcon,
+  PolygonIcon,
   PyramidIcon,
   RecordIcon,
   Search01Icon,
@@ -95,6 +96,8 @@ export const IconGenerator = makeIcon(Settings02Icon);
 export const IconGroup = makeIcon(Folder01Icon);
 export const IconIcosphere = makeIcon(PentagonIcon);
 export const IconLight = makeIcon(Idea01Icon);
+/** Generic editable (non-parametric) mesh — vs the {@link IconCube} primitive. */
+export const IconMesh = makeIcon(PolygonIcon);
 export const IconNull = makeIcon(Axis3DIcon);
 export const IconPlane = makeIcon(DiamondIcon);
 export const IconPyramid = makeIcon(PyramidIcon);
