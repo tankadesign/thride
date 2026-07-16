@@ -14,11 +14,13 @@ import { openContextMenu } from "@/ui/hooks/editor/shell";
 import {
   IconAmbientLight,
   IconAreaLight,
+  IconBoolean,
   IconCamera,
   IconCollapse,
   IconCube,
   IconDirectionalLight,
   IconExpand,
+  IconExtrude,
   IconEye,
   IconEyeOff,
   IconGenerator,
@@ -28,6 +30,7 @@ import {
   IconPointLight,
   IconSpline,
   IconSpotlight,
+  IconSweep,
 } from "@/icons";
 
 const ROW_H = 24;
@@ -52,19 +55,30 @@ const LIGHT_KIND_ICON: Record<LightType, React.ReactNode> = {
   area: <IconAreaLight size={14} className="opacity-60" />,
 };
 
+/** Per-generator-type tree glyphs, matching the Create menu (not the gear). */
+const GENERATOR_KIND_ICON: Record<string, React.ReactNode> = {
+  splineExtrude: <IconExtrude size={14} className="opacity-60" />,
+  sweep: <IconSweep size={14} className="opacity-60" />,
+  boolean: <IconBoolean size={14} className="opacity-60" />,
+};
+
 /**
- * Tree glyph for a node. Lights resolve to their TYPE — a scene of six lights
- * all showing the same bulb is unreadable. Falls back to the generic bulb if
- * the payload is missing or its type is unrecognized.
+ * Tree glyph for a node. Lights and generators resolve to their TYPE so the
+ * tree matches the Create menu and a mixed scene is readable — a column of
+ * identical bulbs or gears is not. Falls back to the generic kind icon when the
+ * payload is missing or the type unrecognized.
  *
- * The payload lives at `data.light` (see LightDataDTO), NOT `data.type` — the
- * wrong path here fails silently as "every light is a bulb", exactly the state
- * this replaces.
+ * Payloads live at `data.light` / `data.generator` (NOT `data.type`); the wrong
+ * path fails silently as "every one looks the same", the state this replaces.
  */
 function nodeIcon(node: SceneNode): React.ReactNode {
   if (node.kind === "light") {
     const type = (node.data?.light as LightDataDTO | undefined)?.type;
     return (type && LIGHT_KIND_ICON[type]) ?? KIND_ICON.light;
+  }
+  if (node.kind === "generator") {
+    const type = (node.data?.generator as { type?: string } | undefined)?.type;
+    return (type && GENERATOR_KIND_ICON[type]) ?? KIND_ICON.generator;
   }
   return KIND_ICON[node.kind] ?? null;
 }

@@ -77,7 +77,7 @@ export function ProjectTabs() {
       </div>
       <button
         type="button"
-        className="btn btn-ghost btn-xs btn-square flex-none"
+        className="btn btn-ghost btn-sm btn-square flex-none text-lg leading-none"
         onClick={() => void createProject()}
         title="New project"
       >

@@ -209,12 +209,12 @@ export function MapSlot({
       <div className="flex gap-1">
         <button
           type="button"
-          className="btn btn-xs flex-1"
+          className="btn btn-outline btn-xs flex-1"
           onClick={() => inputRef.current?.click()}
         >
           Image
         </button>
-        <button type="button" className="btn btn-xs flex-1" onClick={addNoise}>
+        <button type="button" className="btn btn-outline btn-xs flex-1" onClick={addNoise}>
           Noise
         </button>
         {filePicker}

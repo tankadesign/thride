@@ -45,14 +45,29 @@ body,
   --dv-separator-border: var(--color-base-300);
   --dv-paneview-header-border-color: var(--color-base-300);
   --dv-group-view-background-color: var(--color-base-100);
-  --dv-tabs-and-actions-container-height: 28px;
-  --dv-tabs-and-actions-container-font-size: 12px;
+  /* match the project-tab strip's compact density (~11.5px / 26px) */
+  --dv-tabs-and-actions-container-height: 26px;
+  --dv-tabs-and-actions-container-font-size: 11.5px;
   --dv-drag-over-background-color: color-mix(in oklab, var(--color-primary) 25%, transparent);
   --dv-drag-over-border-color: var(--color-primary);
   --dv-tabs-container-scrollbar-color: var(--color-base-content);
   --dv-icon-hover-background-color: color-mix(in oklab, var(--color-base-content) 15%, transparent);
   --dv-floating-box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
   --dv-active-sash-color: var(--color-primary);
+}
+
+/* dockview panel tabs: the container font-size var doesn't reach the tab
+   label (it inherits the 13px root), so pin it — and shrink the close glyph —
+   to match the project-tab strip's density. */
+.dockview-theme-thride .dv-default-tab-content {
+  font-size: 11.5px;
+}
+.dockview-theme-thride .dv-default-tab-action {
+  padding: 0 2px;
+}
+.dockview-theme-thride .dv-default-tab-action svg {
+  width: 10px;
+  height: 10px;
 }
 
 /* number scrub cursor for drag-to-change fields */

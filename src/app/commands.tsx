@@ -384,43 +384,25 @@ export function buildCommands(doc: Document, shell: ShellApi): AppCommand[] {
       },
     },
 
-    // ---- Create ----
+    // ---- Create ---- (grouped: Primitives ▸ / Splines ▸ / Generators ▸ /
+    // Lights ▸, then Camera + Null. Same-submenu commands must stay CONSECUTIVE
+    // — the MenuBar folds a run of them into one flyout.)
     ...PRIMITIVES.map(
       (type): AppCommand => ({
         id: `create.${type}`,
         title: primitiveLabels[type],
         menu: "Create",
+        submenu: "Primitives",
         icon: PRIMITIVE_ICONS[type],
         run: () => createPrimitive(type),
       }),
     ),
-    ...LIGHT_TYPES.map(
-      (type): AppCommand => ({
-        id: `create.light.${type}`,
-        title: LIGHT_LABELS[type],
-        menu: "Create",
-        submenu: "Lights",
-        icon: LIGHT_ICONS[type],
-        run: () => createLight(type),
-      }),
-    ),
-    {
-      id: "create.null",
-      title: "Null",
-      menu: "Create",
-      icon: <IconNull size={16} />,
-      sep: true,
-      run: () => {
-        const cmd = new CreateNodeCommand("null", uniqueSiblingName(doc, null, "Null"));
-        doc.history.run(cmd);
-        doc.selection.selectObjects([cmd.nodeId]);
-      },
-    },
     {
       // the Spline-style 3D pen: pick a work plane, then draw a bezier spline
       id: "spline.pen",
       title: "Pen (Spline)",
       menu: "Create",
+      submenu: "Splines",
       icon: <IconPen size={16} />,
       shortcut: "p",
       run: () => shell.getViewport()?.penTool.toggle(),
@@ -439,7 +421,7 @@ export function buildCommands(doc: Document, shell: ShellApi): AppCommand[] {
         id: `create.spline.${type}`,
         title: label,
         menu: "Create",
-        submenu: "Spline",
+        submenu: "Splines",
         icon,
         run: () => createSplinePrimitive(type, label),
       }),
@@ -449,6 +431,7 @@ export function buildCommands(doc: Document, shell: ShellApi): AppCommand[] {
       id: "create.splineExtrude",
       title: "Spline Extrude",
       menu: "Create",
+      submenu: "Generators",
       icon: <IconExtrude size={16} />,
       run: () => {
         const selectedSpline = doc.selection.objectIds.find(
@@ -475,6 +458,7 @@ export function buildCommands(doc: Document, shell: ShellApi): AppCommand[] {
       id: "create.sweep",
       title: "Sweep",
       menu: "Create",
+      submenu: "Generators",
       icon: <IconSweep size={16} />,
       run: () => {
         // selection order is profile-first, path-second (like C4D)
@@ -504,6 +488,7 @@ export function buildCommands(doc: Document, shell: ShellApi): AppCommand[] {
       id: "create.boolean",
       title: "Boolean",
       menu: "Create",
+      submenu: "Generators",
       icon: <IconBoolean size={16} />,
       run: () => {
         const kids = doc.selection.objectIds
@@ -528,13 +513,37 @@ export function buildCommands(doc: Document, shell: ShellApi): AppCommand[] {
         if (genId) doc.selection.selectObjects([genId]);
       },
     },
+    ...LIGHT_TYPES.map(
+      (type): AppCommand => ({
+        id: `create.light.${type}`,
+        title: LIGHT_LABELS[type],
+        menu: "Create",
+        submenu: "Lights",
+        icon: LIGHT_ICONS[type],
+        run: () => createLight(type),
+      }),
+    ),
     {
+      // scene objects (not generators): a separator sets them off from the
+      // geometry-producing groups above
       id: "create.camera",
       title: "Camera",
       menu: "Create",
       icon: <IconCamera size={16} />,
+      sep: true,
       run: () => {
         const cmd = new CreateNodeCommand("camera", uniqueSiblingName(doc, null, "Camera"));
+        doc.history.run(cmd);
+        doc.selection.selectObjects([cmd.nodeId]);
+      },
+    },
+    {
+      id: "create.null",
+      title: "Null",
+      menu: "Create",
+      icon: <IconNull size={16} />,
+      run: () => {
+        const cmd = new CreateNodeCommand("null", uniqueSiblingName(doc, null, "Null"));
         doc.history.run(cmd);
         doc.selection.selectObjects([cmd.nodeId]);
       },
