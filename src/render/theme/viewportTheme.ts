@@ -35,23 +35,35 @@ const semanticSpecs = {
   info: { cssVar: "--color-info", fallback: "#89e0eb" },
   error: { cssVar: "--color-error", fallback: "#febbbd" },
   baseContent: { cssVar: "--color-base-content", fallback: "#9fb9d0" },
+  base100: { cssVar: "--color-base-100", fallback: "#1a1a2a" },
+  base200: { cssVar: "--color-base-200", fallback: "#2a2a3a" },
+  base300: { cssVar: "--color-base-300", fallback: "#3a3a4a" },
+  neutral: { cssVar: "--color-neutral", fallback: "#414558" },
 } as const satisfies Record<string, SemanticSpec>;
+
+// Backing store: one Color instance per key, mutated in place by refresh so
+// references handed out through `viewportTheme` stay valid across theme edits.
+const semantic = Object.fromEntries(
+  (Object.keys(semanticSpecs) as SemanticKey[]).map((k) => [k, resolveSemantic(k)]),
+) as Record<SemanticKey, Color>;
 
 const customSpecs = {
   /** Viewport clear color for inactive panes. */
-  backgroundColor: new Color(0x101014),
+  backgroundColor: semantic.base300,
   /** Viewport clear color for the active pane (subtly lighter). */
-  activeBackgroundColor: new Color(0x12121a),
+  activeBackgroundColor: semantic.base100,
   /** Grid major (axis-crossing) lines. */
-  gridLineColor: new Color(0x333340),
+  gridLineColor: semantic.neutral,
   /** Grid minor (cell) lines. */
-  gridCellColor: new Color(0x22222a),
+  gridCellColor: semantic.base300,
   /** Shaded surface albedo (PBR + Flat). */
   polygonColor: new Color(0xb8b8c0),
   /** "Lines" overlay edges drawn over shaded surfaces. */
   lineColor: new Color(0x14151a),
   /** Wireframe-mode edges + component-mode wire overlay. */
-  wireframeColor: new Color(0x8a93a8),
+  wireframeColor: semantic.primary,
+  /** Wireframe-mode selected edges */
+  selectedWireframeColor: semantic.secondary,
   /** Component-mode vertex points. */
   pointColor: new Color(0xd8dce8),
   /** Gizmo view-plane center handle. */
@@ -86,12 +98,6 @@ function resolveSemantic(key: SemanticKey): Color {
   const spec = semanticSpecs[key];
   return themeColor(spec.cssVar, spec.fallback);
 }
-
-// Backing store: one Color instance per key, mutated in place by refresh so
-// references handed out through `viewportTheme` stay valid across theme edits.
-const semantic = Object.fromEntries(
-  (Object.keys(semanticSpecs) as SemanticKey[]).map((k) => [k, resolveSemantic(k)]),
-) as Record<SemanticKey, Color>;
 
 /** The single source of truth for viewport colors. */
 export const viewportTheme: ViewportTheme = {

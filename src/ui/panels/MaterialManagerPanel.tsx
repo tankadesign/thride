@@ -123,12 +123,12 @@ export function MaterialManagerPanel() {
   return (
     <div className="flex h-full flex-col bg-base-100 text-xs">
       <div className="flex items-center gap-1 border-b border-base-200 px-2 py-1.5">
-        <button type="button" className="btn btn-primary btn-xs" onClick={create}>
+        <button type="button" className="btn btn-outline btn-primary btn-xs" onClick={create}>
           New
         </button>
         <button
           type="button"
-          className="btn btn-ghost btn-xs"
+          className="btn btn-soft btn-xs"
           disabled={live.length === 0}
           onClick={removeSelected}
         >
@@ -139,7 +139,7 @@ export function MaterialManagerPanel() {
         </span>
       </div>
       <div
-        className="grid min-h-0 flex-1 grid-cols-[repeat(auto-fill,minmax(88px,1fr))] content-start gap-2 overflow-auto p-2"
+        className="dot-bg grid min-h-0 flex-1 grid-cols-[repeat(auto-fill,minmax(88px,1fr))] content-start gap-2 overflow-auto p-2"
         onPointerEnter={() => {
           hoverGrid.current = true;
         }}
@@ -165,7 +165,7 @@ export function MaterialManagerPanel() {
           />
         ))}
         {materials.length === 0 ? (
-          <div className="col-span-full p-8 text-center opacity-40">
+          <div className="col-span-full p-8 text-center opacity-40 pointer-events-none select-none">
             No materials yet — click <span className="font-semibold">New</span> or double-click
             here.
           </div>
@@ -213,10 +213,12 @@ function MaterialCard({
         e.dataTransfer.effectAllowed = "copy";
       }}
       className={`flex cursor-pointer flex-col items-stretch gap-1 rounded-md border p-1 text-left transition-colors ${
-        selected ? "border-primary bg-primary/10" : "border-base-200 hover:border-base-content/25"
+        selected
+          ? "border-primary bg-primary/10"
+          : "border-transparent hover:border-base-content/25"
       }`}
     >
-      <div className="aspect-square w-full overflow-hidden rounded bg-gradient-to-b from-base-300 to-base-100">
+      <div className="aspect-square w-full overflow-hidden rounded from-base-300 to-base-100">
         {url ? (
           <img
             src={url}

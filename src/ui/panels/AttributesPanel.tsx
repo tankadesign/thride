@@ -114,9 +114,9 @@ function NodeAttributes({ id }: { id: Uuid }) {
 
   return (
     <div className="h-full overflow-auto bg-base-100 text-xs">
-      <fieldset className="fieldset border-b border-base-200 px-2 py-1.5">
-        <legend className="fieldset-legend py-1 text-[10px] uppercase opacity-60">Object</legend>
-        <div className="grid grid-cols-[64px_1fr] items-center gap-1">
+      <fieldset className="fieldset border-b border-base-200 px-2 pt-1.5 pb-6">
+        <legend className="fieldset-legend py-2 text-[10px] uppercase opacity-60">Object</legend>
+        <div className="grid grid-cols-[96px_1fr] items-center gap-1">
           <span className="opacity-60">Name</span>
           <input
             key={node.name}
@@ -144,10 +144,10 @@ function NodeAttributes({ id }: { id: Uuid }) {
         </div>
       </fieldset>
 
-      <fieldset className="fieldset border-b border-base-200 px-2 py-1.5">
-        <legend className="fieldset-legend py-1 text-[10px] uppercase opacity-60">Transform</legend>
+      <fieldset className="fieldset border-b border-base-200 px-2 pt-1.5 pb-6">
+        <legend className="fieldset-legend py-2 text-[10px] uppercase opacity-60">Transform</legend>
         {(["position", "rotation", "scale"] as const).map((field) => (
-          <div className="grid grid-cols-[64px_1fr_1fr_1fr] items-center gap-1" key={field}>
+          <div className="grid grid-cols-[96px_1fr_1fr_1fr] items-center gap-1" key={field}>
             <span className="capitalize opacity-60">{field}</span>
             {axes.map((axis, i) => (
               <NumberDrag
@@ -264,15 +264,15 @@ function ComponentSection({ id, meshId, mode }: { id: Uuid; meshId: Uuid; mode: 
   };
 
   return (
-    <fieldset className="fieldset border-b border-base-200 px-2 py-1.5">
-      <legend className="fieldset-legend py-1 text-[10px] uppercase opacity-60">
+    <fieldset className="fieldset border-b border-base-200 px-2 pt-1.5 pb-6">
+      <legend className="fieldset-legend py-2 text-[10px] uppercase opacity-60">
         {count} Selected
       </legend>
       {count === 0 ? (
         <p className="opacity-50">Nothing selected — click components in the viewport.</p>
       ) : (
         <>
-          <div className="grid grid-cols-[64px_1fr_1fr_1fr] items-center gap-1">
+          <div className="grid grid-cols-[96px_1fr_1fr_1fr] items-center gap-1">
             <span className="opacity-60">{verts.length > 1 ? "Centroid" : "Position"}</span>
             {([0, 1, 2] as const).map((axis) => (
               <NumberDrag
@@ -284,20 +284,23 @@ function ComponentSection({ id, meshId, mode }: { id: Uuid; meshId: Uuid; mode: 
               />
             ))}
           </div>
+
           {verts.length > 1 ? (
-            <div className="grid grid-cols-[64px_1fr_1fr_1fr] items-center gap-1">
-              <span className="opacity-60">Size</span>
-              {([0, 1, 2] as const).map((axis) => (
-                <NumberDrag
-                  key={axis}
-                  label={"WHD"[axis]}
-                  step={0.01}
-                  min={0}
-                  value={extent[axis]}
-                  onChange={(v, committed) => setSize(axis, v, committed)}
-                />
-              ))}
-            </div>
+            <>
+              <div className="grid grid-cols-[96px_1fr_1fr_1fr] items-center gap-1">
+                <span className="opacity-60">Size</span>
+                {([0, 1, 2] as const).map((axis) => (
+                  <NumberDrag
+                    key={axis}
+                    label={"WHD"[axis]}
+                    step={0.01}
+                    min={0}
+                    value={extent[axis]}
+                    onChange={(v, committed) => setSize(axis, v, committed)}
+                  />
+                ))}
+              </div>
+            </>
           ) : null}
         </>
       )}
@@ -332,52 +335,55 @@ function PlanarReflectionSection({ id, planar }: { id: Uuid; planar?: PlanarRefl
   };
 
   return (
-    <fieldset className="fieldset border-b border-base-200 px-2 py-1.5">
-      <legend className="fieldset-legend py-1 text-[10px] uppercase opacity-60">
-        Planar Reflection
-      </legend>
-      <div className="grid grid-cols-[64px_1fr] items-center gap-1">
-        <span className="opacity-60">Enabled</span>
-        <input
-          type="checkbox"
-          className="toggle toggle-xs"
-          checked={!!planar}
-          onChange={(e) => setPlanar(e.target.checked ? {} : null, true)}
-        />
-        {planar ? (
-          <>
-            <span className="opacity-60">Axis</span>
-            <select
-              className="select select-xs w-full"
-              value={planar.axis}
-              onChange={(e) =>
-                setPlanar({ axis: e.target.value as PlanarReflectionDTO["axis"] }, true)
-              }
-            >
-              <option value="y">Y (floor)</option>
-              <option value="x">X (wall)</option>
-              <option value="z">Z (wall)</option>
-            </select>
-            <span className="opacity-60">Strength</span>
-            <NumberDrag
-              value={planar.strength}
-              step={0.02}
-              min={0}
-              max={1}
-              onChange={(v, committed) => setPlanar({ strength: v }, committed)}
-            />
-            <span className="opacity-60">Resolution</span>
-            <NumberDrag
-              value={planar.resolution}
-              step={0.05}
-              min={0.25}
-              max={1}
-              onChange={(v, committed) => setPlanar({ resolution: v }, committed)}
-            />
-          </>
-        ) : null}
-      </div>
-    </fieldset>
+    <>
+      <div className="divider my-0 h-3"></div>
+      <fieldset className="fieldset border-b border-base-200 px-2 pt-1.5 pb-6">
+        <legend className="fieldset-legend py-2 text-[10px] uppercase opacity-60">
+          Planar Reflection
+        </legend>
+        <div className="grid grid-cols-[96px_1fr] items-center gap-1">
+          <span className="opacity-60">Enabled</span>
+          <input
+            type="checkbox"
+            className="toggle toggle-xs"
+            checked={!!planar}
+            onChange={(e) => setPlanar(e.target.checked ? {} : null, true)}
+          />
+          {planar ? (
+            <>
+              <span className="opacity-60">Axis</span>
+              <select
+                className="select select-xs w-full"
+                value={planar.axis}
+                onChange={(e) =>
+                  setPlanar({ axis: e.target.value as PlanarReflectionDTO["axis"] }, true)
+                }
+              >
+                <option value="y">Y (floor)</option>
+                <option value="x">X (wall)</option>
+                <option value="z">Z (wall)</option>
+              </select>
+              <span className="opacity-60">Strength</span>
+              <NumberDrag
+                value={planar.strength}
+                step={0.02}
+                min={0}
+                max={1}
+                onChange={(v, committed) => setPlanar({ strength: v }, committed)}
+              />
+              <span className="opacity-60">Resolution</span>
+              <NumberDrag
+                value={planar.resolution}
+                step={0.05}
+                min={0.25}
+                max={1}
+                onChange={(v, committed) => setPlanar({ resolution: v }, committed)}
+              />
+            </>
+          ) : null}
+        </div>
+      </fieldset>
+    </>
   );
 }
 
@@ -401,7 +407,7 @@ function LightParams({ id, light }: { id: Uuid; light: LightDataDTO }) {
   };
 
   const numeric = (label: string, key: keyof LightDataDTO, step = 0.02, max?: number) => (
-    <div className="grid grid-cols-[64px_1fr] items-center gap-1" key={key}>
+    <div className="grid grid-cols-[96px_1fr] items-center gap-1" key={key}>
       <span className="opacity-60">{label}</span>
       <NumberDrag
         value={(light[key] as number) ?? 0}
@@ -414,11 +420,11 @@ function LightParams({ id, light }: { id: Uuid; light: LightDataDTO }) {
   );
 
   return (
-    <fieldset className="fieldset border-b border-base-200 px-2 py-1.5">
-      <legend className="fieldset-legend py-1 text-[10px] uppercase opacity-60">
+    <fieldset className="fieldset border-b border-base-200 px-2 pt-1.5 pb-6">
+      <legend className="fieldset-legend py-2 text-[10px] uppercase opacity-60">
         {LIGHT_LABELS[light.type]} Light
       </legend>
-      <div className="grid grid-cols-[64px_1fr] items-center gap-1">
+      <div className="grid grid-cols-[96px_1fr] items-center gap-1">
         <span className="opacity-60">Color</span>
         <input
           type="color"
@@ -433,7 +439,7 @@ function LightParams({ id, light }: { id: Uuid; light: LightDataDTO }) {
       {light.type === "area" ? numeric("Width", "width") : null}
       {light.type === "area" ? numeric("Height", "height") : null}
       {light.type === "hemisphere" ? (
-        <div className="grid grid-cols-[64px_1fr] items-center gap-1">
+        <div className="grid grid-cols-[96px_1fr] items-center gap-1">
           <span className="opacity-60">Ground</span>
           <input
             type="color"
@@ -444,7 +450,7 @@ function LightParams({ id, light }: { id: Uuid; light: LightDataDTO }) {
         </div>
       ) : null}
       {SHADOW_CAPABLE.has(light.type) ? (
-        <div className="grid grid-cols-[64px_1fr] items-center gap-1">
+        <div className="grid grid-cols-[96px_1fr] items-center gap-1">
           <span className="opacity-60">Shadows</span>
           <input
             type="checkbox"
@@ -456,7 +462,7 @@ function LightParams({ id, light }: { id: Uuid; light: LightDataDTO }) {
       ) : null}
       {SHADOW_CAPABLE.has(light.type) && (light.castShadow ?? true) ? (
         <>
-          <div className="grid grid-cols-[64px_1fr] items-center gap-1">
+          <div className="grid grid-cols-[96px_1fr] items-center gap-1">
             <span className="opacity-60">Quality</span>
             <select
               className="select select-xs"
@@ -512,8 +518,8 @@ function TargetSelector({ id }: { id: Uuid }) {
   };
 
   return (
-    <fieldset className="fieldset px-2 py-1.5">
-      <legend className="fieldset-legend py-1 text-[10px] uppercase opacity-60">Target</legend>
+    <fieldset className="fieldset px-2 pt-1.5 pb-6">
+      <legend className="fieldset-legend py-2 text-[10px] uppercase opacity-60">Target</legend>
       <select
         className="select select-xs w-full"
         value={target as string}
@@ -565,8 +571,8 @@ function MaterialSelector({ id }: { id: Uuid }) {
   };
 
   return (
-    <fieldset className="fieldset border-b border-base-200 px-2 py-1.5">
-      <legend className="fieldset-legend py-1 text-[10px] uppercase opacity-60">Material</legend>
+    <fieldset className="fieldset border-b border-base-200 px-2 pt-1.5 pb-6">
+      <legend className="fieldset-legend py-2 text-[10px] uppercase opacity-60">Material</legend>
       {/* opens upward: the Material section sits at the panel bottom, and the
           panel's overflow would otherwise clip a downward menu off-screen */}
       <div className="dropdown dropdown-top w-full">
@@ -611,8 +617,8 @@ function MaterialSelector({ id }: { id: Uuid }) {
 function MeshInfo({ meshId }: { meshId: Uuid }) {
   const mesh = meshRegistry.get(meshId);
   return (
-    <fieldset className="fieldset px-2 py-1.5">
-      <legend className="fieldset-legend py-1 text-[10px] uppercase opacity-60">
+    <fieldset className="fieldset px-2 pt-1.5 pb-6">
+      <legend className="fieldset-legend py-2 text-[10px] uppercase opacity-60">
         Editable Mesh
       </legend>
       {mesh ? (
@@ -650,9 +656,9 @@ function GeneratorParams({ id, gen }: { id: Uuid; gen: GeneratorDescriptor }) {
 
   if (gen.type === "boolean") {
     return (
-      <fieldset className="fieldset px-2 py-1.5">
-        <legend className="fieldset-legend py-1 text-[10px] uppercase opacity-60">Boolean</legend>
-        <div className="grid grid-cols-[64px_1fr] items-center gap-1">
+      <fieldset className="fieldset px-2 pt-1.5 pb-6">
+        <legend className="fieldset-legend py-2 text-[10px] uppercase opacity-60">Boolean</legend>
+        <div className="grid grid-cols-[96px_1fr] items-center gap-1">
           <span className="opacity-60">Operation</span>
           <select
             className="select select-xs"
@@ -679,9 +685,9 @@ function GeneratorParams({ id, gen }: { id: Uuid; gen: GeneratorDescriptor }) {
     };
     const usePathPoints = sp.usePathPoints ?? true;
     return (
-      <fieldset className="fieldset px-2 py-1.5">
-        <legend className="fieldset-legend py-1 text-[10px] uppercase opacity-60">Sweep</legend>
-        <div className="grid grid-cols-[64px_1fr] items-center gap-1">
+      <fieldset className="fieldset px-2 pt-1.5 pb-6">
+        <legend className="fieldset-legend py-2 text-[10px] uppercase opacity-60">Sweep</legend>
+        <div className="grid grid-cols-[96px_1fr] items-center gap-1">
           <span className="opacity-60">Rotation</span>
           <NumberDrag
             value={sp.rotation ?? 0}
@@ -691,7 +697,7 @@ function GeneratorParams({ id, gen }: { id: Uuid; gen: GeneratorDescriptor }) {
             onChange={(v, committed) => setParam("rotation", v, committed)}
           />
         </div>
-        <div className="grid grid-cols-[64px_1fr] items-center gap-1">
+        <div className="grid grid-cols-[96px_1fr] items-center gap-1">
           <span className="truncate opacity-60" title="Profile Segs">
             Profile Segs
           </span>
@@ -714,7 +720,7 @@ function GeneratorParams({ id, gen }: { id: Uuid; gen: GeneratorDescriptor }) {
           />
         </div>
         {usePathPoints ? null : (
-          <div className="grid grid-cols-[64px_1fr] items-center gap-1">
+          <div className="grid grid-cols-[96px_1fr] items-center gap-1">
             <span className="truncate opacity-60" title="Path Segs">
               Path Segs
             </span>
@@ -749,12 +755,12 @@ function GeneratorParams({ id, gen }: { id: Uuid; gen: GeneratorDescriptor }) {
     { key: "bevelSegments", label: "Bevel Segs", int: true, min: 1, max: 8 },
   ];
   return (
-    <fieldset className="fieldset px-2 py-1.5">
-      <legend className="fieldset-legend py-1 text-[10px] uppercase opacity-60">
+    <fieldset className="fieldset px-2 pt-1.5 pb-6">
+      <legend className="fieldset-legend py-2 text-[10px] uppercase opacity-60">
         Spline Extrude
       </legend>
       {rows.map((row) => (
-        <div className="grid grid-cols-[64px_1fr] items-center gap-1" key={row.key}>
+        <div className="grid grid-cols-[96px_1fr] items-center gap-1" key={row.key}>
           <span className="truncate opacity-60" title={row.label}>
             {row.label}
           </span>
@@ -768,7 +774,7 @@ function GeneratorParams({ id, gen }: { id: Uuid; gen: GeneratorDescriptor }) {
           />
         </div>
       ))}
-      <div className="grid grid-cols-[64px_1fr] items-center gap-1">
+      <div className="grid grid-cols-[96px_1fr] items-center gap-1">
         <span className="opacity-60">Caps</span>
         <input
           type="checkbox"
@@ -839,12 +845,12 @@ function SplinePrimitiveParams({ id, prim }: { id: Uuid; prim: SplinePrimitive }
 
   const values = prim as unknown as Record<string, number | boolean>;
   return (
-    <fieldset className="fieldset px-2 py-1.5">
-      <legend className="fieldset-legend py-1 text-[10px] uppercase opacity-60">
+    <fieldset className="fieldset px-2 pt-1.5 pb-6">
+      <legend className="fieldset-legend py-2 text-[10px] uppercase opacity-60">
         {prim.type} parameters
       </legend>
       {SPLINE_PRIM_ROWS[prim.type].map((row) => (
-        <div className="grid grid-cols-[64px_1fr] items-center gap-1" key={row.key}>
+        <div className="grid grid-cols-[96px_1fr] items-center gap-1" key={row.key}>
           <span className="truncate opacity-60" title={row.label}>
             {row.label}
           </span>
@@ -892,8 +898,8 @@ function PrimitiveParams({ id, prim }: { id: Uuid; prim: PrimitiveDescriptor }) 
   };
 
   return (
-    <fieldset className="fieldset px-2 py-1.5">
-      <legend className="fieldset-legend py-1 text-[10px] uppercase opacity-60">
+    <fieldset className="fieldset px-2 pt-1.5 pb-6">
+      <legend className="fieldset-legend py-2 text-[10px] uppercase opacity-60">
         {prim.type} parameters
       </legend>
       {/* mode-aware key list; defaults merged under stored params so params
@@ -908,8 +914,8 @@ function PrimitiveParams({ id, prim }: { id: Uuid; prim: PrimitiveDescriptor }) 
         const label = meta.label ?? key;
         if (typeof value === "boolean") {
           return (
-            <div className="grid grid-cols-[64px_1fr] items-center gap-1" key={key}>
-              <span className="truncate opacity-60" title={label}>
+            <div className="grid grid-cols-[96px_1fr] items-center gap-1" key={key}>
+              <span className="truncate opacity-60 capitalize" title={label}>
                 {label}
               </span>
               <input
@@ -923,8 +929,8 @@ function PrimitiveParams({ id, prim }: { id: Uuid; prim: PrimitiveDescriptor }) 
         }
         if (typeof value !== "number") return null;
         return (
-          <div className="grid grid-cols-[64px_1fr] items-center gap-1" key={key}>
-            <span className="truncate opacity-60" title={label}>
+          <div className="grid grid-cols-[96px_1fr] items-center gap-1" key={key}>
+            <span className="truncate opacity-60 capitalize" title={label}>
               {label}
             </span>
             <NumberDrag

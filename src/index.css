@@ -17,8 +17,8 @@ body,
 }
 
 /* dockview → daisyUI theme glue: map dockview vars onto semantic colors */
-.dockview-theme-thride {
-  --dv-background-color: var(--color-base-300);
+.dv-view .dockview-theme-thride {
+  --dv-background-color: var(--color-base-200);
   --dv-paneview-active-outline-color: var(--color-primary);
   --dv-tabs-and-actions-container-background-color: var(--color-base-300);
   --dv-activegroup-visiblepanel-tab-background-color: var(--color-base-100);
@@ -51,26 +51,38 @@ body,
   --dv-drag-over-background-color: color-mix(in oklab, var(--color-primary) 25%, transparent);
   --dv-drag-over-border-color: var(--color-primary);
   --dv-tabs-container-scrollbar-color: var(--color-base-content);
-  --dv-icon-hover-background-color: color-mix(in oklab, var(--color-base-content) 15%, transparent);
+  --dv-icon-hover-background-color: none;
   --dv-floating-box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
   --dv-active-sash-color: var(--color-primary);
-}
 
-/* dockview panel tabs: the container font-size var doesn't reach the tab
-   label (it inherits the 13px root), so pin it — and shrink the close glyph —
-   to match the project-tab strip's density. */
-.dockview-theme-thride .dv-default-tab-content {
-  font-size: 11.5px;
-}
-.dockview-theme-thride .dv-default-tab-action {
-  padding: 0 2px;
-}
-.dockview-theme-thride .dv-default-tab-action svg {
-  width: 10px;
-  height: 10px;
+  /* dockview panel tabs: the container font-size var doesn't reach the tab
+       label (it inherits the 13px root), so pin it — and shrink the close glyph —
+       to match the project-tab strip's density. */
+  .dv-default-tab-content {
+    font-size: 11.5px;
+  }
+  .dv-default-tab-action {
+    padding: 0 2px;
+  }
+  .dv-default-tab-action svg {
+    --size: 6px;
+    width: var(--size);
+    height: var(--size);
+    opacity: 0.5;
+  }
+  .dv-default-tab-action:hover svg {
+    opacity: 1;
+    color: var(--color-error);
+  }
 }
 
 /* number scrub cursor for drag-to-change fields */
 .cursor-scrub {
   cursor: ew-resize;
+}
+
+.dot-bg {
+  --gap: 10px;
+  background-image: radial-gradient(rgb(255 255 255 / 0.05) 1px, transparent 1px);
+  background-size: var(--gap) var(--gap);
 }

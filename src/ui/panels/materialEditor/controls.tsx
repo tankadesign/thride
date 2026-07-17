@@ -9,7 +9,7 @@ import { IconCaretRight } from "@/icons";
 
 export function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="grid grid-cols-[74px_1fr] items-center gap-1">
+    <div className="grid grid-cols-[96px_1fr] items-center gap-1">
       <span className="opacity-60">{label}</span>
       {children}
     </div>
