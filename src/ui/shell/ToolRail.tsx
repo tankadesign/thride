@@ -90,7 +90,7 @@ export function ToolRail({ registry }: { registry: CommandRegistry }) {
         <li key={m.mode} className={m.enabled ? "" : "menu-disabled"}>
           <button
             type="button"
-            className={`tooltip tooltip-right px-1.5 ${editMode === m.mode ? "menu-active text-primary" : ""}`}
+            className={`btn btn-square border border-base-100 tooltip tooltip-right p-0 ${m.enabled ? "" : "btn-disabled"} ${editMode === m.mode ? "menu-active text-primary" : ""}`}
             data-tip={m.title}
             onClick={() => m.enabled && enterMode(m.mode)}
           >
@@ -105,7 +105,7 @@ export function ToolRail({ registry }: { registry: CommandRegistry }) {
             <li key={t.cmd}>
               <button
                 type="button"
-                className={`tooltip tooltip-right px-1.5 ${
+                className={`btn btn-square border border-base-100 tooltip tooltip-right p-0 ${
                   t.toggle && toggleActive[t.cmd] ? "menu-active text-primary" : ""
                 }`}
                 data-tip={t.title}
@@ -122,7 +122,7 @@ export function ToolRail({ registry }: { registry: CommandRegistry }) {
         <li key={q.cmd}>
           <button
             type="button"
-            className="tooltip tooltip-right px-1.5"
+            className="btn btn-square border border-base-100 tooltip tooltip-right p-0"
             data-tip={q.title}
             onClick={() => registry.run(q.cmd)}
           >
@@ -134,7 +134,7 @@ export function ToolRail({ registry }: { registry: CommandRegistry }) {
       <li>
         <button
           type="button"
-          className={`tooltip tooltip-right px-1.5 ${snapEnabled ? "menu-active text-primary" : ""}`}
+          className={`btn btn-square border border-base-100 tooltip tooltip-right p-0 ${snapEnabled ? "menu-active text-primary" : ""}`}
           data-tip="Snap to vertex/edge"
           onClick={() => setSnapEnabled((s) => !s)}
         >

@@ -61,9 +61,9 @@ const customSpecs = {
   /** "Lines" overlay edges drawn over shaded surfaces. */
   lineColor: new Color(0x14151a),
   /** Wireframe-mode edges + component-mode wire overlay. */
-  wireframeColor: semantic.primary,
+  wireframeColor: semantic.info,
   /** Wireframe-mode selected edges */
-  selectedWireframeColor: semantic.secondary,
+  selectedWireframeColor: semantic.primary,
   /** Component-mode vertex points. */
   pointColor: new Color(0xd8dce8),
   /** Gizmo view-plane center handle. */
