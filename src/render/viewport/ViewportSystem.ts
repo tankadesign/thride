@@ -541,6 +541,14 @@ export class ViewportSystem {
     const activeDisp = this.editor.paneDisplay(this.editor.activePane);
     const ssrActive =
       activeDisp.ssr && activeDisp.shading === "pbr" && this.editor.layout === "single";
+    // Decide the scene target's MSAA mode BEFORE rendering into it. MSAA only
+    // helps the DEFAULT path (scene → hdr); SSR renders the scene via its own
+    // passes (hdr holds only helpers, whose depth copy needs single-sample) and
+    // GTAO samples hdr depth as a plain 2D texture (impossible on MSAA) — both
+    // force single-sample. aoWillRun mirrors the aoOn gate used below.
+    const aoWillRun =
+      activeDisp.ssao && activeDisp.shading !== "wireframe" && this.editor.layout === "single";
+    output.setSceneMSAA(!ssrActive && !aoWillRun);
     if (!ssrActive) {
       renderer.setRenderTarget(output.hdr);
       renderer.setScissorTest(true);

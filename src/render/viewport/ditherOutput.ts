@@ -119,7 +119,12 @@ const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v
  *   disturbed.
  */
 export class DitherOutput {
-  readonly hdr: RenderTarget;
+  /** Scene render target (reassigned when the MSAA sample count flips — see
+   *  makeHdr / setAmbientShadows). Read fresh each frame by the viewport. */
+  hdr: RenderTarget;
+  /** MSAA count of `hdr`. 4 normally; 0 while GTAO runs (it samples the depth
+   *  as a plain 2D texture, impossible on a multisampled attachment). */
+  private hdrSamples = 4;
   private readonly post: PostProcessing;
   private mode: OutputToneMapping = "aces";
   private aoCamera: Camera | null = null;
@@ -151,15 +156,64 @@ export class DitherOutput {
   private height = 1;
 
   constructor(renderer: WebGPURenderer) {
-    this.hdr = new RenderTarget(1, 1, {
-      type: HalfFloatType, // linear HDR — no quantization until the final blit
-      colorSpace: LinearSRGBColorSpace,
-      depthTexture: new DepthTexture(1, 1), // sampleable depth for GTAO
-    });
+    this.hdr = this.makeHdr(1, 1, this.hdrSamples);
     this.post = new PostProcessing(renderer);
     // we do tone mapping + color-space ourselves in outputNode via renderOutput
     this.post.outputColorTransform = false;
     this.rebuild();
+  }
+
+  /**
+   * Scene render target. MSAA (samples>0) antialiases the whole scene — the
+   * app's only path to the canvas is the fullscreen composite quad, so the
+   * renderer's `antialias:true` never applied and this was the sole
+   * unantialiased scene buffer (jagged geometry edges and, worst, 1px hidden
+   * lines). The color resolves on read; SSR uses its own single-sample passes.
+   */
+  private makeHdr(width: number, height: number, samples: number): RenderTarget {
+    const w = Math.max(1, Math.floor(width));
+    const h = Math.max(1, Math.floor(height));
+    return new RenderTarget(w, h, {
+      type: HalfFloatType, // linear HDR — no quantization until the final blit
+      colorSpace: LinearSRGBColorSpace,
+      depthTexture: new DepthTexture(w, h), // sampleable depth for GTAO
+      samples,
+    });
+  }
+
+  /**
+   * Swap the scene target's MSAA count. GTAO samples `hdr.depthTexture` as a
+   * plain 2D texture, which a multisampled depth attachment can't be — so the
+   * scene render is MSAA normally but drops to single-sample while Ambient
+   * Shadows runs. Recreates the target (samples is construction-time) and lets
+   * the caller rebuild the node graph onto the new textures.
+   */
+  private setHdrSamples(samples: number): boolean {
+    if (samples === this.hdrSamples) return false;
+    this.hdrSamples = samples;
+    const old = this.hdr;
+    this.hdr = this.makeHdr(this.width, this.height, samples);
+    old.dispose();
+    return true;
+  }
+
+  /**
+   * Pick the scene target's MSAA mode for this frame — call BEFORE the scene
+   * renders into `hdr`. MSAA only helps the DEFAULT path, where the scene
+   * actually renders into `hdr`; and it must be single-sample there whenever:
+   *  - GTAO runs (it samples hdr's depth as a plain 2D texture, impossible on
+   *    a multisampled attachment), or
+   *  - SSR is active (the scene comes from SSR's own passes and `hdr` only
+   *    holds the helper overlay, whose depth is copy-primed from a single-
+   *    sample source — an MSAA dest fails the copy).
+   * Recreating the target after the scene drew into the old one would blank the
+   * frame, hence the pre-render hook; the node-graph rebind is left to the
+   * setAmbientShadows / setScreenReflections calls later this frame (a sample
+   * flip always coincides with one of their on/off transitions), and the scene
+   * renders straight into `hdr`, not through the graph, in between.
+   */
+  setSceneMSAA(enabled: boolean): void {
+    this.setHdrSamples(enabled ? 4 : 0);
   }
 
   /**
