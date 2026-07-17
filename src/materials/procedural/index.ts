@@ -4,7 +4,11 @@
  * the compiler does (`@/materials/noises`).
  */
 export { blendLayer } from "./blend";
-export { projectedImageNode } from "./imageProjection";
+export {
+  projectedImageNode,
+  pokeImageTransform,
+  type ImageTransformUniforms,
+} from "./imageProjection";
 export { CompiledStacks, compile, getCompileCount, resetCompileCount } from "./compile";
 export { projectedSample, type TransformNodes } from "./projections";
 export { RampTexture } from "./ramp";

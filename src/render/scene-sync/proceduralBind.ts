@@ -2,7 +2,13 @@ import type { Texture } from "three";
 import type { NodeMaterial } from "three/webgpu";
 import type { MaterialDTO, ProceduralChannel, Projection, ProjectionTransform } from "@/types/core";
 import { PROCEDURAL_CHANNELS } from "@/types/core";
-import { compile, projectedImageNode, type CompiledStacks } from "@/materials/procedural";
+import {
+  compile,
+  pokeImageTransform,
+  projectedImageNode,
+  type CompiledStacks,
+  type ImageTransformUniforms,
+} from "@/materials/procedural";
 import type { Float, Vec3 } from "@/materials/tsl";
 
 /**
@@ -30,22 +36,18 @@ export interface ImageSpec {
   transform?: ProjectionTransform;
 }
 
-/** Value-equality for two projection transforms (undefined = identity). */
-function sameTransform(a: ProjectionTransform | undefined, b: ProjectionTransform | undefined) {
-  if (a === b) return true;
-  if (!a || !b) return false;
-  return (["offset", "rotation", "scale"] as const).every(
-    (k) => a[k][0] === b[k][0] && a[k][1] === b[k][1] && a[k][2] === b[k][2],
-  );
-}
-
 /**
  * Per-material cache of built projected-image nodes. Node IDENTITY is the
  * point: `assignChannelNodes` compares slots by identity to decide
  * `needsUpdate`, so rebuilding an identical node on every material edit would
- * flip `needsUpdate` — a full shader recompile per slider drag.
+ * flip `needsUpdate` — a full shader recompile per slider drag. Placement edits
+ * (offset/rotation/scale) poke the cached `uniforms` instead of rebuilding, so
+ * dragging a projection stays at frame rate.
  */
-export type ImageNodeCache = Map<ProceduralChannel, ImageSpec & { node: ChannelNode }>;
+export type ImageNodeCache = Map<
+  ProceduralChannel,
+  ImageSpec & { node: ChannelNode; uniforms: ImageTransformUniforms }
+>;
 
 /** Procedural channel → the node-material slot it drives. */
 const CHANNEL_SLOT: Record<ProceduralChannel, string> = {
@@ -81,21 +83,19 @@ function imageNode(
     return null;
   }
   const hit = cache.get(channel);
-  if (
-    hit &&
-    hit.tex === spec.tex &&
-    hit.projection === spec.projection &&
-    sameTransform(hit.transform, spec.transform)
-  ) {
+  // Same texture + projection → keep the node, just poke the placement uniforms
+  // live (no rebuild, no recompile). Only tex/projection changes are structural.
+  if (hit && hit.tex === spec.tex && hit.projection === spec.projection) {
+    pokeImageTransform(hit.uniforms, spec.transform);
     return hit.node;
   }
-  const node = projectedImageNode(channel, spec.tex, spec.projection, spec.transform);
-  if (!node) {
+  const built = projectedImageNode(channel, spec.tex, spec.projection, spec.transform);
+  if (!built) {
     cache.delete(channel);
     return null;
   }
-  cache.set(channel, { ...spec, node });
-  return node;
+  cache.set(channel, { ...spec, node: built.node, uniforms: built.uniforms });
+  return built.node;
 }
 
 /**
