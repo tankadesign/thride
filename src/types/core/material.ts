@@ -1,5 +1,10 @@
 import type { Uuid } from "./ids";
-import type { ProceduralChannel, ProceduralMaterialDoc, Projection } from "./procedural";
+import type {
+  ProceduralChannel,
+  ProceduralMaterialDoc,
+  Projection,
+  ProjectionTransform,
+} from "./procedural";
 
 /**
  * Built-in three.js material families the manager can create. Each maps to a
@@ -148,6 +153,15 @@ export interface MaterialDTO {
    * maps need a UV frame.
    */
   textureProjections?: Partial<Record<TextureChannel, Projection>>;
+
+  /**
+   * Per-image-channel projection placement (offset/rotation/scale in object
+   * space), mirroring a procedural layer's transform. Absent = identity; only
+   * meaningful for non-`uv` projections. Editing it currently rebuilds the
+   * channel's projected node (const-node placement) — live uniform-backed
+   * editing + the viewport texture-mode gizmo are M5.
+   */
+  textureProjectionTransforms?: Partial<Record<TextureChannel, ProjectionTransform>>;
 
   /**
    * Procedural layer stacks (E3), compiled to TSL per channel. Absent = a plain

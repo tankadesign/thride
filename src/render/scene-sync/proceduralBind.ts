@@ -1,6 +1,6 @@
 import type { Texture } from "three";
 import type { NodeMaterial } from "three/webgpu";
-import type { MaterialDTO, ProceduralChannel, Projection } from "@/types/core";
+import type { MaterialDTO, ProceduralChannel, Projection, ProjectionTransform } from "@/types/core";
 import { PROCEDURAL_CHANNELS } from "@/types/core";
 import { compile, projectedImageNode, type CompiledStacks } from "@/materials/procedural";
 import type { Float, Vec3 } from "@/materials/tsl";
@@ -22,10 +22,21 @@ import type { Float, Vec3 } from "@/materials/tsl";
 /** A built procedural/image node: vec3 for color channels, float for scalar ones. */
 type ChannelNode = Vec3 | Float;
 
-/** A non-uv image assignment for a channel: decoded texture + its projection. */
+/** A non-uv image assignment for a channel: decoded texture + its projection + placement. */
 export interface ImageSpec {
   tex: Texture;
   projection: Projection;
+  /** Projection placement (offset/rotation/scale); undefined = identity. */
+  transform?: ProjectionTransform;
+}
+
+/** Value-equality for two projection transforms (undefined = identity). */
+function sameTransform(a: ProjectionTransform | undefined, b: ProjectionTransform | undefined) {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return (["offset", "rotation", "scale"] as const).every(
+    (k) => a[k][0] === b[k][0] && a[k][1] === b[k][1] && a[k][2] === b[k][2],
+  );
 }
 
 /**
@@ -70,8 +81,15 @@ function imageNode(
     return null;
   }
   const hit = cache.get(channel);
-  if (hit && hit.tex === spec.tex && hit.projection === spec.projection) return hit.node;
-  const node = projectedImageNode(channel, spec.tex, spec.projection);
+  if (
+    hit &&
+    hit.tex === spec.tex &&
+    hit.projection === spec.projection &&
+    sameTransform(hit.transform, spec.transform)
+  ) {
+    return hit.node;
+  }
+  const node = projectedImageNode(channel, spec.tex, spec.projection, spec.transform);
   if (!node) {
     cache.delete(channel);
     return null;

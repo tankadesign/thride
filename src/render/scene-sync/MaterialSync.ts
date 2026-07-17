@@ -151,7 +151,7 @@ export class MaterialSync {
     // decode state is part of the key: a projected color image that finishes
     // decoding after this variant built must still trigger the rebuild
     const mapReady = dto?.textures?.map ? !!this.textures.get(dto.textures.map, "srgb") : false;
-    const imgColorKey = `${dto?.textures?.map ?? ""}:${dto?.textureProjections?.map ?? "uv"}:${mapReady ? 1 : 0}`;
+    const imgColorKey = `${dto?.textures?.map ?? ""}:${dto?.textureProjections?.map ?? "uv"}:${mapReady ? 1 : 0}:${JSON.stringify(dto?.textureProjectionTransforms?.map ?? 0)}`;
     if (
       !e ||
       e.type !== type ||
@@ -348,7 +348,12 @@ export class MaterialSync {
         channel === "normalMap" ? "uv" : (dto.textureProjections?.[channel] ?? "uv");
       const tex = id ? (this.textures.get(id, colorSpace) ?? null) : null;
       const projected = tex !== null && projection !== "uv";
-      if (projected) specs[TEXTURE_TO_PROCEDURAL[channel]] = { tex, projection };
+      if (projected)
+        specs[TEXTURE_TO_PROCEDURAL[channel]] = {
+          tex,
+          projection,
+          transform: dto.textureProjectionTransforms?.[channel],
+        };
       const prop = projected ? null : tex;
       if (m[channel] !== prop) {
         m[channel] = prop;

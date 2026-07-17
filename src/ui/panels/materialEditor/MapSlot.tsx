@@ -1,10 +1,17 @@
 import { useEffect, useRef, useState } from "react";
-import type { MaterialDTO, Projection, TextureChannel, Uuid } from "@/types/core";
+import type {
+  MaterialDTO,
+  Projection,
+  ProjectionTransform,
+  TextureChannel,
+  Uuid,
+} from "@/types/core";
 import {
   PROJECTIONS,
   TEXTURE_TO_PROCEDURAL,
   channelLayer,
   defaultLayer,
+  defaultProjectionTransform,
   defaultRamp,
   withChannelLayer,
 } from "@/types/core";
@@ -12,6 +19,7 @@ import { uuidv7 } from "@/core";
 import { IconClose } from "@/icons";
 import { noiseDef } from "@/materials/noises";
 import { textureAssets } from "@/io/storage/textureAssets";
+import { NumberDrag } from "@/ui/widgets/NumberDrag";
 import { useLayerPreview } from "./noisePreview";
 import { NoiseEditor } from "./NoiseEditor";
 import { Row } from "./controls";
@@ -57,6 +65,7 @@ export function MapSlot({
       },
       true,
     );
+    if (channel !== "normalMap") setOpen(true); // reveal the projection controls on load
   };
 
   const addNoise = () => {
@@ -87,6 +96,41 @@ export function MapSlot({
     else textureProjections[channel] = projection;
     setMat({ textureProjections }, true);
   };
+
+  // Per-channel projection placement (offset/rotation/scale). Editing rebuilds
+  // the projected node (const-node placement); the viewport gizmo is M5.
+  const projTransform = mat.textureProjectionTransforms?.[channel] ?? defaultProjectionTransform();
+  const setImageTransform = (next: ProjectionTransform, committed: boolean) => {
+    setMat(
+      { textureProjectionTransforms: { ...mat.textureProjectionTransforms, [channel]: next } },
+      committed,
+    );
+  };
+  /** A labelled row of three x/y/z NumberDrags editing one transform field. */
+  const axisRow = (
+    label: string,
+    key: keyof ProjectionTransform,
+    step: number,
+    toDisp: (n: number) => number = (n) => n,
+    fromDisp: (n: number) => number = (n) => n,
+  ) => (
+    <Row label={label} key={label}>
+      <div className="flex gap-1">
+        {projTransform[key].map((val, i) => (
+          <NumberDrag
+            key={i}
+            value={toDisp(val)}
+            step={step}
+            onChange={(v, committed) => {
+              const arr = [...projTransform[key]] as [number, number, number];
+              arr[i] = fromDisp(v);
+              setImageTransform({ ...projTransform, [key]: arr }, committed);
+            }}
+          />
+        ))}
+      </div>
+    </Row>
+  );
 
   const filePicker = (
     <input
@@ -198,6 +242,19 @@ export function MapSlot({
                 ))}
               </select>
             </Row>
+            {projection !== "uv" ? (
+              <>
+                {axisRow("Offset", "offset", 0.01)}
+                {axisRow(
+                  "Rotation",
+                  "rotation",
+                  1,
+                  (r) => (r * 180) / Math.PI,
+                  (d) => (d * Math.PI) / 180,
+                )}
+                {axisRow("Scale", "scale", 0.01)}
+              </>
+            ) : null}
           </div>
         ) : null}
       </>
