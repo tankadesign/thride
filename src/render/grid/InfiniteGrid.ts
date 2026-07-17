@@ -1,9 +1,10 @@
-import { Color, DoubleSide, Mesh, PlaneGeometry, Vector2 } from "three";
+import { Color, DoubleSide, Mesh, PlaneGeometry, Vector2, Vector3 } from "three";
 import { MeshBasicNodeMaterial } from "three/webgpu";
 import type { Node } from "three/webgpu";
 import {
   abs,
   clamp,
+  exp,
   float,
   floor,
   fract,
@@ -11,6 +12,7 @@ import {
   length,
   log,
   min,
+  mix,
   positionWorld,
   pow,
   smoothstep,
@@ -30,14 +32,27 @@ const FADE_LO = 2;
 const FADE_HI = 55;
 /** How many decades draw at once — a smooth cascade, not a hard 2-layer pop. */
 const LEVELS = 3;
-/** Radial fog: grid holds full until this fraction of the fade radius, then
- *  dissolves over the long remaining band so the plane edge never reads. */
+// --- ortho fade: a long radial dissolve from the view center ---
+/** Grid holds full until this fraction of the fade radius, then dissolves over
+ *  the long remaining band so the plane edge never reads. */
 const FOG_START = 0.12;
 /** Fog completes by this multiple of the view extent. */
 const FADE_EXTENTS = 4;
-/** Cap so a zoomed-out perspective view's plane stays inside the 5000 far clip
- *  (plane half-extent ≈ 1.3× this, plus the focus offset). */
+/** Cap so the plane stays inside the 5000 far clip (half-extent ≈ 1.3× this). */
 const FADE_MAX = 2200;
+
+// --- perspective fade: EXPONENTIAL haze by camera distance ---
+// A radial disc has a hard zero-alpha radius that projects to a visible line
+// across the ground at grazing angles; exponential haze is asymptotic (never
+// reaches a hard edge), so the grid just dissolves toward the horizon.
+/** Grid stays full within this multiple of the view extent from the camera. */
+const HAZE_START = 1.5;
+/** Larger = the haze fades over MORE distance (gentler). e-fold ≈ this·extent. */
+const HAZE_FALLOFF = 4;
+/** Perspective plane half-extent (multiple of extent, capped near the far clip)
+ *  — only needs to outrun where the haze is already negligible. */
+const PERSP_REACH = 16;
+const PERSP_REACH_MAX = 4500;
 
 /**
  * Infinite adaptive floor grid: a ground plane whose fragment shader draws
@@ -52,8 +67,15 @@ const FADE_MAX = 2200;
  */
 export class InfiniteGrid {
   readonly object: Mesh;
+  /** Ortho radial fade. */
   private readonly uCenter = uniform(new Vector2());
   private readonly uFadeRadius = uniform(1);
+  /** Perspective exponential haze. */
+  private readonly uCamPos = uniform(new Vector3());
+  private readonly uHazeStart = uniform(1);
+  private readonly uHazeDensity = uniform(1);
+  /** 1 = ortho radial, 0 = perspective haze. */
+  private readonly uOrtho = uniform(0);
   private readonly uColor = uniform(new Color().copy(viewportTheme.gridLineColor));
 
   constructor() {
@@ -103,10 +125,19 @@ export class InfiniteGrid {
       const levelFade: any = smoothstep(FADE_LO, FADE_HI, cellPx);
       grid = grid.max(this.gridLine(p, spacing).mul(levelFade));
     }
-    // radial FOG around the view center: a long, soft dissolve (full until
-    // FOG_START·radius, gone by radius) so the finite plane edge never shows
-    const dist: any = length(p.sub(this.uCenter));
-    const fog: any = smoothstep(this.uFadeRadius.mul(FOG_START), this.uFadeRadius, dist).oneMinus();
+    // ORTHO: long radial dissolve from the view center (full until FOG_START·
+    // radius, gone by radius) — the plane edge is past the radius, never seen.
+    const radial: any = length(p.sub(this.uCenter));
+    const orthoFog: any = smoothstep(
+      this.uFadeRadius.mul(FOG_START),
+      this.uFadeRadius,
+      radial,
+    ).oneMinus();
+    // PERSPECTIVE: exponential haze by 3D camera distance — full inside
+    // uHazeStart, then exp decay (asymptotic, so no hard disc edge at any angle).
+    const camDist: any = length(positionWorld.sub(this.uCamPos));
+    const perspFog: any = clamp(exp(this.uHazeStart.sub(camDist).mul(this.uHazeDensity)), 0, 1);
+    const fog: any = mix(perspFog, orthoFog, this.uOrtho);
     return clamp(grid.mul(fog), 0, 1) as Node;
   }
 
@@ -117,18 +148,28 @@ export class InfiniteGrid {
    */
   configure(rig: CameraRig): void {
     const { center, extent } = rig.groundView();
-    const fadeRadius = Math.min(extent * FADE_EXTENTS, FADE_MAX);
-    // PlaneGeometry(1,1) has HALF-extent 0.5, so scale = 2.6·radius gives a
-    // half-extent of 1.3·radius — the fog reaches 0 well inside the plane edge
-    // (the earlier 1.35× left the square edge cutting the grid at ~0.68·radius,
-    // still ~80% opaque: the hard "segmented disc" boundary).
-    const size = fadeRadius * 2.6;
+    // PlaneGeometry(1,1) has HALF-extent 0.5, so the plane's world half-extent
+    // is 0.5·scale — must exceed where the fade reaches 0, or the square edge
+    // cuts a still-opaque grid (the old "segmented disc").
+    let half: number;
+    if (rig.isPerspective) {
+      // exponential haze keyed to the camera — no radial disc
+      rig.camera.getWorldPosition(this.uCamPos.value);
+      this.uHazeStart.value = extent * HAZE_START;
+      this.uHazeDensity.value = 1 / (extent * HAZE_FALLOFF);
+      this.uOrtho.value = 0;
+      half = Math.min(extent * PERSP_REACH, PERSP_REACH_MAX);
+    } else {
+      const fadeRadius = Math.min(extent * FADE_EXTENTS, FADE_MAX);
+      this.uCenter.value.set(center.x, center.z);
+      this.uFadeRadius.value = fadeRadius;
+      this.uOrtho.value = 1;
+      half = fadeRadius * 1.3;
+    }
     this.object.position.set(center.x, -0.001, center.z);
-    this.object.scale.set(size, size, 1);
+    this.object.scale.set(half * 2, half * 2, 1);
     this.object.updateMatrix();
     this.object.updateMatrixWorld();
-    this.uCenter.value.set(center.x, center.z);
-    this.uFadeRadius.value = fadeRadius;
   }
 
   /** Re-read the themed grid color (CSS var change). */
