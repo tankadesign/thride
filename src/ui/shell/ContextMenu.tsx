@@ -28,7 +28,7 @@ export function ContextMenu() {
 
   return (
     <div
-      className="fixed inset-0 z-[1500]"
+      className="fixed inset-0 z-1500 drop-shadow-2xl drop-shadow-base-300"
       onPointerDown={close}
       onContextMenu={(e) => e.preventDefault()}
     >
@@ -53,10 +53,7 @@ function EntryList({
 }) {
   const registry = useRegistry();
   return (
-    <ul
-      className="menu menu-xs rounded-box border border-base-300 bg-base-200 shadow-lg"
-      style={{ width }}
-    >
+    <ul className="menu menu-xs rounded-box border border-neutral bg-base-100" style={{ width }}>
       {entries.map((entry, i) => {
         const cmd = entry.commandId ? registry?.get(entry.commandId) : undefined;
         const label = entry.label ?? cmd?.title ?? "";
@@ -80,7 +77,7 @@ function EntryList({
                 <span className="flex-1">{label}</span>
                 <span className="opacity-50">›</span>
               </span>
-              <div className="invisible absolute top-0 left-full z-10 pl-0.5">
+              <div className="invisible absolute top-0 left-full -translate-x-3 -translate-y-2/5 z-10 pl-0.5 drop-shadow-2xl drop-shadow-base-300 bg-transparent!">
                 <EntryList entries={entry.children} close={close} width={width} />
               </div>
             </li>
