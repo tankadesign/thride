@@ -21,16 +21,23 @@ import { HELPER_LAYER } from "@/render/layers";
 import { viewportTheme } from "@/render/theme/viewportTheme";
 import type { CameraRig } from "@/render/nav/CameraRig";
 
-/** Pixels the coarse (solid) decade's cells span before it hands off to the
- *  next — sets how dense the grid reads (bigger = sparser lines). */
-const CELL_PX = 22;
-/** Subdivision lines are dimmer than the decade lines so a busy grid stays
- *  readable (they also fade out entirely as they shrink; see the shader). */
-const SUB_ALPHA = 0.5;
-/** Grid fades to nothing by this multiple of the view extent — past the plane
- *  edge and (for perspective) before the far clip, so it reads as infinite. */
-const FADE_EXTENTS = 3;
-const FADE_MAX = 3800; // hard cap so a zoomed-out persp view stays inside far clip
+/** Finest cascade decade: its cells target ~this many pixels at its floor. */
+const BASE_PX = 3;
+/** Each decade fades IN as its cells grow across this pixel range. The wide
+ *  span (≈1.5 decades of zoom) is what makes the level-to-level transition slow
+ *  and smooth as you scroll — ~3× the old single-decade crossfade. */
+const FADE_LO = 2;
+const FADE_HI = 55;
+/** How many decades draw at once — a smooth cascade, not a hard 2-layer pop. */
+const LEVELS = 3;
+/** Radial fog: grid holds full until this fraction of the fade radius, then
+ *  dissolves over the long remaining band so the plane edge never reads. */
+const FOG_START = 0.12;
+/** Fog completes by this multiple of the view extent. */
+const FADE_EXTENTS = 4;
+/** Cap so a zoomed-out perspective view's plane stays inside the 5000 far clip
+ *  (plane half-extent ≈ 1.3× this, plus the focus offset). */
+const FADE_MAX = 2200;
 
 /**
  * Infinite adaptive floor grid: a ground plane whose fragment shader draws
@@ -83,19 +90,24 @@ export class InfiniteGrid {
     const p: any = vec2(positionWorld.x, positionWorld.z);
     const fw: any = fwidth(p);
     const w: any = fw.x.max(fw.y); // world units per pixel (worst axis)
-    // continuous decade index: 10^level is the cell size that spans CELL_PX px.
-    const level: any = log(w.mul(CELL_PX)).div(Math.log(10));
-    const lf: any = fract(level);
-    const fine: any = pow(float(10), floor(level)); // shrinking decade (fades with lf)
-    const coarse: any = fine.mul(10); // always-solid decade
-    // fine subdivisions fade to nothing as their cells shrink past ~CELL_PX/10 px
-    const grid: any = this.gridLine(p, coarse).max(
-      this.gridLine(p, fine).mul(lf.oneMinus()).mul(SUB_ALPHA),
-    );
-    // radial fade around the view center so the finite plane edge never shows
+    // finest cascade decade: the 10^n whose cells sit near BASE_PX px right now
+    const base: any = pow(float(10), floor(log(w.mul(BASE_PX)).div(Math.log(10))));
+    // draw LEVELS decades at once, each faded IN by its on-screen cell size — a
+    // decade appears as its cells grow across [FADE_LO, FADE_HI] px and recedes
+    // as they shrink, so subdivisions cascade smoothly instead of popping and
+    // never pile into a too-thick mat (small-celled decades are near-invisible).
+    let grid: any = float(0);
+    for (let k = 0; k < LEVELS; k++) {
+      const spacing: any = base.mul(10 ** k);
+      const cellPx: any = spacing.div(w);
+      const levelFade: any = smoothstep(FADE_LO, FADE_HI, cellPx);
+      grid = grid.max(this.gridLine(p, spacing).mul(levelFade));
+    }
+    // radial FOG around the view center: a long, soft dissolve (full until
+    // FOG_START·radius, gone by radius) so the finite plane edge never shows
     const dist: any = length(p.sub(this.uCenter));
-    const fade: any = smoothstep(this.uFadeRadius, this.uFadeRadius.mul(0.55), dist);
-    return clamp(grid.mul(fade), 0, 1) as Node;
+    const fog: any = smoothstep(this.uFadeRadius.mul(FOG_START), this.uFadeRadius, dist).oneMinus();
+    return clamp(grid.mul(fog), 0, 1) as Node;
   }
 
   /**
@@ -106,7 +118,11 @@ export class InfiniteGrid {
   configure(rig: CameraRig): void {
     const { center, extent } = rig.groundView();
     const fadeRadius = Math.min(extent * FADE_EXTENTS, FADE_MAX);
-    const size = fadeRadius * 1.35; // plane reaches past where the fade completes
+    // PlaneGeometry(1,1) has HALF-extent 0.5, so scale = 2.6·radius gives a
+    // half-extent of 1.3·radius — the fog reaches 0 well inside the plane edge
+    // (the earlier 1.35× left the square edge cutting the grid at ~0.68·radius,
+    // still ~80% opaque: the hard "segmented disc" boundary).
+    const size = fadeRadius * 2.6;
     this.object.position.set(center.x, -0.001, center.z);
     this.object.scale.set(size, size, 1);
     this.object.updateMatrix();
