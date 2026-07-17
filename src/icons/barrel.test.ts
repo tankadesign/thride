@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 
 /**
  * A5's invariants, as a test rather than a promise.
@@ -18,7 +18,7 @@ const modules = import.meta.glob("/src/**/*.{ts,tsx}", {
   query: "?raw",
   import: "default",
   eager: true,
-}) as Record<string, string>;
+});
 
 const BARREL = "/src/icons/index.tsx";
 const files = Object.entries(modules).map(([path, text]) => ({ path, text }));

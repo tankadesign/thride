@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import type { Vec3 } from "@/types/core";
 import { validateMesh } from "@/geometry/kernel/validate";
 import { buildSweep, type SweepCurve } from "./sweep";

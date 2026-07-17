@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import { float } from "@/materials/tsl";
 import { defaultNoiseParams, noiseDef, NOISE_DEFS, previewNode } from "./registry";
 

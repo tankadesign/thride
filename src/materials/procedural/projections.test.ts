@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import type { Projection } from "@/types/core";
 import { PROJECTIONS } from "@/types/core";
 import { uniform, vec3 } from "@/materials/tsl";

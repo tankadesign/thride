@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import type { SplinePrimitive } from "@/types/geometry/spline";
 import { buildSplinePrimitive } from "./primitives";
 
