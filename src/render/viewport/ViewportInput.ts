@@ -472,11 +472,14 @@ export class ViewportInput {
       e.preventDefault();
       return;
     }
-    // Gizmo modes (bare key, pointer over the viewport): E move-only,
-    // R rotate-only, T scale-only, V back to the full multi gizmo
+    // Gizmo modes: E move-only, R rotate-only, T scale-only, V the full multi
+    // gizmo. App-global like the P pen key — NOT gated on pointer position: a
+    // fresh page load fires no pointerenter until the mouse moves, which left
+    // these keys dead until some stray interaction (mode switches are harmless
+    // anywhere, so the typing/busy guards are the only ones that matter).
     const gizmoMode = GIZMO_MODE_KEYS[e.key.toLowerCase()];
     if (gizmoMode && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey) {
-      if (!this.pointerInside || this.isBusy() || this.typingTarget(e)) return;
+      if (this.isBusy() || this.typingTarget(e)) return;
       vs.gizmo.setMode(gizmoMode);
       vs.invalidate();
       e.preventDefault();

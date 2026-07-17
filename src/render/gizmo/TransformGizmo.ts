@@ -135,7 +135,7 @@ export class TransformGizmo {
   readonly group = new Group();
   private readonly doc: Document;
   private drag: DragState | null = null;
-  private hovered: Mesh | null = null;
+  private hovered: Mesh[] = [];
   private activeObject: Object3D | null = null;
   private readonly hoverColor = viewportTheme.primary;
   private mode: GizmoMode = "all";
@@ -505,23 +505,56 @@ export class TransformGizmo {
     this.doc.sessions.cancel();
   }
 
-  /** Hover feedback: handle under the pointer turns primary (theme) color. */
+  /**
+   * Hover feedback: the handle under the pointer turns primary (theme) color —
+   * and handles that DRIVE other axes light those up too: the center spheres
+   * highlight all three axes of their family, a plane quad highlights the two
+   * in-plane axes it scales/moves along.
+   */
   updateHover(raycaster: Raycaster): void {
     if (this.drag || !this.group.visible) return;
     const hitObj = this.pickHandle(raycaster.intersectObject(this.group, true));
     const mesh = hitObj ? ((hitObj.userData.visual as Mesh | undefined) ?? hitObj) : null;
-    if (mesh === this.hovered) return;
-    if (this.hovered) {
-      const m = this.hovered.material as MeshBasicMaterial;
-      m.opacity = (this.hovered.userData.baseOpacity as number | undefined) ?? BASE_OPACITY;
-      m.color.copy(this.hovered.userData.baseColor as Color);
+    const targets = mesh ? this.hoverFamily(mesh) : [];
+    if (targets.length === this.hovered.length && targets.every((m, i) => m === this.hovered[i])) {
+      return;
     }
-    this.hovered = mesh;
-    if (mesh) {
-      const m = mesh.material as MeshBasicMaterial;
-      m.opacity = 1;
-      m.color.copy(this.hoverColor);
+    for (const m of this.hovered) {
+      const mat = m.material as MeshBasicMaterial;
+      mat.opacity = (m.userData.baseOpacity as number | undefined) ?? BASE_OPACITY;
+      mat.color.copy(m.userData.baseColor as Color);
     }
+    this.hovered = targets;
+    for (const m of targets) {
+      const mat = m.material as MeshBasicMaterial;
+      mat.opacity = 1;
+      mat.color.copy(this.hoverColor);
+    }
+  }
+
+  /** The hovered mesh plus every visible axis handle it drives (see updateHover). */
+  private hoverFamily(mesh: Mesh): Mesh[] {
+    // rotate-free & co. carry no baseColor (picker-only) — nothing to tint
+    const out = mesh.userData.baseColor ? [mesh] : [];
+    const handle = mesh.userData.handle as Handle;
+    const axisKind: HandleKind | null =
+      handle.kind === "translate-view" || handle.kind === "translate-plane"
+        ? "translate"
+        : handle.kind === "scale-view" || handle.kind === "scale-plane"
+          ? "scale"
+          : null;
+    if (!axisKind) return out;
+    const planeHover = handle.kind === "translate-plane" || handle.kind === "scale-plane";
+    this.group.traverse((o) => {
+      const m = o as Mesh;
+      const h = m.userData.handle as Handle | undefined;
+      if (!h || o.parent !== this.group || !o.visible || m === mesh) return;
+      if (h.kind !== axisKind || !m.userData.baseColor) return;
+      // a plane quad drives the two IN-PLANE axes (its own axis is the normal)
+      if (planeHover && h.axis === handle.axis) return;
+      out.push(m);
+    });
+    return out;
   }
 
   /** Re-apply themed axis/center colors to existing handles (see viewportTheme). */
@@ -536,7 +569,7 @@ export class TransformGizmo {
           ? viewportTheme.gizmo.center
           : AXIS_COLORS[handle.axis];
       base.copy(color);
-      if (mesh !== this.hovered) (mesh.material as MeshBasicMaterial).color.copy(color);
+      if (!this.hovered.includes(mesh)) (mesh.material as MeshBasicMaterial).color.copy(color);
     });
   }
 
