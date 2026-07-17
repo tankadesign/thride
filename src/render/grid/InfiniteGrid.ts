@@ -11,6 +11,7 @@ import {
   fwidth,
   length,
   log,
+  max,
   min,
   mix,
   positionWorld,
@@ -23,15 +24,17 @@ import { HELPER_LAYER } from "@/render/layers";
 import { viewportTheme } from "@/render/theme/viewportTheme";
 import type { CameraRig } from "@/render/nav/CameraRig";
 
-/** Finest cascade decade: its cells target ~this many pixels at its floor. */
-const BASE_PX = 3;
-/** Each decade fades IN as its cells grow across this pixel range. The wide
- *  span (≈1.5 decades of zoom) is what makes the level-to-level transition slow
- *  and smooth as you scroll — ~3× the old single-decade crossfade. */
-const FADE_LO = 2;
-const FADE_HI = 55;
-/** How many decades draw at once — a smooth cascade, not a hard 2-layer pop. */
-const LEVELS = 3;
+/** On-screen cell size (px) of the finest decade at its LARGEST, i.e. right
+ *  before it hands off to the next level. Bigger = sparser grid. */
+const GRID_PX = 14;
+/** Brightness a decade has when it "graduates" from middle to finest — the
+ *  crossfade runs 1 → MINOR_ALPHA over one decade of zoom, then
+ *  MINOR_ALPHA → 0 over the next, so a full fade spans TWO decades. */
+const MINOR_ALPHA = 0.45;
+/** Main-axis half-width in pixels (grid lines are ~1px — the axis reads as a
+ *  clearly heavier stroke, and fades with the same fog). */
+const AXIS_PX = 1.6;
+
 // --- ortho fade: a long radial dissolve from the view center ---
 /** Grid holds full until this fraction of the fade radius, then dissolves over
  *  the long remaining band so the plane edge never reads. */
@@ -61,11 +64,25 @@ const HAZE_FALLOFF_MAX = 700;
 const PERSP_REACH_MAX = 4700;
 
 /**
- * Infinite adaptive floor grid: a ground plane whose fragment shader draws
- * world-locked grid lines that subdivide as you zoom in and fade out as cells
- * shrink (continuous LOD from screen-space derivatives, so ONE shader serves
- * both perspective distance and ortho zoom). Recentered + sized under the view
- * every frame; a distance fade hides the plane edge so it looks endless.
+ * Infinite adaptive floor grid + main axis: a ground plane whose fragment
+ * shader draws world-locked grid lines that subdivide as you zoom in
+ * (continuous LOD from screen-space derivatives, so ONE shader serves both
+ * perspective distance and ortho zoom) plus the two world axis lines as
+ * heavier strokes. Both are per-pane toggles (uniforms); the axis inherits
+ * the grid's fog/AA/occlusion by construction — a separate fat-line object
+ * can't (Line2's expanded vertices break positionWorld-based fog).
+ *
+ * LOD continuity: three decades draw at once with weights (f = fract of the
+ * continuous decade coordinate): finest MINOR_ALPHA→0, middle 1→MINOR_ALPHA,
+ * coarsest 1. At a decade boundary every family's weight matches its
+ * predecessor's, and the entering coarsest coincides with already-solid
+ * middle lines — mathematically continuous, so the boundary is invisible.
+ * The old scheme faded each level by its own cell size, which popped the
+ * entering coarse level 0.5→1.0 along an iso-distance line ("line stops at
+ * a boundary") — and its per-level fwidth(p/spacing) took derivatives of the
+ * jumping spacing, spraying dot artifacts along that seam. AA here divides
+ * world distance by fwidth(p) ONLY (smooth), never by a derivative of
+ * anything containing the floor() jump.
  *
  * On {@link HELPER_LAYER}: excluded from SSR / planar reflections (a large
  * transparent plane would pollute the SSR G-buffer), drawn in the viewport's
@@ -82,6 +99,9 @@ export class InfiniteGrid {
   private readonly uHazeDensity = uniform(1);
   /** 1 = ortho radial, 0 = perspective haze. */
   private readonly uOrtho = uniform(0);
+  /** Per-pane overlay toggles (the plane renders when either is on). */
+  private readonly uGrid = uniform(1);
+  private readonly uAxis = uniform(1);
   private readonly uColor = uniform(new Color().copy(viewportTheme.gridLineColor));
 
   constructor() {
@@ -103,34 +123,42 @@ export class InfiniteGrid {
     this.object = mesh;
   }
 
-  /** Antialiased line coverage (1 on a line, 0 between) for a grid of `spacing`. */
+  /**
+   * Antialiased line coverage (1 on a line, 0 between) for a grid of `spacing`.
+   * Distance to the nearest line is measured in WORLD units, converted to
+   * pixels with fwidth(p) — spacing jumps at LOD boundaries, so taking
+   * derivatives of p/spacing (the old way) produced garbage there (the dots).
+   */
   // biome-ignore lint/suspicious/noExplicitAny: TSL chains hit TS2590 without any
-  private gridLine(p: any, spacing: any): any {
-    const c: any = p.div(spacing);
-    // distance to the nearest line, measured in PIXELS (fwidth = coord/pixel)
-    const fw: any = fwidth(c);
-    const d: any = abs(fract(c.sub(0.5)).sub(0.5)).div(fw);
-    return min(d.x, d.y).min(1).oneMinus();
+  private gridLine(p: any, fwp: any, spacing: any): any {
+    const distW: any = abs(fract(p.div(spacing).sub(0.5)).sub(0.5)).mul(spacing);
+    const dPx: any = distW.div(fwp);
+    return min(dPx.x, dPx.y).min(1).oneMinus();
   }
 
   private buildAlpha(): Node {
     // biome-ignore lint/suspicious/noExplicitAny: TSL chains hit TS2590 without any
     const p: any = vec2(positionWorld.x, positionWorld.z);
-    const fw: any = fwidth(p);
-    const w: any = fw.x.max(fw.y); // world units per pixel (worst axis)
-    // finest cascade decade: the 10^n whose cells sit near BASE_PX px right now
-    const base: any = pow(float(10), floor(log(w.mul(BASE_PX)).div(Math.log(10))));
-    // draw LEVELS decades at once, each faded IN by its on-screen cell size — a
-    // decade appears as its cells grow across [FADE_LO, FADE_HI] px and recedes
-    // as they shrink, so subdivisions cascade smoothly instead of popping and
-    // never pile into a too-thick mat (small-celled decades are near-invisible).
-    let grid: any = float(0);
-    for (let k = 0; k < LEVELS; k++) {
-      const spacing: any = base.mul(10 ** k);
-      const cellPx: any = spacing.div(w);
-      const levelFade: any = smoothstep(FADE_LO, FADE_HI, cellPx);
-      grid = grid.max(this.gridLine(p, spacing).mul(levelFade));
-    }
+    const fwp: any = fwidth(p);
+    const w: any = fwp.x.max(fwp.y); // world units per pixel (worst axis)
+    // continuous decade coordinate; f is the crossfade phase within a decade
+    const t: any = log(w.mul(GRID_PX)).div(Math.log(10));
+    const f: any = fract(t);
+    const lod0: any = pow(float(10), floor(t)); // finest drawn decade
+    // continuity-locked weights (see class docs)
+    const w0: any = mix(float(MINOR_ALPHA), float(0), f);
+    const w1: any = mix(float(1), float(MINOR_ALPHA), f);
+    const grid: any = this.gridLine(p, fwp, lod0)
+      .mul(w0)
+      .max(this.gridLine(p, fwp, lod0.mul(10)).mul(w1))
+      .max(this.gridLine(p, fwp, lod0.mul(100)))
+      .mul(this.uGrid);
+    // main axis: the x=0 / z=0 world lines as heavier AA strokes
+    const axisPx: any = abs(p).div(fwp); // px distance to the Z axis (x=0), X axis (z=0)
+    const axis: any = max(
+      axisPx.x.div(AXIS_PX).min(1).oneMinus(),
+      axisPx.y.div(AXIS_PX).min(1).oneMinus(),
+    ).mul(this.uAxis);
     // ORTHO: long radial dissolve from the view center (full until FOG_START·
     // radius, gone by radius) — the plane edge is past the radius, never seen.
     const radial: any = length(p.sub(this.uCenter));
@@ -144,7 +172,13 @@ export class InfiniteGrid {
     const camDist: any = length(positionWorld.sub(this.uCamPos));
     const perspFog: any = clamp(exp(this.uHazeStart.sub(camDist).mul(this.uHazeDensity)), 0, 1);
     const fog: any = mix(perspFog, orthoFog, this.uOrtho);
-    return clamp(grid.mul(fog), 0, 1) as Node;
+    return clamp(grid.max(axis).mul(fog), 0, 1) as Node;
+  }
+
+  /** Per-pane overlay toggles — the caller keeps the plane visible if either is on. */
+  setToggles(grid: boolean, mainAxis: boolean): void {
+    this.uGrid.value = grid ? 1 : 0;
+    this.uAxis.value = mainAxis ? 1 : 0;
   }
 
   /**
