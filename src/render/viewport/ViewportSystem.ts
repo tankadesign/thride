@@ -136,6 +136,9 @@ export class ViewportSystem {
   // reproject/denoise nodes self-manage their own frame counters via updateBefore.
   private accumFrame = 0;
   private accumTarget = 0;
+  /** Tone mapping of the last focused PBR pane — inherited by non-shaded
+   *  (wireframe/flat) panes so focusing one doesn't shift the whole canvas. */
+  private lastPbrToneMapping: OutputToneMapping | null = null;
   /** `performance.now()` deadline for the post-geometry render burst (see {@link invalidate}). */
   private burstUntil = 0;
   /** Canvas-relative 2D position of the active nav pivot marker (the "+"). */
@@ -389,6 +392,16 @@ export class ViewportSystem {
   /** Logical pane index shown in each rect (single layout shows the maximized pane). */
   logicalPanes(): number[] {
     return this.editor.layout === "single" ? [this.editor.maximizedPane] : [0, 1, 2, 3];
+  }
+
+  /** Tone mapping for a non-shaded active pane before any PBR pane has been
+   *  focused: the first visible PBR pane's, else "none". */
+  private fallbackPaneToneMapping(): OutputToneMapping {
+    for (const pane of this.logicalPanes()) {
+      const d = this.editor.paneDisplay(pane);
+      if (d.shading === "pbr") return d.toneMapping;
+    }
+    return "none";
   }
 
   /** Canvas rect of a logical pane. */
@@ -649,7 +662,19 @@ export class ViewportSystem {
       renderer.setClearAlpha(prevClearAlpha);
       this.scene.background = bg;
     }
-    const mode: OutputToneMapping = activeDisp.shading === "pbr" ? activeDisp.toneMapping : "none";
+    // One tone mapping for the whole composite. A PBR pane owns its own
+    // (including an explicit "none"). A non-shaded pane (wireframe/flat) has
+    // none of its own — snapping the canvas to "none" the moment it gains
+    // focus shifts every pane's color, so it inherits the last focused PBR
+    // pane's tone mapping instead (falling back to any PBR pane in the layout,
+    // then "none").
+    let mode: OutputToneMapping;
+    if (activeDisp.shading === "pbr") {
+      mode = activeDisp.toneMapping;
+      this.lastPbrToneMapping = mode;
+    } else {
+      mode = this.lastPbrToneMapping ?? this.fallbackPaneToneMapping();
+    }
     output.setToneMapping(mode);
     const activeCamera = this.rigFor(this.editor.activePane).camera;
     // Ambient Shadows (GTAO): single-pane, PBR or Flat (Flat gives a GTAO-only
