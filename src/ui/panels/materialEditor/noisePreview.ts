@@ -19,6 +19,7 @@ export function useLayerPreview(layer: ProceduralLayer | undefined): string | nu
   const json = layer ? JSON.stringify(layer) : null;
   useEffect(() => {
     if (!json) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- clear the stale preview immediately when the layer is removed/changed; the async render below sets the fresh one
       setUrl(null);
       return;
     }

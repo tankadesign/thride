@@ -129,9 +129,14 @@ function buildAreaHelper(data: LightDataDTO): Object3D {
 // ---- directional (infinite) light: single direction line --------------
 
 const DIRECTIONAL_LINE_LENGTH = 1.5;
+const DIRECTIONAL_CIRCLE_RADIUS = 0.15;
 
 function buildDirectionalHelper(): Object3D {
-  const pts = [0, 0, 0, 0, 0, -DIRECTIONAL_LINE_LENGTH];
+  const pts = [
+    0, 0, 0, 0, 0, -DIRECTIONAL_LINE_LENGTH, // axis line: origin → -Z (where it shines)
+    // small circle at the axis center, perpendicular to the line (XY plane, z=0)
+    ...circleSegmentPoints(CONE_CIRCLE_SEGMENTS, DIRECTIONAL_CIRCLE_RADIUS, 0),
+  ];
   const geo = new BufferGeometry();
   geo.setAttribute("position", new BufferAttribute(new Float32Array(pts), 3));
   const line = new LineSegments(geo, HELPER_MAT);

@@ -50,12 +50,10 @@ export default tseslint.config(
       // Pre-existing debt, surfaced the first time this repo ran a working
       // type-aware linter (oxlint's tsgolint hung, so these rules never ran).
       // Downgraded to warnings — visible, not silenced — pending a dedicated
-      // cleanup; NONE of these come from the TSL typing work. `rules-of-hooks`
-      // stays an error (correctness-critical); the newer react-hooks advisories
-      // (`refs`, `set-state-in-effect`) and the auto-fixable style rules warn.
+      // cleanup; NOT from the TSL typing work. (The react-hooks findings were
+      // fixed or annotated with per-line reasons, so react-hooks/refs and
+      // set-state-in-effect stay at their recommended `error` severity.)
       "@typescript-eslint/no-unnecessary-type-assertion": "warn",
-      "react-hooks/refs": "warn",
-      "react-hooks/set-state-in-effect": "warn",
       "prefer-const": "warn",
       "no-useless-assignment": "warn",
     },

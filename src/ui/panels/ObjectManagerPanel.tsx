@@ -130,6 +130,9 @@ export function ObjectManagerPanel() {
   const dragRef = useRef<{ id: Uuid; startX: number; startY: number; active: boolean } | null>(
     null,
   );
+  // Mirror of `dragRef.current.active` for cursor styling — render reads state,
+  // not the ref (react-hooks/refs). Set at the drag start/end transitions below.
+  const [dragActive, setDragActive] = useState(false);
 
   // Option/Alt drives the copy cursor + option-drag-to-copy
   useEffect(() => {
@@ -161,6 +164,7 @@ export function ObjectManagerPanel() {
   // the same object still re-reveals it. In-panel clicks are already
   // on-screen, so the out-of-view check makes them a no-op.
   const lastRevealed = useRef(-1);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- runs every render on purpose so it sees fresh `rows`; the scroll is idempotent per selection event via the `lastRevealed` version ref
   useEffect(() => {
     if (!active || lastRevealed.current === selectionVersion || !doc.scene.has(active)) return;
     const blocked: Uuid[] = [];
@@ -168,6 +172,7 @@ export function ObjectManagerPanel() {
       if (collapsed.has(p)) blocked.push(p);
     }
     if (blocked.length > 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- expand the collapsed ancestors of an externally-selected node; the effect then re-runs with the row present, bounded by the `lastRevealed` ref
       setCollapsed((prev) => {
         const next = new Set(prev);
         for (const b of blocked) next.delete(b);
@@ -243,6 +248,7 @@ export function ObjectManagerPanel() {
     if (!d) return;
     if (!d.active && Math.hypot(e.clientX - d.startX, e.clientY - d.startY) > 5) {
       d.active = true;
+      setDragActive(true);
       if (!doc.selection.has(d.id)) doc.selection.selectObjects([d.id]);
       containerRef.current?.setPointerCapture(e.pointerId);
     }
@@ -252,6 +258,7 @@ export function ObjectManagerPanel() {
   const onPointerUp = (e: React.PointerEvent) => {
     const d = dragRef.current;
     dragRef.current = null;
+    setDragActive(false);
     if (!d?.active) {
       setDropTarget(null);
       return;
@@ -325,7 +332,7 @@ export function ObjectManagerPanel() {
     <div
       ref={containerRef}
       className={`relative h-full overflow-auto bg-base-100 text-xs select-none ${
-        dragRef.current?.active ? (altHeld ? "cursor-copy" : "cursor-alias") : ""
+        dragActive ? (altHeld ? "cursor-copy" : "cursor-alias") : ""
       }`}
       onPointerMove={(e) => {
         if (e.altKey !== altHeld) setAltHeld(e.altKey);
@@ -345,7 +352,7 @@ export function ObjectManagerPanel() {
             className={`flex items-center gap-1 pr-1 ${
               selected ? "bg-primary/25" : "hover:bg-base-200"
             } ${isInsideTarget ? "outline outline-1 outline-dashed outline-primary" : ""} ${
-              altHeld && !dragRef.current?.active ? "cursor-copy" : ""
+              altHeld && !dragActive ? "cursor-copy" : ""
             }`}
             style={{ paddingLeft: depth * INDENT + 2, height: ROW_H }}
             onPointerDown={(e) => onRowPointerDown(e, id)}

@@ -44,8 +44,12 @@ export function MaterialManagerPanel() {
   const anchor = useRef<Uuid | null>(null);
   /** Pointer over the thumbnail grid — gates the Delete key. */
   const hoverGrid = useRef(false);
+  // live ref of the selection for the once-attached keydown handler below —
+  // written in an effect, not during render (react-hooks/refs).
   const selectedRef = useRef(selected);
-  selectedRef.current = selected;
+  useEffect(() => {
+    selectedRef.current = selected;
+  });
 
   // stale ids linger in the atom after undo of a create — resolve against the
   // live library everywhere below
@@ -89,7 +93,7 @@ export function MaterialManagerPanel() {
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-    // biome-ignore lint/correctness/useExhaustiveDependencies: handlers read refs
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- attach the global listener once; it reads the latest selection through refs
   }, []);
 
   const rename = (id: Uuid, name: string) => {

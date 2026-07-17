@@ -91,6 +91,7 @@ export function Shell({ doc }: { doc: Document }) {
       },
     };
     const reg = new CommandRegistry();
+    // eslint-disable-next-line react-hooks/refs -- shellApi's callbacks read apiRef.current only when invoked (user actions), never during this memo
     reg.register(...buildCommands(doc, shellApi));
     return reg;
   }, [doc]);

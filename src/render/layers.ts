@@ -6,3 +6,11 @@
  * frame instead (see ViewportSystem.renderFrame).
  */
 export const HELPER_LAYER = 1;
+
+/**
+ * Layer for invisible click-selection proxies (lights, cameras — objects with
+ * no renderable geometry of their own). No camera renders this layer, so proxies
+ * are never drawn; the picking raycaster uses `layers.enableAll()`, so they are
+ * still hit-tested. See `render/helpers/pickProxy.ts`.
+ */
+export const PICK_LAYER = 2;

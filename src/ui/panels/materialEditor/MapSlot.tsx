@@ -229,6 +229,7 @@ function useAssetUrl(assetId: Uuid | undefined): string | null {
   useEffect(() => {
     const asset = assetId ? textureAssets.get(assetId) : undefined;
     if (!asset) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- this effect owns the object-URL lifecycle (create/revoke) keyed on assetId; clear it when the asset is gone
       setUrl(null);
       return;
     }

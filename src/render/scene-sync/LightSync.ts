@@ -17,6 +17,7 @@ import {
 import type { Uuid } from "@/types/core";
 import { defaultLightData, type LightDataDTO, SHADOW_RESOLUTION_PX } from "@/types/core/light";
 import type { SceneNode } from "@/core";
+import { buildPickProxy } from "@/render/helpers/pickProxy";
 import {
   buildBillboardCircle,
   buildOrientedLightHelper,
@@ -246,6 +247,7 @@ export class LightSync {
       light.target = autoTarget;
     }
     light.userData.lightType = data.type;
+    light.add(buildPickProxy()); // invisible proxy so the light is click-selectable
     this.attachHelper(light, data);
     return light;
   }

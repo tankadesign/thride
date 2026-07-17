@@ -29,6 +29,7 @@ import { buildPrimitive } from "@/geometry/primitives";
 import { meshRegistry } from "@/geometry/store/meshRegistry";
 import { RenderMesh } from "@/geometry/sync/RenderMesh";
 import { buildCameraHelper } from "@/render/helpers/CameraHelper";
+import { buildPickProxy } from "@/render/helpers/pickProxy";
 import { HELPER_LAYER } from "@/render/layers";
 import { viewportTheme } from "@/render/theme/viewportTheme";
 import { evaluateGenerator } from "@/generators/graph";
@@ -316,6 +317,7 @@ export class SceneSynchronizer {
     // reflections; the viewport's overlay render draws it instead
     helper.traverse((o) => o.layers.set(HELPER_LAYER));
     group.add(helper);
+    group.add(buildPickProxy()); // invisible proxy so the camera is click-selectable
     return group;
   }
 

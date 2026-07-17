@@ -72,6 +72,7 @@ export function useMaterialThumbnail(dto: MaterialDTO): string | null {
     return () => {
       alive = false;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the stable `key` hash of dto; re-running on dto identity would re-render the thumbnail needlessly
   }, [key]);
   return url;
 }
