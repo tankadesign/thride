@@ -9,6 +9,7 @@ import {
   Euler,
   Group,
   type Intersection,
+  Matrix4,
   Mesh,
   MeshBasicMaterial,
   Object3D,
@@ -105,10 +106,23 @@ const RING_R = 1.0;
 const AXIS_COLORS = [viewportTheme.gizmo.x, viewportTheme.gizmo.y, viewportTheme.gizmo.z] as const;
 const AXIS_VECS = [new Vector3(1, 0, 0), new Vector3(0, 1, 0), new Vector3(0, 0, 1)] as const;
 
+/**
+ * A dragged node's parent coordinate frame at drag start. Gizmo deltas are
+ * WORLD-space; node transforms are PARENT-space — under a moved/rotated/
+ * scaled parent the two differ, so every write goes through this frame.
+ */
+interface ParentFrame {
+  /** World → parent for directions (rotation+scale, no translation). */
+  dirToParent: Matrix4;
+  q: Quaternion;
+  qInv: Quaternion;
+}
+
 interface DragState {
   handle: Handle;
   nodeIds: Uuid[];
   begin: Map<Uuid, TransformDTO>;
+  frames: Map<Uuid, ParentFrame>;
   pivot: Vector3;
   axisWorld: Vector3;
   /** Gizmo orientation at drag start (local vs world axes). */
@@ -134,14 +148,16 @@ interface DragState {
 export class TransformGizmo {
   readonly group = new Group();
   private readonly doc: Document;
+  private readonly resolveObject: (id: Uuid) => Object3D | undefined;
   private drag: DragState | null = null;
   private hovered: Mesh[] = [];
   private activeObject: Object3D | null = null;
   private readonly hoverColor = viewportTheme.primary;
   private mode: GizmoMode = "all";
 
-  constructor(doc: Document) {
+  constructor(doc: Document, resolveObject?: (id: Uuid) => Object3D | undefined) {
     this.doc = doc;
+    this.resolveObject = resolveObject ?? (() => undefined);
     this.group.name = "gizmo";
     this.group.renderOrder = 999;
     this.build();
@@ -199,6 +215,11 @@ export class TransformGizmo {
         return;
       }
       this.group.position.copy(ctx.centroidWorld);
+    } else if (activeObject) {
+      // WORLD position — node.transform.position is PARENT-space, and a child
+      // of a moved group would show its axis offset by the parent's transform
+      activeObject.updateWorldMatrix(true, false);
+      activeObject.getWorldPosition(this.group.position);
     } else {
       const t = this.doc.scene.mustGet(active).transform;
       this.group.position.set(t.position[0], t.position[1], t.position[2]);
@@ -266,7 +287,11 @@ export class TransformGizmo {
     const componentMode = mode === "point" || mode === "edge" || mode === "polygon";
     const ids = componentMode ? [] : [...this.doc.selection.objectIds];
     const begin = new Map<Uuid, TransformDTO>();
-    for (const id of ids) begin.set(id, structuredClone(this.doc.scene.mustGet(id).transform));
+    const frames = new Map<Uuid, ParentFrame>();
+    for (const id of ids) {
+      begin.set(id, structuredClone(this.doc.scene.mustGet(id).transform));
+      frames.set(id, this.parentFrameOf(id));
+    }
 
     const pivot = this.group.position.clone();
     const basis = this.group.quaternion.clone();
@@ -335,6 +360,7 @@ export class TransformGizmo {
       handle,
       nodeIds: ids,
       begin,
+      frames,
       pivot,
       axisWorld,
       basis,
@@ -391,9 +417,12 @@ export class TransformGizmo {
       }
       for (const [id, t0] of d.begin) {
         const t = structuredClone(t0);
-        t.position[0] = t0.position[0] + delta.x;
-        t.position[1] = t0.position[1] + delta.y;
-        t.position[2] = t0.position[2] + delta.z;
+        // node positions live in PARENT space — map the world delta through
+        // the parent's inverse frame (identity for top-level nodes)
+        const dl = delta.clone().applyMatrix4(d.frames.get(id)!.dirToParent);
+        t.position[0] = t0.position[0] + dl.x;
+        t.position[1] = t0.position[1] + dl.y;
+        t.position[2] = t0.position[2] + dl.z;
         updates.set(id, t);
       }
     } else if (d.handle.kind === "rotate" || d.handle.kind === "rotate-free") {
@@ -422,7 +451,11 @@ export class TransformGizmo {
         const q0 = new Quaternion().setFromEuler(
           new Euler(t0.rotation[0], t0.rotation[1], t0.rotation[2], "XYZ"),
         );
-        const e = new Euler().setFromQuaternion(dq.clone().multiply(q0), "XYZ");
+        // dq is WORLD-space; conjugate through the parent frame so a child of
+        // a rotated parent spins about the intended world axis: P⁻¹·dq·P·q0
+        const f = d.frames.get(id)!;
+        const local = f.qInv.clone().multiply(dq).multiply(f.q).multiply(q0);
+        const e = new Euler().setFromQuaternion(local, "XYZ");
         t.rotation = [e.x, e.y, e.z];
         updates.set(id, t);
       }
@@ -571,6 +604,19 @@ export class TransformGizmo {
       base.copy(color);
       if (!this.hovered.includes(mesh)) (mesh.material as MeshBasicMaterial).color.copy(color);
     });
+  }
+
+  /** The node's parent frame at drag start (identity when unresolvable). */
+  private parentFrameOf(id: Uuid): ParentFrame {
+    const parent = this.resolveObject(id)?.parent;
+    if (!parent) {
+      return { dirToParent: new Matrix4(), q: new Quaternion(), qInv: new Quaternion() };
+    }
+    parent.updateWorldMatrix(true, false);
+    const dirToParent = parent.matrixWorld.clone().invert();
+    dirToParent.setPosition(0, 0, 0); // linear part only — frames map directions
+    const q = parent.getWorldQuaternion(new Quaternion());
+    return { dirToParent, q, qInv: q.clone().invert() };
   }
 
   private angleOnPlane(rel: Vector3, axis: Axis, basis: Quaternion): number {

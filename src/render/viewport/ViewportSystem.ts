@@ -176,7 +176,7 @@ export class ViewportSystem {
 
     this.sync = new SceneSynchronizer(doc, (burst) => this.invalidate(burst));
     this.scene.add(this.sync.root);
-    this.gizmo = new TransformGizmo(doc);
+    this.gizmo = new TransformGizmo(doc, (id) => this.sync.object(id));
     this.scene.add(this.gizmo.group);
     this.handles = new PrimitiveHandles(doc);
     this.scene.add(this.handles.group);
