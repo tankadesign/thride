@@ -60,6 +60,7 @@ type HandleKind =
   | "translate-view"
   | "translate-plane"
   | "scale-plane"
+  | "scale-view"
   | "rotate-free";
 type Axis = 0 | 1 | 2;
 
@@ -68,7 +69,7 @@ export type GizmoMode = "all" | "translate" | "rotate" | "scale";
 const MODE_KINDS: Record<Exclude<GizmoMode, "all">, ReadonlySet<HandleKind>> = {
   translate: new Set(["translate", "translate-view", "translate-plane"]),
   rotate: new Set(["rotate", "rotate-free"]),
-  scale: new Set(["scale", "scale-plane"]),
+  scale: new Set(["scale", "scale-plane", "scale-view"]),
 };
 
 interface Handle {
@@ -89,6 +90,7 @@ interface Handle {
 const HANDLE_PRIORITY: Record<HandleKind, number> = {
   scale: 3,
   "scale-plane": 3,
+  "scale-view": 3,
   translate: 2,
   "translate-view": 2,
   "translate-plane": 2,
@@ -116,6 +118,9 @@ interface DragState {
   startAngle: number;
   /** Gizmo world radius at drag start — trackball drag-to-angle scale. */
   freeRadius: number;
+  /** Camera frame at drag start (scale-view): maps a drag onto screen right/up. */
+  viewRight?: Vector3;
+  viewUp?: Vector3;
   /** Set in component edit modes: the drag drives vertices, not transforms. */
   component?: ComponentDrag;
 }
@@ -276,8 +281,12 @@ export class TransformGizmo {
     ) {
       // plane translate/scale works IN the plane whose normal is the handle's axis
       plane = new Plane().setFromNormalAndCoplanarPoint(axisWorld, pivot);
-    } else if (handle.kind === "translate-view" || handle.kind === "rotate-free") {
-      // view plane through the pivot: free move / C4D trackball rotate
+    } else if (
+      handle.kind === "translate-view" ||
+      handle.kind === "rotate-free" ||
+      handle.kind === "scale-view"
+    ) {
+      // view plane through the pivot: free move / trackball / uniform scale
       plane = new Plane().setFromNormalAndCoplanarPoint(viewDir.clone().negate(), pivot);
     } else {
       // plane containing the axis, facing the camera as much as possible
@@ -292,6 +301,26 @@ export class TransformGizmo {
 
     const rel = startPoint.clone().sub(pivot);
     const startAngle = this.angleOnPlane(rel, handle.axis, basis);
+
+    // scale-view maps the drag onto SCREEN right/up (up/right grows, down/left
+    // shrinks), so it needs the camera frame at drag start. setFromCamera
+    // stashes the camera on the raycaster; a bare synthetic ray falls back to
+    // a world-up-derived frame.
+    let viewRight: Vector3 | undefined;
+    let viewUp: Vector3 | undefined;
+    if (handle.kind === "scale-view") {
+      const cam = (raycaster as Raycaster & { camera?: Camera }).camera;
+      if (cam) {
+        const m = cam.matrixWorld.elements;
+        viewRight = new Vector3(m[0], m[1], m[2]).normalize();
+        viewUp = new Vector3(m[4], m[5], m[6]).normalize();
+      } else {
+        viewRight = new Vector3().crossVectors(viewDir, new Vector3(0, 1, 0));
+        if (viewRight.lengthSq() < 1e-6) viewRight.set(1, 0, 0);
+        viewRight.normalize();
+        viewUp = new Vector3().crossVectors(viewRight, viewDir).normalize();
+      }
+    }
 
     let component: ComponentDrag | undefined;
     if (componentMode) {
@@ -313,6 +342,8 @@ export class TransformGizmo {
       startPoint,
       startAngle,
       freeRadius: Math.max(1e-6, this.group.scale.x * RING_R),
+      viewRight,
+      viewUp,
       component,
     };
     return true;
@@ -393,6 +424,25 @@ export class TransformGizmo {
         );
         const e = new Euler().setFromQuaternion(dq.clone().multiply(q0), "XYZ");
         t.rotation = [e.x, e.y, e.z];
+        updates.set(id, t);
+      }
+    } else if (d.handle.kind === "scale-view") {
+      // uniform scale from the center sphere: up or right grows, down or left
+      // shrinks — one ring-radius of drag = ±1× (crossing zero mirrors).
+      const delta = point.clone().sub(d.startPoint);
+      const along = delta.dot(d.viewRight!) + delta.dot(d.viewUp!);
+      let ratio = 1 + along / d.freeRadius;
+      if (mods.snap) ratio = snapTo(ratio, SCALE_SNAP);
+      // an exact 0 collapses the matrix — hold just off zero until the drag
+      // crosses to the mirrored side
+      if (Math.abs(ratio) < 0.01) ratio = ratio < 0 ? -0.01 : 0.01;
+      if (d.component) {
+        d.component.applyScale(d.basis, 0, ratio, true, d.pivot);
+        return;
+      }
+      for (const [id, t0] of d.begin) {
+        const t = structuredClone(t0);
+        t.scale = [t0.scale[0] * ratio, t0.scale[1] * ratio, t0.scale[2] * ratio];
         updates.set(id, t);
       }
     } else if (d.handle.kind === "scale-plane") {
@@ -482,7 +532,9 @@ export class TransformGizmo {
       if (!base) return; // pickers/non-handles carry no baseColor
       const handle = mesh.userData.handle as Handle;
       const color =
-        handle.kind === "translate-view" ? viewportTheme.gizmo.center : AXIS_COLORS[handle.axis];
+        handle.kind === "translate-view" || handle.kind === "scale-view"
+          ? viewportTheme.gizmo.center
+          : AXIS_COLORS[handle.axis];
       base.copy(color);
       if (mesh !== this.hovered) (mesh.material as MeshBasicMaterial).color.copy(color);
     });
@@ -595,6 +647,17 @@ export class TransformGizmo {
       new SphereGeometry(0.07 * PICK_SCALE, 8, 6),
     );
     center.position.set(0, 0, 0);
+
+    // scale-only mode's center sphere: same look, but drags scale UNIFORMLY
+    // (up/right grows, down/left shrinks — see the scale-view drag branch)
+    const scaleCenter = this.handleMesh(
+      new SphereGeometry(0.07, 16, 12),
+      viewportTheme.gizmo.center,
+      { kind: "scale-view", axis: 0 },
+      new SphereGeometry(0.07 * PICK_SCALE, 8, 6),
+      { onlyMode: "scale" },
+    );
+    scaleCenter.position.set(0, 0, 0);
   }
 
   /**
