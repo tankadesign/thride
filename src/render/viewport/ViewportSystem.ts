@@ -5,7 +5,6 @@ import {
   NoToneMapping,
   DirectionalLight,
   Float32BufferAttribute,
-  GridHelper,
   LineBasicMaterial,
   LineSegments,
   Object3D,
@@ -27,6 +26,7 @@ import { TransformGizmo } from "@/render/gizmo/TransformGizmo";
 import { PrimitiveHandles } from "@/render/handles/PrimitiveHandles";
 import { applyCameraHelperTheme } from "@/render/helpers/CameraHelper";
 import { applyLightHelperTheme } from "@/render/helpers/LightHelpers";
+import { InfiniteGrid } from "@/render/grid/InfiniteGrid";
 import { CameraRig } from "@/render/nav/CameraRig";
 import { ComponentOverlays } from "@/render/overlays/ComponentOverlays";
 import { applyMeshMaterialsTheme, SceneSynchronizer } from "@/render/scene-sync/SceneSynchronizer";
@@ -117,7 +117,7 @@ export class ViewportSystem {
   private output: DitherOutput | null = null;
   private readonly scene = new Scene();
   private readonly envSync: EnvironmentSync;
-  private grid: GridHelper;
+  private readonly grid: InfiniteGrid;
   private mainAxis: LineSegments;
   private readonly defaultAmbient: AmbientLight;
   private readonly defaultKey: DirectionalLight;
@@ -165,8 +165,8 @@ export class ViewportSystem {
     (this.raycaster.params as { Line2?: { threshold: number } }).Line2 = { threshold: 6 };
 
     this.scene.background = viewportTheme.backgroundColor.clone();
-    this.grid = this.buildGrid();
-    this.scene.add(this.grid);
+    this.grid = new InfiniteGrid();
+    this.scene.add(this.grid.object);
     this.mainAxis = this.buildMainAxis();
     this.scene.add(this.mainAxis);
     // fallback lighting rig — disabled once the document supplies its own
@@ -228,14 +228,6 @@ export class ViewportSystem {
     void this.init();
   }
 
-  /** 40×40 world-unit floor grid — uniform cells; the origin cross is the
-   *  separately-toggled {@link buildMainAxis} overlay, not GridHelper's center. */
-  private buildGrid(): GridHelper {
-    const grid = new GridHelper(40, 40, viewportTheme.gridCellColor, viewportTheme.gridCellColor);
-    grid.position.y = -0.001;
-    return grid;
-  }
-
   /** The two world axis lines (X, Z) through the origin, spanning the grid —
    *  toggled independently of the grid (Overlays → Main Axis). */
   private buildMainAxis(): LineSegments {
@@ -270,10 +262,7 @@ export class ViewportSystem {
     this.defaultAmbient.color.copy(viewportTheme.lightAmbientColor);
     this.defaultKey.color.copy(viewportTheme.lightKeyColor);
     this.defaultFill.color.copy(viewportTheme.lightFillColor);
-    this.scene.remove(this.grid);
-    this.grid.dispose();
-    this.grid = this.buildGrid();
-    this.scene.add(this.grid);
+    this.grid.applyTheme();
     this.scene.remove(this.mainAxis);
     this.mainAxis.geometry.dispose();
     (this.mainAxis.material as LineBasicMaterial).dispose();
@@ -412,6 +401,7 @@ export class ViewportSystem {
     this.input.dispose();
     this.sync.dispose();
     this.envSync.dispose();
+    this.grid.dispose();
     this.output?.dispose();
     this.renderer?.dispose();
   }
@@ -600,7 +590,10 @@ export class ViewportSystem {
       this.syncSceneCamera(i, rig);
       // per-pane display settings
       const disp = this.editor.paneDisplay(i);
-      this.grid.visible = disp.grid;
+      // per-pane: recenter/size the infinite grid to THIS pane's camera before
+      // it renders (shared object — a once-per-frame setup leaves 3/4 wrong)
+      this.grid.object.visible = disp.grid;
+      if (disp.grid) this.grid.configure(rig);
       this.mainAxis.visible = disp.mainAxis;
       renderer.shadowMap.enabled = disp.shading === "pbr" && disp.shadows;
       this.sync.applyShading(disp.shading, disp.backfaces, disp.lines, disp.hiddenLines);

@@ -21,6 +21,16 @@ const ORTHO_DIRS: Record<Exclude<BuiltinCamera, "persp">, Vector3> = {
 
 const MIN_PHI = 0.05; // keep away from the poles
 
+// Sane zoom limits (shared by dolly / dollyToward / framing so hard limits
+// hold everywhere). Persp is a camera→focus distance; ortho is world units per
+// half-height — kept ~2× smaller so the two rigs feel similar at the extremes.
+const MIN_FOCUS = 0.2;
+const MAX_FOCUS = 2000;
+const MIN_ZOOM = 0.1;
+const MAX_ZOOM = 1000;
+const clampFocus = (d: number) => MathUtils.clamp(d, MIN_FOCUS, MAX_FOCUS);
+const clampZoom = (z: number) => MathUtils.clamp(z, MIN_ZOOM, MAX_ZOOM);
+
 /**
  * One pane's camera + navigation state, C4D-style.
  *
@@ -74,7 +84,7 @@ export class CameraRig {
    */
   beginOrbitPivot(hit: Vector3 | null): Vector3 {
     if (hit) {
-      this.focusDistance = Math.max(0.05, this.camera.position.distanceTo(hit));
+      this.focusDistance = clampFocus(this.camera.position.distanceTo(hit));
       return hit.clone();
     }
     const fwd = this.camera.getWorldDirection(new Vector3());
@@ -138,13 +148,15 @@ export class CameraRig {
   dolly(delta: number): void {
     const factor = Math.exp(-delta * 0.002);
     if (this.camera instanceof PerspectiveCamera) {
+      // clamp FIRST, then move the camera by the distance actually consumed —
+      // else the camera keeps sliding while focusDistance is pinned at a limit
+      const next = clampFocus(this.focusDistance * factor);
       const fwd = this.camera.getWorldDirection(new Vector3());
-      const travel = this.focusDistance * (1 - factor);
-      this.camera.position.addScaledVector(fwd, travel);
-      this.focusDistance = MathUtils.clamp(this.focusDistance * factor, 0.05, 4000);
+      this.camera.position.addScaledVector(fwd, this.focusDistance - next);
+      this.focusDistance = next;
       this.camera.updateMatrixWorld();
     } else {
-      this.orthoZoom = MathUtils.clamp(this.orthoZoom * factor, 0.01, 4000);
+      this.orthoZoom = clampZoom(this.orthoZoom * factor);
       this.applyOrtho();
     }
   }
@@ -163,13 +175,13 @@ export class CameraRig {
       const offset = this.camera.position.clone().sub(point);
       const dist = offset.length();
       if (dist < 1e-6) return; // camera sitting on the pivot — nothing to do
-      const newDist = MathUtils.clamp(dist * factor, 0.05, 4000);
+      const newDist = clampFocus(dist * factor);
       offset.multiplyScalar(newDist / dist);
       this.camera.position.copy(point).add(offset);
-      this.focusDistance = MathUtils.clamp(this.focusDistance * factor, 0.05, 4000);
+      this.focusDistance = clampFocus(this.focusDistance * factor);
       this.camera.updateMatrixWorld();
     } else {
-      const newZoom = MathUtils.clamp(this.orthoZoom * factor, 0.01, 4000);
+      const newZoom = clampZoom(this.orthoZoom * factor);
       const k = newZoom / this.orthoZoom;
       // keep `point` fixed on screen: center' = point + (center - point) * k
       this.pivot.sub(point).multiplyScalar(k).add(point);
@@ -185,15 +197,30 @@ export class CameraRig {
     const size = box.getSize(new Vector3()).length() || 1;
     if (this.camera instanceof PerspectiveCamera) {
       const fwd = this.camera.getWorldDirection(new Vector3());
-      this.focusDistance = size * 1.2;
+      this.focusDistance = clampFocus(size * 1.2);
       this.camera.position.copy(center).addScaledVector(fwd, -this.focusDistance);
       this.camera.lookAt(center);
       this.camera.updateMatrixWorld();
     } else {
       this.pivot.copy(center);
-      this.orthoZoom = size * 0.7;
+      this.orthoZoom = clampZoom(size * 0.7);
       this.applyOrtho();
     }
+  }
+
+  /**
+   * Where the view is centered on the ground and the world height it spans
+   * there — recenters and sizes the infinite grid. Persp: the focus point and
+   * its frustum height; ortho: the pivot and full view height.
+   */
+  groundView(): { center: Vector3; extent: number } {
+    if (this.camera instanceof PerspectiveCamera) {
+      const fwd = this.camera.getWorldDirection(new Vector3());
+      const center = this.camera.position.clone().addScaledVector(fwd, this.focusDistance);
+      const extent = 2 * this.focusDistance * Math.tan(MathUtils.degToRad(this.camera.fov / 2));
+      return { center, extent };
+    }
+    return { center: this.pivot.clone(), extent: this.orthoZoom * 2 };
   }
 
   private applyOrtho(): void {
