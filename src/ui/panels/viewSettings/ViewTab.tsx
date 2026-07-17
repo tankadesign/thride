@@ -74,6 +74,7 @@ export function ViewTab({
 
       <Section title="Overlays" defaultOpen>
         <Toggle label="Grid" checked={disp.grid} onChange={(v) => set({ grid: v })} />
+        <Toggle label="Main Axis" checked={disp.mainAxis} onChange={(v) => set({ mainAxis: v })} />
         <Toggle
           label="Lines"
           checked={disp.lines}

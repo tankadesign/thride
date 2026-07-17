@@ -1,9 +1,13 @@
 import {
   AmbientLight,
   Box3,
+  BufferGeometry,
   NoToneMapping,
   DirectionalLight,
+  Float32BufferAttribute,
   GridHelper,
+  LineBasicMaterial,
+  LineSegments,
   Object3D,
   PCFShadowMap,
   Raycaster,
@@ -114,6 +118,7 @@ export class ViewportSystem {
   private readonly scene = new Scene();
   private readonly envSync: EnvironmentSync;
   private grid: GridHelper;
+  private mainAxis: LineSegments;
   private readonly defaultAmbient: AmbientLight;
   private readonly defaultKey: DirectionalLight;
   private readonly defaultFill: DirectionalLight;
@@ -162,6 +167,8 @@ export class ViewportSystem {
     this.scene.background = viewportTheme.backgroundColor.clone();
     this.grid = this.buildGrid();
     this.scene.add(this.grid);
+    this.mainAxis = this.buildMainAxis();
+    this.scene.add(this.mainAxis);
     // fallback lighting rig — disabled once the document supplies its own
     // lights (or, later, an environment), so scenes aren't double-lit.
     this.defaultAmbient = new AmbientLight(viewportTheme.lightAmbientColor, 0.35);
@@ -221,11 +228,28 @@ export class ViewportSystem {
     void this.init();
   }
 
-  /** 40×40 world-unit floor grid, colored from the viewport theme. */
+  /** 40×40 world-unit floor grid — uniform cells; the origin cross is the
+   *  separately-toggled {@link buildMainAxis} overlay, not GridHelper's center. */
   private buildGrid(): GridHelper {
-    const grid = new GridHelper(40, 40, viewportTheme.gridLineColor, viewportTheme.gridCellColor);
+    const grid = new GridHelper(40, 40, viewportTheme.gridCellColor, viewportTheme.gridCellColor);
     grid.position.y = -0.001;
     return grid;
+  }
+
+  /** The two world axis lines (X, Z) through the origin, spanning the grid —
+   *  toggled independently of the grid (Overlays → Main Axis). */
+  private buildMainAxis(): LineSegments {
+    const h = 20; // half the grid's 40-unit extent
+    const geo = new BufferGeometry();
+    geo.setAttribute(
+      "position",
+      new Float32BufferAttribute([-h, 0, 0, h, 0, 0, 0, 0, -h, 0, 0, h], 3),
+    );
+    const axis = new LineSegments(
+      geo,
+      new LineBasicMaterial({ color: viewportTheme.gridLineColor }),
+    );
+    return axis;
   }
 
   /**
@@ -250,6 +274,11 @@ export class ViewportSystem {
     this.grid.dispose();
     this.grid = this.buildGrid();
     this.scene.add(this.grid);
+    this.scene.remove(this.mainAxis);
+    this.mainAxis.geometry.dispose();
+    (this.mainAxis.material as LineBasicMaterial).dispose();
+    this.mainAxis = this.buildMainAxis();
+    this.scene.add(this.mainAxis);
     this.invalidate();
   }
 
@@ -572,6 +601,7 @@ export class ViewportSystem {
       // per-pane display settings
       const disp = this.editor.paneDisplay(i);
       this.grid.visible = disp.grid;
+      this.mainAxis.visible = disp.mainAxis;
       renderer.shadowMap.enabled = disp.shading === "pbr" && disp.shadows;
       this.sync.applyShading(disp.shading, disp.backfaces, disp.lines, disp.hiddenLines);
       // the HDR target lives in DEVICE pixels (no implicit pixelRatio scale

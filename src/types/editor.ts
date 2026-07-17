@@ -117,6 +117,8 @@ export interface PaneDisplay {
   /** Where the vignette falloff starts (0 = center, 1 = corners only). */
   vignetteRadius: number;
   grid: boolean;
+  /** The two world axis lines (X/Z) through the origin — separate from the grid. */
+  mainAxis: boolean;
   /** Wireframe overlay on top of PBR/Flat. No effect in Wireframe mode (already all lines). */
   lines: boolean;
   /** Show edges occluded by surfaces (behind polygons). Requires `lines`. */
@@ -163,6 +165,7 @@ export const defaultPaneDisplay = (pane = 0): PaneDisplay => ({
   vignetteAmount: 0.4,
   vignetteRadius: 0.5,
   grid: true,
+  mainAxis: true,
   lines: false,
   hiddenLines: false,
   toneMapping: "aces",
