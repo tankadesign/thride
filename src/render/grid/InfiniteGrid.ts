@@ -102,16 +102,20 @@ export class InfiniteGrid {
   /** Per-pane overlay toggles (the plane renders when either is on). */
   private readonly uGrid = uniform(1);
   private readonly uAxis = uniform(1);
-  private readonly uColor = uniform(new Color().copy(viewportTheme.gridLineColor));
+  /** The three viewportTheme grid colors: minor cells / major lines / main axis. */
+  private readonly uCellColor = uniform(new Color().copy(viewportTheme.gridCellColor));
+  private readonly uLineColor = uniform(new Color().copy(viewportTheme.gridLineColor));
+  private readonly uAxisColor = uniform(new Color().copy(viewportTheme.gridMainAxisLineColor));
 
   constructor() {
     const mat = new MeshBasicNodeMaterial();
     mat.transparent = true;
     mat.depthWrite = false; // occluded by objects, but never hides gizmos/handles
     mat.side = DoubleSide; // readable from beneath the plane too
-    // biome-ignore lint/suspicious/noExplicitAny: color uniform → colorNode
-    mat.colorNode = this.uColor as any;
-    mat.opacityNode = this.buildAlpha();
+    const { color, opacity } = this.buildNodes();
+    // biome-ignore lint/suspicious/noExplicitAny: generic Node → typed color/opacity slot
+    mat.colorNode = color as any;
+    mat.opacityNode = opacity;
 
     const mesh = new Mesh(new PlaneGeometry(1, 1), mat);
     mesh.rotation.x = -Math.PI / 2; // XY plane → XZ ground
@@ -136,7 +140,13 @@ export class InfiniteGrid {
     return min(dPx.x, dPx.y).min(1).oneMinus();
   }
 
-  private buildAlpha(): Node {
+  /**
+   * Build the material's color + opacity nodes together so they share the
+   * per-fragment line-coverage graph (the TSL builder computes it once).
+   * COLOR uses the three theme tiers: minor cell lines → cellColor, major
+   * (coarser-decade) lines tint toward lineColor, the x=0/z=0 axes → axisColor.
+   */
+  private buildNodes(): { color: Node; opacity: Node } {
     // biome-ignore lint/suspicious/noExplicitAny: TSL chains hit TS2590 without any
     const p: any = vec2(positionWorld.x, positionWorld.z);
     const fwp: any = fwidth(p);
@@ -145,20 +155,26 @@ export class InfiniteGrid {
     const t: any = log(w.mul(GRID_PX)).div(Math.log(10));
     const f: any = fract(t);
     const lod0: any = pow(float(10), floor(t)); // finest drawn decade
-    // continuity-locked weights (see class docs)
+    const c0: any = this.gridLine(p, fwp, lod0);
+    const c1: any = this.gridLine(p, fwp, lod0.mul(10));
+    const c2: any = this.gridLine(p, fwp, lod0.mul(100));
+    // continuity-locked weights (see class docs): finest K→0, middle 1→K, coarsest 1
     const w0: any = mix(float(MINOR_ALPHA), float(0), f);
     const w1: any = mix(float(1), float(MINOR_ALPHA), f);
-    const grid: any = this.gridLine(p, fwp, lod0)
-      .mul(w0)
-      .max(this.gridLine(p, fwp, lod0.mul(10)).mul(w1))
-      .max(this.gridLine(p, fwp, lod0.mul(100)))
-      .mul(this.uGrid);
-    // main axis: the x=0 / z=0 world lines as heavier AA strokes
+    const gridCov: any = c0.mul(w0).max(c1.mul(w1)).max(c2).mul(this.uGrid);
+    // coarser-decade lines read as "major" (tint toward lineColor); the finest
+    // subdivisions stay cellColor. cellColor↔lineColor are close grays, so the
+    // slight tier discontinuity at a decade boundary is imperceptible.
+    const majorTint: any = c1.mul(w1).add(c2).min(1);
+    const gridColor: any = mix(this.uCellColor, this.uLineColor, majorTint);
+    // main axis: the x=0 / z=0 world lines as heavier AA strokes, own color
     const axisPx: any = abs(p).div(fwp); // px distance to the Z axis (x=0), X axis (z=0)
-    const axis: any = max(
+    const axisCov: any = max(
       axisPx.x.div(AXIS_PX).min(1).oneMinus(),
       axisPx.y.div(AXIS_PX).min(1).oneMinus(),
     ).mul(this.uAxis);
+    const color: any = mix(gridColor, this.uAxisColor, axisCov);
+    const cov: any = gridCov.max(axisCov);
     // ORTHO: long radial dissolve from the view center (full until FOG_START·
     // radius, gone by radius) — the plane edge is past the radius, never seen.
     const radial: any = length(p.sub(this.uCenter));
@@ -172,7 +188,7 @@ export class InfiniteGrid {
     const camDist: any = length(positionWorld.sub(this.uCamPos));
     const perspFog: any = clamp(exp(this.uHazeStart.sub(camDist).mul(this.uHazeDensity)), 0, 1);
     const fog: any = mix(perspFog, orthoFog, this.uOrtho);
-    return clamp(grid.max(axis).mul(fog), 0, 1) as Node;
+    return { color: color as Node, opacity: clamp(cov.mul(fog), 0, 1) as Node };
   }
 
   /** Per-pane overlay toggles — the caller keeps the plane visible if either is on. */
@@ -218,9 +234,11 @@ export class InfiniteGrid {
     this.object.updateMatrixWorld();
   }
 
-  /** Re-read the themed grid color (CSS var change). */
+  /** Re-read the themed grid colors (CSS var change). */
   applyTheme(): void {
-    this.uColor.value.copy(viewportTheme.gridLineColor);
+    this.uCellColor.value.copy(viewportTheme.gridCellColor);
+    this.uLineColor.value.copy(viewportTheme.gridLineColor);
+    this.uAxisColor.value.copy(viewportTheme.gridMainAxisLineColor);
   }
 
   dispose(): void {

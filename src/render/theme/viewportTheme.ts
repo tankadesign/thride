@@ -54,8 +54,10 @@ const customSpecs = {
   activeBackgroundColor: semantic.base100,
   /** Grid major (axis-crossing) lines. */
   gridLineColor: semantic.neutral,
+  /** Grid major (axis-crossing) lines. */
+  gridMainAxisLineColor: semantic.info,
   /** Grid minor (cell) lines. */
-  gridCellColor: semantic.base300,
+  gridCellColor: semantic.neutral,
   /** Shaded surface albedo (PBR + Flat). */
   polygonColor: new Color(0xb8b8c0),
   /** "Lines" overlay edges drawn over shaded surfaces. */
