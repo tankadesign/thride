@@ -44,6 +44,15 @@ export class SelectionOutline {
     if (entry) entry.mesh.geometry = geometry;
   }
 
+  /**
+   * Per-pane gate, set by applyShading before each pane renders: wireframe
+   * panes hide the hull — with the surface invisible there, nothing paints
+   * over its interior and the "outline" reads as a solid selection fill.
+   */
+  setVisible(visible: boolean): void {
+    for (const { mesh } of this.outlines.values()) mesh.visible = visible;
+  }
+
   /** Rebuild membership from current selection — call on selection change. */
   sync(doc: Document, objects: ReadonlyMap<Uuid, Object3D>): void {
     // component/texture modes get component overlays instead — the object

@@ -68,6 +68,13 @@ const WIRE_EDGE_MAT = new LineBasicMaterial({
   color: viewportTheme.wireframeColor,
   depthTest: false,
 });
+// Selected objects in wireframe mode read via wire COLOR alone — the
+// silhouette hull is hidden there (nothing paints over its interior, it
+// would read as a solid fill; see applyShading).
+const SELECTED_WIRE_MAT = new LineBasicMaterial({
+  color: viewportTheme.selectedWireframeColor,
+  depthTest: false,
+});
 
 /**
  * Sorted attribute names of a geometry — the material-pipeline-relevant part of
@@ -84,6 +91,7 @@ export function applyMeshMaterialsTheme(): void {
   FLAT_MAT.color.copy(viewportTheme.polygonColor);
   LINES_EDGE_MAT.color.copy(viewportTheme.lineColor);
   WIRE_EDGE_MAT.color.copy(viewportTheme.wireframeColor);
+  SELECTED_WIRE_MAT.color.copy(viewportTheme.selectedWireframeColor);
 }
 /**
  * Projects the Document into a Three scene graph. The Document is the
@@ -511,10 +519,19 @@ export class SceneSynchronizer {
     // depthTest off makes edges behind the surface show through. For the Lines
     // overlay that's opt-in (Hidden Lines); wireframe mode always shows all edges.
     LINES_EDGE_MAT.depthTest = !hiddenLines;
-    for (const wire of this.edgeWires.values()) {
+    // wireframe selection reads via wire COLOR (object mode): the silhouette
+    // hull is hidden below — with the surface invisible, nothing paints over
+    // the hull's interior and it would show as a solid fill on the selection
+    const wireSelect = wireMode && this.doc.selection.editMode === "object";
+    for (const [id, wire] of this.edgeWires) {
       wire.visible = wireMode || lines;
-      wire.material = wireMode ? WIRE_EDGE_MAT : LINES_EDGE_MAT;
+      wire.material = wireMode
+        ? wireSelect && this.doc.selection.has(id)
+          ? SELECTED_WIRE_MAT
+          : WIRE_EDGE_MAT
+        : LINES_EDGE_MAT;
     }
+    this.selectionOutline.setVisible(!wireMode);
   }
 
   /** Resolve the node's geometry source (editable mesh or primitive) into its Mesh. */
