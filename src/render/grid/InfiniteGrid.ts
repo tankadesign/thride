@@ -44,15 +44,21 @@ const FADE_MAX = 2200;
 // --- perspective fade: EXPONENTIAL haze by camera distance ---
 // A radial disc has a hard zero-alpha radius that projects to a visible line
 // across the ground at grazing angles; exponential haze is asymptotic (never
-// reaches a hard edge), so the grid just dissolves toward the horizon.
-/** Grid stays full within this multiple of the view extent from the camera. */
-const HAZE_START = 1.5;
-/** Larger = the haze fades over MORE distance (gentler). e-fold ≈ this·extent. */
+// reaches a hard edge), so the grid just dissolves toward the horizon. Distances
+// scale with the view extent BUT are floored — else zooming right in shrinks
+// the extent to ~0 and the haze fades the grid across the whole working area
+// (the "grid vanishes when zoomed all the way in" bug) — and capped so the
+// fade still completes inside the 5000 far clip when zoomed way out.
+/** Grid stays fully solid within this camera distance. */
+const HAZE_START = 2;
+const HAZE_START_MIN = 4;
+const HAZE_START_MAX = 2500;
+/** e-fold distance of the haze (bigger = gentler). */
 const HAZE_FALLOFF = 4;
-/** Perspective plane half-extent (multiple of extent, capped near the far clip)
- *  — only needs to outrun where the haze is already negligible. */
-const PERSP_REACH = 16;
-const PERSP_REACH_MAX = 4500;
+const HAZE_FALLOFF_MIN = 12;
+const HAZE_FALLOFF_MAX = 700;
+/** Cap on the perspective plane half-extent (stays inside the far clip). */
+const PERSP_REACH_MAX = 4700;
 
 /**
  * Infinite adaptive floor grid: a ground plane whose fragment shader draws
@@ -153,12 +159,18 @@ export class InfiniteGrid {
     // cuts a still-opaque grid (the old "segmented disc").
     let half: number;
     if (rig.isPerspective) {
-      // exponential haze keyed to the camera — no radial disc
+      // exponential haze keyed to the camera — no radial disc. Floors keep the
+      // grid solid over the working area when zoomed right in (tiny extent);
+      // caps keep the fade inside the far clip when zoomed way out.
+      const clampJs = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi);
+      const hazeStart = clampJs(extent * HAZE_START, HAZE_START_MIN, HAZE_START_MAX);
+      const falloff = clampJs(extent * HAZE_FALLOFF, HAZE_FALLOFF_MIN, HAZE_FALLOFF_MAX);
       rig.camera.getWorldPosition(this.uCamPos.value);
-      this.uHazeStart.value = extent * HAZE_START;
-      this.uHazeDensity.value = 1 / (extent * HAZE_FALLOFF);
+      this.uHazeStart.value = hazeStart;
+      this.uHazeDensity.value = 1 / falloff;
       this.uOrtho.value = 0;
-      half = Math.min(extent * PERSP_REACH, PERSP_REACH_MAX);
+      // reach far enough that the haze (≈e^-4.5 here) is negligible at the edge
+      half = Math.min(hazeStart + falloff * 4.5, PERSP_REACH_MAX);
     } else {
       const fadeRadius = Math.min(extent * FADE_EXTENTS, FADE_MAX);
       this.uCenter.value.set(center.x, center.z);

@@ -1,12 +1,8 @@
 import {
   AmbientLight,
   Box3,
-  BufferGeometry,
   NoToneMapping,
   DirectionalLight,
-  Float32BufferAttribute,
-  LineBasicMaterial,
-  LineSegments,
   Object3D,
   PCFShadowMap,
   Raycaster,
@@ -14,7 +10,9 @@ import {
   Vector2,
   Vector3,
 } from "three";
-import { WebGPURenderer } from "three/webgpu";
+import { LineSegments2 } from "three/examples/jsm/lines/webgpu/LineSegments2.js";
+import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
+import { Line2NodeMaterial, WebGPURenderer } from "three/webgpu";
 import { DitherOutput, type OutputToneMapping } from "./ditherOutput";
 import { ssrEnvironmentTexture } from "@/render/environment/defaultHdr";
 import { EnvironmentSync } from "@/render/environment/EnvironmentSync";
@@ -118,7 +116,7 @@ export class ViewportSystem {
   private readonly scene = new Scene();
   private readonly envSync: EnvironmentSync;
   private readonly grid: InfiniteGrid;
-  private mainAxis: LineSegments;
+  private mainAxis: LineSegments2;
   private readonly defaultAmbient: AmbientLight;
   private readonly defaultKey: DirectionalLight;
   private readonly defaultFill: DirectionalLight;
@@ -228,19 +226,20 @@ export class ViewportSystem {
     void this.init();
   }
 
-  /** The two world axis lines (X, Z) through the origin, spanning the grid —
-   *  toggled independently of the grid (Overlays → Main Axis). */
-  private buildMainAxis(): LineSegments {
-    const h = 20; // half the grid's 40-unit extent
-    const geo = new BufferGeometry();
-    geo.setAttribute(
-      "position",
-      new Float32BufferAttribute([-h, 0, 0, h, 0, 0, 0, 0, -h, 0, 0, h], 3),
-    );
-    const axis = new LineSegments(
+  /** The two world axis lines (X, Z) through the origin — toggled independently
+   *  of the grid (Overlays → Main Axis). Drawn as fat lines (Line2) at ~2.5px so
+   *  they read as heavier than the 1px grid lines, which share their color. */
+  private buildMainAxis(): LineSegments2 {
+    const h = 5000; // reach the far clip so the axes look as endless as the grid
+    const geo = new LineSegmentsGeometry();
+    geo.setPositions([-h, 0, 0, h, 0, 0, 0, 0, -h, 0, 0, h]);
+    const axis = new LineSegments2(
       geo,
-      new LineBasicMaterial({ color: viewportTheme.gridLineColor }),
+      new Line2NodeMaterial({ color: viewportTheme.gridLineColor, linewidth: 2.5 }),
     );
+    axis.frustumCulled = false; // WebGPU mis-culls line objects (see splines)
+    axis.renderOrder = -5; // above the grid (-10), below gizmos/handles
+    axis.layers.set(HELPER_LAYER); // out of SSR / reflections, drawn in overlay pass
     return axis;
   }
 
@@ -265,7 +264,7 @@ export class ViewportSystem {
     this.grid.applyTheme();
     this.scene.remove(this.mainAxis);
     this.mainAxis.geometry.dispose();
-    (this.mainAxis.material as LineBasicMaterial).dispose();
+    (this.mainAxis.material as Line2NodeMaterial).dispose();
     this.mainAxis = this.buildMainAxis();
     this.scene.add(this.mainAxis);
     this.invalidate();
