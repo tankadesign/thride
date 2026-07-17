@@ -95,6 +95,7 @@ function nodeIcon(node: SceneNode): React.ReactNode {
 const CONTEXT_COMMANDS = [
   "edit.group",
   "edit.ungroup",
+  "edit.centerAxis",
   "edit.convertToMesh",
   "edit.delete",
   "edit.selectAll",

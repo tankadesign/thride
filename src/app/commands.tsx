@@ -7,7 +7,7 @@ import {
   SetNodeDataCommand,
   SetTransformCommand,
 } from "@/core/history/commands/scene";
-import { Euler, Matrix4, Quaternion, Vector3 } from "three";
+import { Box3, Euler, Matrix4, type Object3D, Quaternion, Vector3 } from "three";
 import { ConvertToMeshCommand } from "@/geometry/commands/convert";
 import { MeshTopologyCommand } from "@/geometry/commands/topology";
 import { HEMesh } from "@/geometry/kernel/HEMesh";
@@ -54,6 +54,7 @@ import {
   IconGroup,
   IconHelix,
   IconNSide,
+  IconPivotPoint,
   IconStar,
   IconDissolve,
   IconExtrude,
@@ -123,6 +124,42 @@ const PRIMITIVES: PrimitiveType[] = [
 function ungroupable(doc: Document, id: Uuid): boolean {
   const n = doc.scene.get(id);
   return n?.kind === "null" && doc.scene.childrenOf(id).length > 0;
+}
+
+/**
+ * A node Center Axis applies to: anything whose own geometry can be shifted
+ * against the moved axis — nulls and generators (no own baked points; children
+ * compensate), editable meshes (points offset), hand-drawn splines (points
+ * offset). Parametric primitives regenerate about their origin, so their axis
+ * can't move without converting first (C4D draws the same line).
+ */
+function centerable(doc: Document, id: Uuid): boolean {
+  const n = doc.scene.get(id);
+  if (!n) return false;
+  if (n.kind === "null" || n.kind === "generator") return true;
+  if (n.data?.mesh !== undefined) return true;
+  if (n.kind === "spline")
+    return n.data?.spline !== undefined && n.data?.splinePrimitive === undefined;
+  return false;
+}
+
+/**
+ * Union of world-space bounds over the VISIBLE geometry in a render subtree —
+ * the "perceived" bounding box. Skips hidden subtrees (a boolean's consumed
+ * inputs) and helper-layer visuals (light cones, outlines — not on layer 0).
+ */
+function visibleWorldBox(root: Object3D, box = new Box3()): Box3 {
+  if (!root.visible) return box;
+  const geom = (root as { geometry?: { computeBoundingBox(): void; boundingBox: Box3 | null } })
+    .geometry;
+  if (geom && root.layers.isEnabled(0)) {
+    if (!geom.boundingBox) geom.computeBoundingBox();
+    if (geom.boundingBox && !geom.boundingBox.isEmpty()) {
+      box.union(geom.boundingBox.clone().applyMatrix4(root.matrixWorld));
+    }
+  }
+  for (const c of root.children) visibleWorldBox(c, box);
+  return box;
 }
 
 /**
@@ -383,6 +420,99 @@ export function buildCommands(doc: Document, shell: ShellApi): AppCommand[] {
           }
         });
         doc.selection.selectObjects(freed);
+      },
+    },
+    {
+      id: "edit.centerAxis",
+      title: "Center Axis",
+      menu: "Edit",
+      icon: <IconPivotPoint size={16} />,
+      enabled: () => doc.selection.objectIds.some((id) => centerable(doc, id)),
+      run: () => {
+        const vs = shell.getViewport();
+        if (!vs) return;
+        const targets = doc.selection.objectIds.filter((id) => centerable(doc, id));
+        if (targets.length === 0) return;
+        doc.history.transact("Center Axis", () => {
+          for (const id of targets) {
+            const obj = vs.sync.object(id);
+            if (!obj) continue;
+            obj.updateWorldMatrix(true, true); // ancestors + subtree current
+            const box = visibleWorldBox(obj);
+            if (box.isEmpty()) continue;
+            const cWorld = box.getCenter(new Vector3());
+            // the new axis position, expressed in the PARENT's space (where
+            // node.transform.position lives)
+            const cParent = obj.parent
+              ? cWorld.clone().applyMatrix4(new Matrix4().copy(obj.parent.matrixWorld).invert())
+              : cWorld.clone();
+            const t = doc.scene.mustGet(id).transform;
+            const p0 = new Vector3(t.position[0], t.position[1], t.position[2]);
+            if (p0.distanceToSquared(cParent) < 1e-12) continue;
+            // counter-shift for everything the axis carries, in the node's own
+            // LOCAL space: o = S⁻¹ R⁻¹ (p0 − c). Applying it to children and
+            // baked points keeps every world position exactly where it was —
+            // only the axis moves (rotation/scale untouched, as requested).
+            const q = new Quaternion().setFromEuler(
+              new Euler(t.rotation[0], t.rotation[1], t.rotation[2], "XYZ"),
+            );
+            const o = p0.clone().sub(cParent).applyQuaternion(q.invert());
+            o.set(o.x / (t.scale[0] || 1), o.y / (t.scale[1] || 1), o.z / (t.scale[2] || 1));
+            doc.history.run(
+              new SetTransformCommand(id, {
+                position: [cParent.x, cParent.y, cParent.z],
+                rotation: [...t.rotation],
+                scale: [...t.scale],
+              }),
+            );
+            for (const cid of doc.scene.childrenOf(id)) {
+              const ct = doc.scene.mustGet(cid).transform;
+              doc.history.run(
+                new SetTransformCommand(cid, {
+                  position: [ct.position[0] + o.x, ct.position[1] + o.y, ct.position[2] + o.z],
+                  rotation: [...ct.rotation],
+                  scale: [...ct.scale],
+                }),
+              );
+            }
+            const node = doc.scene.mustGet(id);
+            const meshRef = node.data?.mesh as { id: Uuid } | undefined;
+            if (meshRef) {
+              doc.history.run(
+                new MeshTopologyCommand(id, meshRef.id, "Center Axis", (m) => {
+                  for (let v = 0; v < m.vCount; v++) {
+                    m.setPosition(
+                      v,
+                      m.vPos[v * 3]! + o.x,
+                      m.vPos[v * 3 + 1]! + o.y,
+                      m.vPos[v * 3 + 2]! + o.z,
+                    );
+                  }
+                  return { mode: "point", ids: [] };
+                }),
+              );
+            }
+            const spline = node.data?.spline as SplineData | undefined;
+            if (spline) {
+              const moved: SplineData = {
+                ...spline,
+                // handles are point-relative — translating positions is enough
+                points: spline.points.map((p) => ({
+                  ...p,
+                  position: [p.position[0] + o.x, p.position[1] + o.y, p.position[2] + o.z],
+                })),
+              };
+              doc.history.run(
+                new SetNodeDataCommand(
+                  id,
+                  { ...structuredClone(node.data ?? {}), spline: moved },
+                  structuredClone(node.data ?? {}),
+                  "Center Axis",
+                ),
+              );
+            }
+          }
+        });
       },
     },
     {

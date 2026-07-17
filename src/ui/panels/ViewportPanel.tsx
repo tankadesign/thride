@@ -28,6 +28,7 @@ import { IconPivotPoint, IconSettings } from "@/icons";
 const OBJECT_CONTEXT_COMMANDS = [
   "edit.group",
   "edit.ungroup",
+  "edit.centerAxis",
   "edit.convertToMesh",
   "edit.delete",
   "edit.selectAll",
