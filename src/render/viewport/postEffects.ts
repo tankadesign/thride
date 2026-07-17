@@ -1,6 +1,7 @@
 import { bloom } from "three/examples/jsm/tsl/display/BloomNode.js";
+import type BloomNode from "three/examples/jsm/tsl/display/BloomNode.js";
 import { chromaticAberration } from "three/examples/jsm/tsl/display/ChromaticAberrationNode.js";
-import { screenUV, uniform, vec2, vec4 } from "@/materials/tsl";
+import { screenUV, uniform, vec2, vec4, type Float, type Vec4 } from "@/materials/tsl";
 
 /**
  * The post-FX stack (chunk C6) — bloom, chromatic aberration and vignette, as
@@ -24,8 +25,10 @@ import { screenUV, uniform, vec2, vec4 } from "@/materials/tsl";
  * turning an effect on/off is structural; see {@link effectsDiffer}.
  */
 
-// biome-ignore lint/suspicious/noExplicitAny: TSL node
-type Node = any;
+// A float uniform node (has a writable `.value`), named via a factory ReturnType
+// since @types/three doesn't export UniformNode — see uniforms.ts for the pattern.
+const makeFloatU = (v: number) => uniform(v);
+type FloatUniform = ReturnType<typeof makeFloatU>;
 
 /** Per-pane post-FX settings, unpacked from `PaneDisplay` at the call boundary. */
 export interface PostFxParams {
@@ -48,12 +51,12 @@ export interface PostFxParams {
 /** Live uniform handles + the built nodes for one compiled stack. */
 export interface PostFxState {
   params: PostFxParams;
-  bloomNode: Node | null;
-  bloomStrength: Node;
-  bloomRadius: Node;
-  chromaticAmount: Node;
-  vignetteAmount: Node;
-  vignetteRadius: Node;
+  bloomNode: BloomNode | null;
+  bloomStrength: FloatUniform;
+  bloomRadius: FloatUniform;
+  chromaticAmount: FloatUniform;
+  vignetteAmount: FloatUniform;
+  vignetteRadius: FloatUniform;
 }
 
 export const defaultPostFxParams = (): PostFxParams => ({
@@ -78,9 +81,9 @@ export function effectsDiffer(a: PostFxParams, b: PostFxParams): boolean {
 }
 
 /** Build the uniforms + bloom node for `params`. Call only on a rebuild. */
-export function buildPostFx(params: PostFxParams, hdrColor: Node): PostFxState {
-  const bloomStrength = uniform(params.bloomStrength);
-  const bloomRadius = uniform(params.bloomRadius);
+export function buildPostFx(params: PostFxParams, hdrColor: Vec4): PostFxState {
+  const bloomStrength = makeFloatU(params.bloomStrength);
+  const bloomRadius = makeFloatU(params.bloomRadius);
   return {
     params,
     // threshold goes in as a plain number: BloomNode promotes it to a uniform
@@ -90,9 +93,9 @@ export function buildPostFx(params: PostFxParams, hdrColor: Node): PostFxState {
       : null,
     bloomStrength,
     bloomRadius,
-    chromaticAmount: uniform(params.chromaticAmount),
-    vignetteAmount: uniform(params.vignetteAmount),
-    vignetteRadius: uniform(params.vignetteRadius),
+    chromaticAmount: makeFloatU(params.chromaticAmount),
+    vignetteAmount: makeFloatU(params.vignetteAmount),
+    vignetteRadius: makeFloatU(params.vignetteRadius),
   };
 }
 
@@ -108,13 +111,13 @@ export function updatePostFx(fx: PostFxState, params: PostFxParams): void {
 }
 
 /** HDR-domain effects (before tone mapping): bloom, added over the scene. */
-export function applyHdrEffects(color: Node, fx: PostFxState | null): Node {
+export function applyHdrEffects(color: Vec4, fx: PostFxState | null): Vec4 {
   if (!fx?.bloomNode) return color;
   return color.add(fx.bloomNode);
 }
 
 /** Display-domain effects (after tone mapping): chromatic aberration, vignette. */
-export function applyDisplayEffects(display: Node, fx: PostFxState | null): Node {
+export function applyDisplayEffects(display: Vec4, fx: PostFxState | null): Vec4 {
   if (!fx) return display;
   let out = display;
   // three's node resamples the input at per-channel offsets — it wraps the
@@ -123,7 +126,11 @@ export function applyDisplayEffects(display: Node, fx: PostFxState | null): Node
   // The center MUST be passed: three's signature defaults it to null and its
   // docs claim null means screen-center, but nothing implements that fallback —
   // `nodeObject(null)` stays null and the node throws at build (black viewport).
-  if (fx.params.chromatic) out = chromaticAberration(out, fx.chromaticAmount, vec2(0.5, 0.5));
+  // ChromaticAberrationNode is vec4-valued but @types/three types it as a bare
+  // node class without the TSL method surface, so bridge it back to Vec4.
+  if (fx.params.chromatic) {
+    out = chromaticAberration(out, fx.chromaticAmount, vec2(0.5, 0.5)) as unknown as Vec4;
+  }
   if (fx.params.vignette) out = vignette(out, fx.vignetteAmount, fx.vignetteRadius);
   return out;
 }
@@ -133,7 +140,7 @@ export function applyDisplayEffects(display: Node, fx: PostFxState | null): Node
  * Multiplies rgb only — scaling alpha here would make the vignette eat the
  * canvas's transparency rather than darken the image.
  */
-function vignette(display: Node, amount: Node, radius: Node): Node {
+function vignette(display: Vec4, amount: Float, radius: Float): Vec4 {
   // distance from center, normalized so the CORNER is 1 (not the edge)
   const d = screenUV.sub(vec2(0.5, 0.5)).length().mul(Math.SQRT2);
   const t = d.sub(radius).div(radius.oneMinus().max(1e-4)).clamp(0, 1);

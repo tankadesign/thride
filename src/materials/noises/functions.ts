@@ -12,6 +12,8 @@ import {
   positionLocal,
   triNoise3D,
   vec3,
+  type Float,
+  type Vec3,
 } from "@/materials/tsl";
 
 /**
@@ -28,43 +30,43 @@ import {
  * (documented per-noise).
  */
 
-// TSL nodes are structurally dynamic; the graph layer is intentionally loose.
-// biome-ignore lint/suspicious/noExplicitAny: TSL node
-type Node = any;
-type Num = number | Node;
+/** A scalar param: a plain number or a `Float` node. */
+type Num = number | Float;
 
 export interface NoiseOpts {
   /** Sample coordinate (vec3 node). Default `positionLocal`. */
-  pos?: Node;
+  pos?: Vec3;
   /** Frequency multiplier. Default 1. */
   scale?: Num;
   /** Animation phase — folded into the sample's z-slice. Default 0. */
   phase?: Num;
 }
 
-const F = (n: Num): Node => (typeof n === "number" ? float(n) : n);
+const F = (n: Num): Float => (typeof n === "number" ? float(n) : n);
 
 /** `pos·scale` with `phase` folded into z so flat surfaces evolve as it animates. */
-function samplePos(opts: NoiseOpts): Node {
+function samplePos(opts: NoiseOpts): Vec3 {
   const pos = opts.pos ?? positionLocal;
   return pos.mul(F(opts.scale ?? 1)).add(vec3(0, 0, F(opts.phase ?? 0)));
 }
 
 /** Perlin gradient noise (MaterialX), remapped to [0,1]. */
-export const perlinNoise = (opts: NoiseOpts = {}): Node =>
+export const perlinNoise = (opts: NoiseOpts = {}): Float =>
   mx_noise_float(samplePos(opts)).mul(0.5).add(0.5);
 
 export interface FractalOpts extends NoiseOpts {
+  // Node here as well as number: E3 wires each control to a live uniform node,
+  // and mx_fractal_noise_float accepts `Node | number` for all three.
   /** Octaves summed (more = finer detail). Default 4. */
-  octaves?: number;
+  octaves?: Num;
   /** Frequency ratio between octaves. Default 2. */
-  lacunarity?: number;
+  lacunarity?: Num;
   /** Amplitude falloff per octave (0–1). Default 0.5. */
-  gain?: number;
+  gain?: Num;
 }
 
 /** Fractal (fBm) noise (MaterialX) — summed octaves of Perlin, remapped to [0,1]. */
-export const fractalNoise = (opts: FractalOpts = {}): Node =>
+export const fractalNoise = (opts: FractalOpts = {}): Float =>
   mx_fractal_noise_float(samplePos(opts), opts.octaves ?? 4, opts.lacunarity ?? 2, opts.gain ?? 0.5)
     .mul(0.5)
     .add(0.5);
@@ -75,11 +77,11 @@ export interface WorleyOpts extends NoiseOpts {
 }
 
 /** Worley (cellular / Voronoi) noise (MaterialX) — distance to the nearest cell point. */
-export const worleyNoise = (opts: WorleyOpts = {}): Node =>
+export const worleyNoise = (opts: WorleyOpts = {}): Float =>
   mx_worley_noise_float(samplePos(opts), F(opts.jitter ?? 1));
 
 /** Cell noise (MaterialX) — one constant random value per integer cell (blocky). */
-export const cellNoise = (opts: NoiseOpts = {}): Node => mx_cell_noise_float(samplePos(opts));
+export const cellNoise = (opts: NoiseOpts = {}): Float => mx_cell_noise_float(samplePos(opts));
 
 export interface TriNoiseOpts extends NoiseOpts {
   /** Flow speed of the animated field. Default 0.1. */
@@ -90,7 +92,7 @@ export interface TriNoiseOpts extends NoiseOpts {
  * Animated 3D noise (three's `triNoise3D`) — here `phase` is genuine time, so
  * the field boils continuously rather than scrolling. Remapped to [0,1].
  */
-export const triNoise = (opts: TriNoiseOpts = {}): Node => {
+export const triNoise = (opts: TriNoiseOpts = {}): Float => {
   const pos = (opts.pos ?? positionLocal).mul(F(opts.scale ?? 1));
   return triNoise3D(pos, F(opts.speed ?? 0.1), F(opts.phase ?? 0));
 };
@@ -117,11 +119,11 @@ const PRIMES: [number, number, number] = [73856093, 19349663, 83492791];
  * Custom 3D value noise — hash-lattice with a smoothstep-interpolated trilinear
  * blend. Distinct from Perlin (value vs gradient): blockier, cheaper. [0,1].
  */
-const valueNoise3 = /*@__PURE__*/ Fn(([p]: [Node]): Node => {
+const valueNoise3 = /*@__PURE__*/ Fn(([p]: [Vec3]): Float => {
   const i = p.floor();
   const f = p.fract();
   const u = f.mul(f).mul(f.mul(-2).add(3)); // 3f²−2f³ smoothstep
-  const h = (ox: number, oy: number, oz: number): Node => {
+  const h = (ox: number, oy: number, oz: number): Float => {
     const c = i.add(vec3(ox, oy, oz));
     return hash(
       c.x
@@ -139,7 +141,7 @@ const valueNoise3 = /*@__PURE__*/ Fn(([p]: [Node]): Node => {
 });
 
 /** Custom value noise (see {@link valueNoise3}). */
-export const valueNoise = (opts: NoiseOpts = {}): Node => valueNoise3(samplePos(opts));
+export const valueNoise = (opts: NoiseOpts = {}): Float => valueNoise3(samplePos(opts));
 
 /**
  * Custom curl noise — divergence-free 3D flow field (returns **vec3**). The curl
@@ -147,9 +149,9 @@ export const valueNoise = (opts: NoiseOpts = {}): Node => valueNoise3(samplePos(
  * swirling advection. `phase` folds into z like the spatial noises.
  */
 const EPS = 0.01;
-const curlNoise3 = /*@__PURE__*/ Fn(([p]: [Node]): Node => {
+const curlNoise3 = /*@__PURE__*/ Fn(([p]: [Vec3]): Vec3 => {
   const e = float(EPS);
-  const pot = (q: Node): Node => mx_noise_vec3(q);
+  const pot = (q: Vec3): Vec3 => mx_noise_vec3(q);
   const px0 = pot(p.sub(vec3(EPS, 0, 0)));
   const px1 = pot(p.add(vec3(EPS, 0, 0)));
   const py0 = pot(p.sub(vec3(0, EPS, 0)));
@@ -164,4 +166,4 @@ const curlNoise3 = /*@__PURE__*/ Fn(([p]: [Node]): Node => {
 });
 
 /** Custom curl-noise flow field, vec3 (see {@link curlNoise3}). */
-export const curlNoise = (opts: NoiseOpts = {}): Node => curlNoise3(samplePos(opts));
+export const curlNoise = (opts: NoiseOpts = {}): Vec3 => curlNoise3(samplePos(opts));

@@ -19,9 +19,33 @@ Docs are local at `node_modules/vite-plus/docs` or online at https://viteplus.de
 
 Thride is a browser 3D IDE on Three.js WebGPU/TSL — an open-source Spline with Blender 5 aesthetics. **PLAN.md is the canonical plan; read it plus the highest-numbered `progress/PLAN_PROGRESS_N.md` before writing code.**
 
+## Linting & type-checking (read this — it overrides the vite-plus checklist above)
+
+**ESLint is the linter, not `vp lint`.** oxlint's type-aware pass (tsgolint) hangs
+indefinitely on our TSL node-graph files, so it is disabled:
+
+- **Lint:** `pnpm lint` (ESLint) / `pnpm lint:fix`. Do **not** use `vp lint`; it hangs.
+- **Type-check:** `tsc -b` (also `pnpm check`). This is the real type gate.
+- **`vp check`** runs fmt only — its lint + type-check steps are turned off in
+  `vite.config.ts` (`check.lint: false`, `lint.options.typeAware/typeCheck: false`) so
+  it doesn't hang. `vp test` and `vp fmt` are fine.
+- **TypeScript is pinned at `~6.0.2`.** Do not bump to 7 — `typescript-eslint` has no
+  TS7-native support yet (its parser crashes on the native compiler), so ESLint would
+  stop running entirely.
+
+**TSL node typing — never `type Node = any`.** Import the node value types from the
+`@/materials/tsl` barrel instead: `Vec3`, `Vec2`, `Vec4`, `Float` (the general
+`Node<T>` alias @types/three doesn't export, named via barrel values). Uniform nodes
+follow the `ReturnType<typeof makeXU>` factory pattern in `materials/procedural/uniforms.ts`.
+The strict `no-unsafe-*` / `no-explicit-any` family is **enforced as errors in
+`src/materials/**`** (see `eslint.config.js`) — that's what stops a new `type Node = any`
+from creeping back into the noise/procedural graph code. Elsewhere the family is off
+(scattered escape hatches: renderer internals, the BVH monkey-patch, the third-party
+SSR effect nodes in `render/viewport/ditherOutput.ts`).
+
 ## Session workflow
 
-- Work in the chunk units defined in PLAN.md (A1…J3). End sessions at chunk boundaries: `vp check` + `vp test` green, commit, write the next numbered `progress/PLAN_PROGRESS_N.md` (template in `progress/TEMPLATE.md`).
+- Work in the chunk units defined in PLAN.md (A1…J3). End sessions at chunk boundaries: gates green (`pnpm lint` + `tsc -b` + `vp test` — **not** `vp check`; see Linting above), commit, write the next numbered `progress/PLAN_PROGRESS_N.md` (template in `progress/TEMPLATE.md`).
 - Milestones M0–M6 are hard stops: write progress, run the milestone QA checklist, and wait for user sign-off. Never continue into the next milestone unprompted.
 
 ## Code organization (hard rules)

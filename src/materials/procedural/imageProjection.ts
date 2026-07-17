@@ -7,6 +7,8 @@ import {
   materialRoughness,
   texture,
   vec3,
+  type Float,
+  type Vec3,
 } from "@/materials/tsl";
 import { projectedSample, type TransformNodes } from "./projections";
 
@@ -28,9 +30,6 @@ import { projectedSample, type TransformNodes } from "./projections";
  * (height + bump) projects fine.
  */
 
-// biome-ignore lint/suspicious/noExplicitAny: TSL node
-type Node = any;
-
 /** Identity transform — image slots have no placement controls (yet). */
 const IDENTITY: TransformNodes = {
   offset: vec3(0, 0, 0),
@@ -42,9 +41,12 @@ export function projectedImageNode(
   channel: ProceduralChannel,
   tex: Texture,
   projection: Projection,
-): Node | null {
+): Vec3 | Float | null {
   if (channel === "normal") return null;
-  const sample = projectedSample(projection, IDENTITY, (coord) => texture(tex, coord.xy));
+  // `.rgb`: the texture sample is vec4, but projectedSample works in vec3 (and
+  // every channel below reads only r/g/b — alpha was never used). Dropping it
+  // here keeps the projection math in vec3 and matches projectedSample's type.
+  const sample = projectedSample(projection, IDENTITY, (coord) => texture(tex, coord.xy).rgb);
   switch (channel) {
     case "color":
       return materialColor.mul(sample.rgb);

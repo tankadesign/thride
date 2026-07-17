@@ -1,6 +1,5 @@
 import { Color, DoubleSide, Mesh, PlaneGeometry, Vector2, Vector3 } from "three";
 import { MeshBasicNodeMaterial } from "three/webgpu";
-import type { Node } from "three/webgpu";
 import {
   abs,
   clamp,
@@ -19,6 +18,9 @@ import {
   smoothstep,
   uniform,
   vec2,
+  type Float,
+  type Vec2,
+  type Vec3,
 } from "@/materials/tsl";
 import { HELPER_LAYER } from "@/render/layers";
 import { viewportTheme } from "@/render/theme/viewportTheme";
@@ -103,7 +105,7 @@ export class InfiniteGrid {
   private readonly uGrid = uniform(1);
   private readonly uAxis = uniform(1);
   /** The three viewportTheme grid colors: minor cells / major lines / main axis. */
-  private readonly uCellColor = uniform(new Color().copy(viewportTheme.gridCellColor));
+  private readonly uCellColor = uniform(new Color().copy(viewportTheme.gridLineColor));
   private readonly uLineColor = uniform(new Color().copy(viewportTheme.gridLineColor));
   private readonly uAxisColor = uniform(new Color().copy(viewportTheme.gridMainAxisLineColor));
 
@@ -113,8 +115,7 @@ export class InfiniteGrid {
     mat.depthWrite = false; // occluded by objects, but never hides gizmos/handles
     mat.side = DoubleSide; // readable from beneath the plane too
     const { color, opacity } = this.buildNodes();
-    // biome-ignore lint/suspicious/noExplicitAny: generic Node → typed color/opacity slot
-    mat.colorNode = color as any;
+    mat.colorNode = color;
     mat.opacityNode = opacity;
 
     const mesh = new Mesh(new PlaneGeometry(1, 1), mat);
@@ -133,10 +134,9 @@ export class InfiniteGrid {
    * pixels with fwidth(p) — spacing jumps at LOD boundaries, so taking
    * derivatives of p/spacing (the old way) produced garbage there (the dots).
    */
-  // biome-ignore lint/suspicious/noExplicitAny: TSL chains hit TS2590 without any
-  private gridLine(p: any, fwp: any, spacing: any): any {
-    const distW: any = abs(fract(p.div(spacing).sub(0.5)).sub(0.5)).mul(spacing);
-    const dPx: any = distW.div(fwp);
+  private gridLine(p: Vec2, fwp: Vec2, spacing: Float): Float {
+    const distW = abs(fract(p.div(spacing).sub(0.5)).sub(0.5)).mul(spacing);
+    const dPx = distW.div(fwp);
     return min(dPx.x, dPx.y).min(1).oneMinus();
   }
 
@@ -146,49 +146,48 @@ export class InfiniteGrid {
    * COLOR uses the three theme tiers: minor cell lines → cellColor, major
    * (coarser-decade) lines tint toward lineColor, the x=0/z=0 axes → axisColor.
    */
-  private buildNodes(): { color: Node; opacity: Node } {
-    // biome-ignore lint/suspicious/noExplicitAny: TSL chains hit TS2590 without any
-    const p: any = vec2(positionWorld.x, positionWorld.z);
-    const fwp: any = fwidth(p);
-    const w: any = fwp.x.max(fwp.y); // world units per pixel (worst axis)
+  private buildNodes(): { color: Vec3; opacity: Float } {
+    const p: Vec2 = vec2(positionWorld.x, positionWorld.z);
+    const fwp: Vec2 = fwidth(p);
+    const w: Float = fwp.x.max(fwp.y); // world units per pixel (worst axis)
     // continuous decade coordinate; f is the crossfade phase within a decade
-    const t: any = log(w.mul(GRID_PX)).div(Math.log(10));
-    const f: any = fract(t);
-    const lod0: any = pow(float(10), floor(t)); // finest drawn decade
-    const c0: any = this.gridLine(p, fwp, lod0);
-    const c1: any = this.gridLine(p, fwp, lod0.mul(10));
-    const c2: any = this.gridLine(p, fwp, lod0.mul(100));
+    const t: Float = log(w.mul(GRID_PX)).div(Math.log(10));
+    const f: Float = fract(t);
+    const lod0: Float = pow(float(10), floor(t)); // finest drawn decade
+    const c0: Float = this.gridLine(p, fwp, lod0);
+    const c1: Float = this.gridLine(p, fwp, lod0.mul(10));
+    const c2: Float = this.gridLine(p, fwp, lod0.mul(100));
     // continuity-locked weights (see class docs): finest K→0, middle 1→K, coarsest 1
-    const w0: any = mix(float(MINOR_ALPHA), float(0), f);
-    const w1: any = mix(float(1), float(MINOR_ALPHA), f);
-    const gridCov: any = c0.mul(w0).max(c1.mul(w1)).max(c2).mul(this.uGrid);
+    const w0: Float = mix(float(MINOR_ALPHA), float(0), f);
+    const w1: Float = mix(float(1), float(MINOR_ALPHA), f);
+    const gridCov: Float = c0.mul(w0).max(c1.mul(w1)).max(c2).mul(this.uGrid);
     // coarser-decade lines read as "major" (tint toward lineColor); the finest
     // subdivisions stay cellColor. cellColor↔lineColor are close grays, so the
     // slight tier discontinuity at a decade boundary is imperceptible.
-    const majorTint: any = c1.mul(w1).add(c2).min(1);
-    const gridColor: any = mix(this.uCellColor, this.uLineColor, majorTint);
+    const majorTint: Float = c1.mul(w1).add(c2).min(1);
+    const gridColor: Vec3 = mix(this.uCellColor, this.uLineColor, majorTint);
     // main axis: the x=0 / z=0 world lines as heavier AA strokes, own color
-    const axisPx: any = abs(p).div(fwp); // px distance to the Z axis (x=0), X axis (z=0)
-    const axisCov: any = max(
+    const axisPx: Vec2 = abs(p).div(fwp); // px distance to the Z axis (x=0), X axis (z=0)
+    const axisCov: Float = max(
       axisPx.x.div(AXIS_PX).min(1).oneMinus(),
       axisPx.y.div(AXIS_PX).min(1).oneMinus(),
     ).mul(this.uAxis);
-    const color: any = mix(gridColor, this.uAxisColor, axisCov);
-    const cov: any = gridCov.max(axisCov);
+    const color: Vec3 = mix(gridColor, this.uAxisColor, axisCov);
+    const cov: Float = gridCov.max(axisCov);
     // ORTHO: long radial dissolve from the view center (full until FOG_START·
     // radius, gone by radius) — the plane edge is past the radius, never seen.
-    const radial: any = length(p.sub(this.uCenter));
-    const orthoFog: any = smoothstep(
+    const radial: Float = length(p.sub(this.uCenter));
+    const orthoFog: Float = smoothstep(
       this.uFadeRadius.mul(FOG_START),
       this.uFadeRadius,
       radial,
     ).oneMinus();
     // PERSPECTIVE: exponential haze by 3D camera distance — full inside
     // uHazeStart, then exp decay (asymptotic, so no hard disc edge at any angle).
-    const camDist: any = length(positionWorld.sub(this.uCamPos));
-    const perspFog: any = clamp(exp(this.uHazeStart.sub(camDist).mul(this.uHazeDensity)), 0, 1);
-    const fog: any = mix(perspFog, orthoFog, this.uOrtho);
-    return { color: color as Node, opacity: clamp(cov.mul(fog), 0, 1) as Node };
+    const camDist: Float = length(positionWorld.sub(this.uCamPos));
+    const perspFog: Float = clamp(exp(this.uHazeStart.sub(camDist).mul(this.uHazeDensity)), 0, 1);
+    const fog: Float = mix(perspFog, orthoFog, this.uOrtho);
+    return { color, opacity: clamp(cov.mul(fog), 0, 1) };
   }
 
   /** Per-pane overlay toggles — the caller keeps the plane visible if either is on. */
@@ -236,7 +235,7 @@ export class InfiniteGrid {
 
   /** Re-read the themed grid colors (CSS var change). */
   applyTheme(): void {
-    this.uCellColor.value.copy(viewportTheme.gridCellColor);
+    this.uCellColor.value.copy(viewportTheme.gridLineColor);
     this.uLineColor.value.copy(viewportTheme.gridLineColor);
     this.uAxisColor.value.copy(viewportTheme.gridMainAxisLineColor);
   }

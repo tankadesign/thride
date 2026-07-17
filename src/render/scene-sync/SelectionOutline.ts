@@ -11,10 +11,9 @@ import {
 } from "three";
 import { MeshBasicNodeMaterial } from "three/webgpu";
 import { HELPER_LAYER } from "@/render/layers";
-import type { Node } from "three/webgpu";
 import type { Uuid } from "@/types/core";
 import type { Document } from "@/core";
-import { normalLocal, positionLocal, uniform } from "@/materials/tsl";
+import { normalLocal, positionLocal, uniform, type Vec3 } from "@/materials/tsl";
 import { viewportTheme } from "@/render/theme/viewportTheme";
 
 const OUTLINE_PX = 2;
@@ -80,9 +79,12 @@ export class SelectionOutline {
       // object (and its inner edges). The ring still shows — the real surface
       // paints over the interior and closer objects paint over the ring.
       mat.depthWrite = false;
-      // Cast to any before chaining to prevent TSL's combinatorial union explosion (TS2590 / tsgolint hang)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      mat.positionNode = (positionLocal as any).add((normalLocal as any).mul(offset)) as Node;
+      // Type as the general `Vec3` (not the concrete AttributeNode subtypes,
+      // whose method-chaining triggers TS2590): push the hull out along the
+      // normal by the (uniform) offset.
+      const pLocal: Vec3 = positionLocal;
+      const nLocal: Vec3 = normalLocal;
+      mat.positionNode = pLocal.add(nLocal.mul(offset));
       const outline = new Mesh(obj.geometry, mat);
       outline.raycast = () => {}; // never pickable
       outline.userData.outline = true;

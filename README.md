@@ -11,22 +11,27 @@ Currently, two official plugins are available:
 
 The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
 
-## Expanding the Oxlint configuration
+## Linting & type-checking
 
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
+This project lints with **ESLint** (flat config in `eslint.config.js`), not oxlint.
+oxlint's type-aware pass (`oxlint-tsgolint`) hangs indefinitely on the TSL node-graph
+files, so `vp lint` / `vp check`'s lint step are disabled.
 
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```bash
+pnpm lint         # ESLint (type-aware, via typescript-eslint)
+pnpm lint:fix     # ESLint with --fix
+pnpm check        # tsc --noEmit  (type gate; also `tsc -b`)
+vp test           # tests
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+Notes:
+
+- **TypeScript is pinned at `~6.0.2`.** `typescript-eslint` has no support for the
+  TypeScript 7 native compiler yet (its parser fails to load against it), so bumping
+  TS to 7 would stop ESLint from running.
+- The strict `no-unsafe-*` / `no-explicit-any` family is enforced only in
+  `src/materials/**`, where TSL nodes are properly typed via the `@/materials/tsl`
+  barrel aliases (`Vec3` / `Vec2` / `Vec4` / `Float`). See `AGENTS.md` for the
+  full convention.
+
+See the [typescript-eslint docs](https://typescript-eslint.io) for rule details.

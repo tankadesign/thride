@@ -3,6 +3,7 @@ import type { NodeMaterial } from "three/webgpu";
 import type { MaterialDTO, ProceduralChannel, Projection } from "@/types/core";
 import { PROCEDURAL_CHANNELS } from "@/types/core";
 import { compile, projectedImageNode, type CompiledStacks } from "@/materials/procedural";
+import type { Float, Vec3 } from "@/materials/tsl";
 
 /**
  * THE channel-slot binder — the one place a material's node slots
@@ -18,8 +19,8 @@ import { compile, projectedImageNode, type CompiledStacks } from "@/materials/pr
  * properties.
  */
 
-// biome-ignore lint/suspicious/noExplicitAny: TSL node
-type Node = any;
+/** A built procedural/image node: vec3 for color channels, float for scalar ones. */
+type ChannelNode = Vec3 | Float;
 
 /** A non-uv image assignment for a channel: decoded texture + its projection. */
 export interface ImageSpec {
@@ -33,7 +34,7 @@ export interface ImageSpec {
  * `needsUpdate`, so rebuilding an identical node on every material edit would
  * flip `needsUpdate` — a full shader recompile per slider drag.
  */
-export type ImageNodeCache = Map<ProceduralChannel, ImageSpec & { node: Node }>;
+export type ImageNodeCache = Map<ProceduralChannel, ImageSpec & { node: ChannelNode }>;
 
 /** Procedural channel → the node-material slot it drives. */
 const CHANNEL_SLOT: Record<ProceduralChannel, string> = {
@@ -63,7 +64,7 @@ function imageNode(
   channel: ProceduralChannel,
   spec: ImageSpec | undefined,
   cache: ImageNodeCache,
-): Node | null {
+): ChannelNode | null {
   if (!spec) {
     cache.delete(channel);
     return null;

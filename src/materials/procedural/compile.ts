@@ -10,7 +10,7 @@ import {
   SOLID_SOURCE,
   structureKey,
 } from "@/types/core";
-import { texture, vec2, vec3 } from "@/materials/tsl";
+import { texture, vec2, vec3, type Float, type Vec3 } from "@/materials/tsl";
 import { noiseDef } from "@/materials/noises";
 import { blendLayer } from "./blend";
 import { bumpNormal } from "./bump";
@@ -33,15 +33,12 @@ import { UniformTable } from "./uniforms";
  *   caller must compile a fresh instance and swap.
  */
 
-// biome-ignore lint/suspicious/noExplicitAny: TSL node
-type Node = any;
-
 const uPath = (layerId: string, field: string) => `${layerId}/${field}`;
 
 /** A compiled doc: the per-channel nodes + everything needed to live-update them. */
 export class CompiledStacks {
   /** Channel → composited TSL node (vec3; scalar channels are `.r` at assign). */
-  readonly nodes: Partial<Record<ProceduralChannel, Node>> = {};
+  readonly nodes: Partial<Record<ProceduralChannel, Vec3>> = {};
   readonly uniforms = new UniformTable();
   /** Structural fingerprint of the doc this was compiled from. */
   readonly key: string;
@@ -112,8 +109,8 @@ export class CompiledStacks {
     if (layer.ramp) this.ramps.get(layer.id)?.update(layer.ramp);
   }
 
-  private compileStack(stack: ProceduralStack, channel: ProceduralChannel): Node | null {
-    let composite: Node | null = null;
+  private compileStack(stack: ProceduralStack, channel: ProceduralChannel): Vec3 | null {
+    let composite: Vec3 | null = null;
     for (const layer of stack.layers) {
       if (!layer.enabled) continue;
       const color = this.compileLayer(layer, channel);
@@ -127,7 +124,7 @@ export class CompiledStacks {
   }
 
   /** One layer's vec3 output: source → shaping → (ramp | tint). */
-  private compileLayer(layer: ProceduralLayer, channel: ProceduralChannel): Node {
+  private compileLayer(layer: ProceduralLayer, channel: ProceduralChannel): Vec3 {
     const tint = this.uniforms.color(uPath(layer.id, "color"), layer.color);
     if (layer.source === SOLID_SOURCE) return vec3(tint);
 
@@ -149,7 +146,7 @@ export class CompiledStacks {
    * contrast around mid-gray, then bias, clamped. Applied componentwise (curl
    * is a vec3 field). Every knob is a uniform: shaping edits never recompile.
    */
-  private shape(layer: ProceduralLayer, value: Node): Node {
+  private shape(layer: ProceduralLayer, value: Vec3): Vec3 {
     const u = this.uniforms;
     const lo = u.float(uPath(layer.id, "clipLow"), layer.clipLow ?? SD.clipLow);
     const hi = u.float(uPath(layer.id, "clipHigh"), layer.clipHigh ?? SD.clipHigh);
@@ -160,7 +157,7 @@ export class CompiledStacks {
   }
 
   /** The layer's noise value (vec3), sampled through its projection. */
-  private compileSource(layer: ProceduralLayer, _channel: ProceduralChannel): Node {
+  private compileSource(layer: ProceduralLayer, _channel: ProceduralChannel): Vec3 {
     const def = noiseDef(layer.source);
     // an unknown source id (a doc from a newer build) reads as mid-gray rather
     // than throwing — a material must always render
@@ -179,7 +176,7 @@ export class CompiledStacks {
     };
 
     // every declared param becomes a live uniform, so slider drags never recompile
-    const params: Record<string, Node> = {};
+    const params: Record<string, Float> = {};
     for (const p of def.params) {
       const value = layer.params[p.key] ?? p.default;
       params[p.key] = this.uniforms.float(uPath(layer.id, `param.${p.key}`), value);

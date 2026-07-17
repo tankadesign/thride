@@ -14,6 +14,11 @@ export default defineConfig({
     "*": "vp check --fix",
   },
   fmt: {},
+  // Linting is handled by ESLint (`pnpm lint`), not oxlint — oxlint's tsgolint
+  // type-aware pass hangs indefinitely on our TSL node-graph files. Skip the
+  // lint step in `vp check` so the composite command doesn't freeze; it still
+  // runs the format step. Type checking is covered by `tsc -b` / `pnpm check`.
+  check: { lint: false },
   lint: {
     plugins: ["react", "typescript", "oxc"],
     rules: {
@@ -26,9 +31,12 @@ export default defineConfig({
       ],
       "vite-plus/prefer-vite-plus-imports": "error",
     },
+    // Type-aware linting + type-check are OFF here: oxlint's tsgolint pass
+    // hangs indefinitely on our TSL node-graph files. ESLint handles type-aware
+    // linting (`pnpm lint`) and `tsc -b` / `pnpm check` handles type checking.
     options: {
-      typeAware: true,
-      typeCheck: true,
+      typeAware: false,
+      typeCheck: false,
     },
     jsPlugins: [
       {

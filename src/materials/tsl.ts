@@ -3,7 +3,24 @@
  * scattered) so TSL API drift between three releases is absorbed in one
  * file. Grows with the noise library in chunk E2.
  */
+import { normalLocal as _normalLocal } from "three/tsl";
+
 export { normalLocal, positionLocal, uniform } from "three/tsl";
+
+/**
+ * TSL node value types. @types/three does NOT export the general method-chaining
+ * `Node<T>` alias (it's internal to TSLCore), so we name it by deriving from a
+ * barrel value that already carries it: `normalLocal` is declared `Node<"vec3">`.
+ * Using the *general* `Node<"vec3">` — not a concrete subtype like `VarNode` or
+ * `UniformNode` — is what keeps every node kind callers pass assignable.
+ *
+ * These replace the old per-file `type Node = any`: import `Vec3`/`Vec2`/`Float`
+ * from this barrel instead. See AGENTS.md ("TSL node typing").
+ */
+export type Vec3 = typeof _normalLocal;
+export type Vec2 = Vec3["xy"];
+export type Vec4 = Vec3["xyzz"]; // a 4-swizzle yields the general Node<"vec4">
+export type Float = Vec3["x"];
 export {
   dot,
   float,

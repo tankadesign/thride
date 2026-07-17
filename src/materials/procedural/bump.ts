@@ -1,4 +1,12 @@
-import { cross, faceDirection, normalView, positionView, vec2 } from "@/materials/tsl";
+import {
+  cross,
+  faceDirection,
+  normalView,
+  positionView,
+  vec2,
+  type Float,
+  type Vec3,
+} from "@/materials/tsl";
 
 /**
  * Height field → perturbed view-space normal, for the `normal` procedural
@@ -17,10 +25,7 @@ import { cross, faceDirection, normalView, positionView, vec2 } from "@/material
  * correct — materials here are DoubleSide.
  */
 
-// biome-ignore lint/suspicious/noExplicitAny: TSL node
-type Node = any;
-
-export function bumpNormal(height: Node, strength: Node): Node {
+export function bumpNormal(height: Float, strength: Float): Vec3 {
   const dHdxy = vec2(height.dFdx(), height.dFdy()).mul(strength);
 
   const vSigmaX = positionView.dFdx();

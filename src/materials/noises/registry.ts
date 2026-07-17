@@ -1,4 +1,4 @@
-import { float, positionLocal, vec3 } from "@/materials/tsl";
+import { float, positionLocal, vec3, type Float, type Vec3 } from "@/materials/tsl";
 import {
   cellNoise,
   curlNoise,
@@ -19,9 +19,6 @@ import {
  * gallery's number-valued previews go through {@link previewNode}, which just
  * wraps its values in constant nodes.
  */
-
-// biome-ignore lint/suspicious/noExplicitAny: TSL node
-type Node = any;
 
 export type NoiseCategory = "gradient" | "fractal" | "cellular" | "flow";
 
@@ -47,7 +44,7 @@ export interface NoiseDef {
    * the noise scales internally; `params` are nodes keyed by `NoiseParam.key`;
    * `phase` animates (folded into z, except where a noise documents otherwise).
    */
-  sample: (pos: Node, params: Record<string, Node>, phase: Node) => Node;
+  sample: (pos: Vec3, params: Record<string, Float>, phase: Float) => Vec3;
 }
 
 const SCALE: NoiseParam = {
@@ -141,8 +138,8 @@ export function defaultNoiseParams(def: NoiseDef): Record<string, number> {
  * numbers wrapped as constant nodes. E3 calls `sample` directly instead, with
  * uniform nodes and a projected coordinate.
  */
-export function previewNode(def: NoiseDef, v: Record<string, number>, phase: Node): Node {
-  const params: Record<string, Node> = {};
+export function previewNode(def: NoiseDef, v: Record<string, number>, phase: Float): Vec3 {
+  const params: Record<string, Float> = {};
   for (const p of def.params) params[p.key] = float(v[p.key] ?? p.default);
   return def.sample(positionLocal, params, phase);
 }

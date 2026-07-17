@@ -10,6 +10,8 @@ import {
   screenUV,
   uv,
   vec3,
+  type Float,
+  type Vec3,
 } from "@/materials/tsl";
 
 /**
@@ -32,15 +34,12 @@ import {
  * assertable without a GPU.
  */
 
-// biome-ignore lint/suspicious/noExplicitAny: TSL node
-type Node = any;
-
 /** The transform's uniform nodes, handed to {@link projectedSample} per layer. */
 export interface TransformNodes {
-  offset: Node;
+  offset: Vec3;
   /** Euler XYZ radians. */
-  rotation: Node;
-  scale: Node;
+  rotation: Vec3;
+  scale: Vec3;
 }
 
 const TAU = Math.PI * 2;
@@ -53,7 +52,7 @@ const TAU = Math.PI * 2;
 const TRIPLANAR_SHARPNESS = 4;
 
 /** Rotate `p` by Euler XYZ `rot` (radians), matching three's XYZ order. */
-function rotateEuler(p: Node, rot: Node): Node {
+function rotateEuler(p: Vec3, rot: Vec3): Vec3 {
   const cx = rot.x.cos();
   const sx = rot.x.sin();
   const cy = rot.y.cos();
@@ -75,7 +74,7 @@ function rotateEuler(p: Node, rot: Node): Node {
 }
 
 /** Surface position moved into the projector's frame (offset + rotation, no scale). */
-function oriented(t: TransformNodes): Node {
+function oriented(t: TransformNodes): Vec3 {
   return rotateEuler(positionLocal.sub(t.offset), t.rotation);
 }
 
@@ -84,12 +83,12 @@ function oriented(t: TransformNodes): Node {
  * position — dividing the position first would barely change an angle, so their
  * `scale` control would read as almost inert.
  */
-function scaled2d(u: Node, v: Node, t: TransformNodes): Node {
+function scaled2d(u: Float, v: Float, t: TransformNodes): Vec3 {
   return vec3(u.div(t.scale.x), v.div(t.scale.y), 0);
 }
 
 /** Normal in the projector's frame — the triplanar blend axis. */
-function orientedNormal(t: TransformNodes): Node {
+function orientedNormal(t: TransformNodes): Vec3 {
   return rotateEuler(normalLocal, t.rotation);
 }
 
@@ -100,8 +99,8 @@ function orientedNormal(t: TransformNodes): Node {
 export function projectedSample(
   projection: Projection,
   t: TransformNodes,
-  noise: (coord: Node) => Node,
-): Node {
+  noise: (coord: Vec3) => Vec3,
+): Vec3 {
   switch (projection) {
     case "uv": {
       // the mesh's own UV set — needs unwrapped UVs. z stays 0, so a 3D noise

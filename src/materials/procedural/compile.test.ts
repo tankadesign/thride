@@ -34,7 +34,7 @@ describe("layer-stack compiler", () => {
     expect(getCompileCount()).toBe(1);
     expect(c.nodes.color).toBeTruthy();
     // a TSL vec3 node exposes swizzles
-    expect(typeof c.nodes.color.rgb).toBe("object");
+    expect(typeof c.nodes.color!.rgb).toBe("object");
     expect(c.nodes.roughness).toBeUndefined(); // no stack for that channel
   });
 
@@ -209,7 +209,7 @@ describe("layer-stack compiler", () => {
   it("the normal channel compiles a height stack to a normal node", () => {
     const c = compile({ channels: { normal: { layers: [layer("n")] } } });
     expect(c.nodes.normal).toBeTruthy();
-    expect(typeof c.nodes.normal.xyz).toBe("object"); // vec3 normal, not a scalar
+    expect(typeof c.nodes.normal!.xyz).toBe("object"); // vec3 normal, not a scalar
     expect(c.uniforms.paths()).toContain("n/bumpStrength");
 
     // bump strength is a live uniform too
