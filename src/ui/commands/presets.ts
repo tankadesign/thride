@@ -1,4 +1,4 @@
-import type { KeyBindingEntry, KeyPreset, NavPreset } from "@/types/keymap";
+import type { KeyBindingEntry, KeyPreset, NAV_PRESET_IDS, NavPreset } from "@/types/keymap";
 
 /**
  * Built-in presets. Navigation presets are read-only schemes (each nav action
@@ -13,6 +13,15 @@ const noMods = { ctrl: false, meta: false, alt: false, shift: false };
 /** Built-in navigation schemes (mouse + trackpad). Wheel always dollies. */
 export const NAV_PRESETS: NavPreset[] = [
   {
+    id: "threejs",
+    name: "three.js (OrbitControls)",
+    // Bare left-drag orbit, right-drag pan (right-click still opens the menu),
+    // wheel to dolly.
+    orbit: [{ button: 0, mods: { ...noMods } }],
+    pan: [{ button: 2, mods: { ...noMods } }],
+    dolly: [],
+  },
+  {
     id: "c4d",
     name: "Cinema 4D",
     // Alt+drag orbit/pan/dolly; plus Cmd+LMB pan and Cmd+Alt+LMB dolly so a
@@ -26,15 +35,6 @@ export const NAV_PRESETS: NavPreset[] = [
       { button: 2, mods: { ...noMods, alt: true } },
       { button: 0, mods: { ...noMods, meta: true, alt: true } },
     ],
-  },
-  {
-    id: "threejs",
-    name: "three.js (OrbitControls)",
-    // Bare left-drag orbit, right-drag pan (right-click still opens the menu),
-    // wheel to dolly.
-    orbit: [{ button: 0, mods: { ...noMods } }],
-    pan: [{ button: 2, mods: { ...noMods } }],
-    dolly: [],
   },
   {
     id: "blender",
@@ -93,5 +93,5 @@ export const BUILTIN_KEY_PRESETS: KeyPreset[] = [
 ];
 
 /** The default preset ids used when a stored id is missing/stale. */
-export const DEFAULT_NAV_PRESET_ID = "c4d";
-export const DEFAULT_KEY_PRESET_ID = "c4d";
+export const DEFAULT_NAV_PRESET_ID: NAV_PRESET_IDS | string = "threejs";
+export const DEFAULT_KEY_PRESET_ID: NAV_PRESET_IDS | string = "c4d";

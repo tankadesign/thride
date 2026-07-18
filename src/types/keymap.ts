@@ -69,13 +69,15 @@ export interface MouseCombo {
   mods: ModifierSet;
 }
 
+export type NAV_PRESET_IDS = "threejs" | "c4d" | "blender";
+
 /**
  * A built-in navigation scheme. Each action lists every combo that triggers it
  * (so one scheme can cover both mouse and trackpad, e.g. C4D pan = Alt+MMB and
  * Cmd+LMB). Wheel is always dolly-toward-cursor regardless of these.
  */
 export interface NavPreset {
-  id: string;
+  id: NAV_PRESET_IDS | string;
   name: string;
   orbit: MouseCombo[];
   pan: MouseCombo[];

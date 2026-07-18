@@ -38,7 +38,7 @@ function NavSection() {
     <section className="flex flex-col gap-1.5">
       <h3 className="font-semibold">Navigation</h3>
       <select
-        className="select select-xs w-full"
+        className="select select-md w-full"
         value={navId}
         onChange={(e) => setNavId(e.target.value)}
       >
@@ -92,7 +92,7 @@ function KeysSection() {
         {renaming && editable ? (
           <input
             autoFocus
-            className="input input-xs flex-1"
+            className="input input-md flex-1"
             defaultValue={active.name}
             onBlur={(e) => {
               renamePreset(keyId, e.target.value.trim() || active.name);
@@ -106,7 +106,7 @@ function KeysSection() {
           />
         ) : (
           <select
-            className="select select-xs flex-1"
+            className="select select-md flex-1"
             value={keyId}
             onChange={(e) => setKeyId(e.target.value)}
           >
@@ -128,11 +128,22 @@ function KeysSection() {
             ) : null}
           </select>
         )}
-        <button type="button" className="btn btn-xs" onClick={() => duplicatePreset(keyId)}>
+        {!editable ? (
+          <span className="ml-2 badge badge-sm badge-outline badge-warning">Read only</span>
+        ) : null}
+        <button
+          type="button"
+          className="btn btn-xs btn-link"
+          onClick={() => duplicatePreset(keyId)}
+        >
           Duplicate
         </button>
         {editable ? (
-          <button type="button" className="btn btn-xs" onClick={() => setRenaming((r) => !r)}>
+          <button
+            type="button"
+            className="btn btn-xs btn-secondary btn-link"
+            onClick={() => setRenaming((r) => !r)}
+          >
             Rename
           </button>
         ) : null}
@@ -140,7 +151,7 @@ function KeysSection() {
           confirmDelete ? (
             <button
               type="button"
-              className="btn btn-xs btn-error"
+              className="btn btn-xs btn-accent"
               onClick={() => {
                 deletePreset(keyId);
                 setConfirmDelete(false);
@@ -149,15 +160,17 @@ function KeysSection() {
               Sure?
             </button>
           ) : (
-            <button type="button" className="btn btn-xs" onClick={() => setConfirmDelete(true)}>
+            <button
+              type="button"
+              className="btn btn-xs btn-accent btn-link"
+              onClick={() => setConfirmDelete(true)}
+            >
               Delete
             </button>
           )
         ) : null}
       </div>
-      {!editable ? (
-        <span className="badge badge-sm badge-ghost">Built-in — duplicate to edit</span>
-      ) : null}
+
       <KeyBindingList presetId={keyId} editable={editable} capture={capture} />
     </section>
   );

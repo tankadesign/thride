@@ -41,7 +41,7 @@ export function KeyBindingList({ presetId, editable, capture }: Props) {
 
   return (
     <div className="flex min-h-0 flex-col gap-1">
-      <label className="input input-xs w-full">
+      <label className="input input-md w-full">
         <IconSearch className="opacity-50" size={14} />
         <input
           type="search"
@@ -53,7 +53,7 @@ export function KeyBindingList({ presetId, editable, capture }: Props) {
       <div className="min-h-0 flex-1 overflow-y-auto">
         {groups.map(({ group, items }) => (
           <div key={group}>
-            <div className="sticky top-0 bg-base-200 px-1 py-0.5 text-[0.65rem] font-semibold tracking-wide text-base-content/50 uppercase">
+            <div className="sticky top-0 bg-base-200 z-1 px-1 py-2 text-[0.65rem] font-semibold tracking-wide text-base-content/50 uppercase">
               {group}
             </div>
             <ul className="menu menu-xs w-full p-0">
