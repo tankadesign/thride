@@ -248,6 +248,17 @@ export class SceneSynchronizer {
     );
   }
 
+  /** The material assigned to a cloner's template (its first mesh/primitive child). */
+  private clonerTemplateMaterialId(clonerId: Uuid): Uuid | undefined {
+    for (const childId of this.doc.scene.childrenOf(clonerId)) {
+      const child = this.doc.scene.get(childId);
+      if (child && (child.data?.mesh !== undefined || child.data?.primitive !== undefined)) {
+        return child.data?.material as Uuid | undefined;
+      }
+    }
+    return undefined;
+  }
+
   /** Current local Euler (XYZ) of a node's live object — used to bake a
    * target-follow orientation into the document when the target is cleared. */
   currentLocalRotation(id: Uuid): [number, number, number] | null {
@@ -391,13 +402,10 @@ export class SceneSynchronizer {
       if (!obj.userData.spline) obj.visible = node.visible && !this.isConsumed(id);
       this.applyTransform(node, obj);
       if (this.isCloner(node) && obj instanceof InstancedMesh) {
-        // cloner: refresh instances; a count that outgrew the buffer returns a
-        // fresh InstancedMesh to swap into the scene graph (NOT the HEMesh path)
+        // cloner: refresh instances (NOT the HEMesh geometry path). A count that
+        // outgrew the buffer returns a fresh InstancedMesh to swap into the graph
         const next = this.cloners.sync(node, obj);
-        if (next !== obj) {
-          this.swapObject(id, obj, next);
-          obj = next;
-        }
+        if (next !== obj) this.swapObject(id, obj, next);
       } else if (
         (node.kind === "mesh" || node.kind === "generator") &&
         obj instanceof Mesh &&
@@ -427,8 +435,8 @@ export class SceneSynchronizer {
   /**
    * Replace a node's live object in the scene graph and the id→object map,
    * carrying over identity/visibility/transform. Used when a cloner's instance
-   * count outgrows its buffer and the InstancedMesh must be rebuilt (its
-   * material re-resolves on the next applyShading pass).
+   * count outgrows its buffer and the InstancedMesh is rebuilt with headroom
+   * (its material re-resolves on the next applyShading pass).
    */
   private swapObject(id: Uuid, oldObj: Object3D, newObj: Object3D): void {
     newObj.name = oldObj.name;
@@ -567,8 +575,13 @@ export class SceneSynchronizer {
       if (override) {
         obj.material = override;
       } else {
-        const data = this.doc.scene.get(id)?.data;
-        const matId = data?.material as Uuid | undefined;
+        const node = this.doc.scene.get(id);
+        const data = node?.data;
+        let matId = data?.material as Uuid | undefined;
+        // Clones wear the TEMPLATE child's material (C4D — a material on the
+        // cloned object persists onto its clones), unless the cloner itself has
+        // one assigned, which overrides.
+        if (node && this.isCloner(node)) matId ??= this.clonerTemplateMaterialId(id);
         const planar = data?.planar as PlanarReflectionDTO | undefined;
         const m = planar
           ? this.materials.resolvePlanar(id, matId, planar, obj)
