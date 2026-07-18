@@ -10,7 +10,14 @@ import type {
   ViewportSettingsDTO,
 } from "@/types/editor";
 import { defaultBevelParams, defaultPaneDisplay, defaultViewportSettings } from "@/types/editor";
+import type { KeyEventLike, MouseBinding } from "@/types/keymap";
 import { appStore } from "@/ui/hooks/doc/document";
+import {
+  activeNavPresetIdAtom,
+  mouseBindingsAtom,
+  runCommandById,
+  viewportScopedCommand as resolveViewportScopedCommand,
+} from "./keymap";
 import { gridSnapSizeAtom, snapEnabledAtom } from "./settings";
 import { paletteOpenAtom } from "./shell";
 
@@ -220,6 +227,18 @@ class EditorStateStore implements EditorViewportState {
     }
   }
 
+  get mouseBindings(): readonly MouseBinding[] {
+    return appStore.get(mouseBindingsAtom);
+  }
+
+  viewportScopedCommand(e: KeyEventLike): string | null {
+    return resolveViewportScopedCommand(e);
+  }
+
+  runCommand(id: string): void {
+    runCommandById(id);
+  }
+
   subscribe(cb: () => void): () => void {
     const unsubs = [
       appStore.sub(layoutAtom, cb),
@@ -232,6 +251,8 @@ class EditorStateStore implements EditorViewportState {
       appStore.sub(penActiveAtom, cb),
       appStore.sub(snapEnabledAtom, cb),
       appStore.sub(paneDisplaysAtom, cb),
+      // nav preset change → re-derive mouse bindings on the next render
+      appStore.sub(activeNavPresetIdAtom, cb),
     ];
     return () => {
       for (const u of unsubs) u();

@@ -10,12 +10,15 @@ import type { Document } from "@/core";
 import { buildCommands, type ShellApi } from "@/app/commands";
 import { CommandRegistry } from "@/ui/commands/CommandRegistry";
 import { setRegistry, usePalette } from "@/ui/hooks/editor/shell";
+import { dispatchKeyEvent, keyCaptureActiveAtom } from "@/ui/hooks/editor/keymap";
+import { appStore } from "@/ui/hooks/doc/document";
 import { useSelectObjectMaterial } from "@/ui/hooks/editor/materials";
 import { AttributesPanel } from "@/ui/panels/AttributesPanel";
 import { GalleryPanel } from "@/ui/panels/GalleryPanel";
 import { NoiseGalleryPanel } from "@/ui/panels/NoiseGalleryPanel";
 import { MaterialManagerPanel } from "@/ui/panels/MaterialManagerPanel";
 import { EnvironmentPanel } from "@/ui/panels/EnvironmentPanel";
+import { KeyBindingsPanel } from "@/ui/panels/keymap/KeyBindingsPanel";
 import { ObjectManagerPanel } from "@/ui/panels/ObjectManagerPanel";
 import { ViewportPanel } from "@/ui/panels/ViewportPanel";
 import type { ViewportSystem } from "@/render/viewport/ViewportSystem";
@@ -84,6 +87,18 @@ export function Shell({ doc }: { doc: Document }) {
             position: { referencePanel: "attributes", direction: "within" },
           });
       },
+      openKeyboardShortcuts: () => {
+        const api = apiRef.current;
+        if (!api) return;
+        if (api.getPanel("keybindings")) api.getPanel("keybindings")!.focus();
+        else
+          api.addPanel({
+            id: "keybindings",
+            component: "keybindings",
+            title: "Keyboard shortcuts",
+            position: { referencePanel: "attributes", direction: "within" },
+          });
+      },
       resetLayout: () => {
         localStorage.removeItem(LAYOUT_KEY);
         const api = apiRef.current;
@@ -106,6 +121,8 @@ export function Shell({ doc }: { doc: Document }) {
   // native text-editing ops ⌘A/C/V/X, which stay the input's own)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // the key-binding recorder owns the keyboard while capturing
+      if (appStore.get(keyCaptureActiveAtom)) return;
       const t = e.target as HTMLElement;
       const typing =
         t.tagName === "INPUT" ||
@@ -119,11 +136,11 @@ export function Shell({ doc }: { doc: Document }) {
         if (!mod || nativeTextOp) return;
       }
       if (palette.open) return;
-      registry.handleKey(e);
+      if (dispatchKeyEvent(e, doc)) e.preventDefault();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [registry, palette.open]);
+  }, [doc, palette.open]);
 
   const components = useMemo(
     () => ({
@@ -135,6 +152,7 @@ export function Shell({ doc }: { doc: Document }) {
       attributes: (p: IDockviewPanelProps) => <AttributesPanel panelApi={p.api} />,
       materials: (_p: IDockviewPanelProps) => <MaterialManagerPanel />,
       environment: (_p: IDockviewPanelProps) => <EnvironmentPanel />,
+      keybindings: (_p: IDockviewPanelProps) => <KeyBindingsPanel />,
       gallery: (_p: IDockviewPanelProps) => <GalleryPanel />,
       noiseGallery: (_p: IDockviewPanelProps) => <NoiseGalleryPanel />,
     }),

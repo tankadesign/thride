@@ -1,8 +1,6 @@
 import { useAtom, useAtomValue } from "jotai";
 import type { EditMode } from "@/types/core";
-import { ConvertToMeshCommand } from "@/geometry/commands/convert";
 import type { CommandRegistry } from "@/ui/commands/CommandRegistry";
-import { useDocument } from "@/ui/hooks/doc/document";
 import { useSelectionInfo } from "@/ui/hooks/doc/selection";
 import { snapEnabledAtom } from "@/ui/hooks/editor/settings";
 import { penActiveAtom, weldArmedAtom } from "@/ui/hooks/editor/viewport";
@@ -61,7 +59,6 @@ const MODE_TOOLS: Partial<
 
 /** Left toolbar — context-sensitive by edit mode (per-mode tools land with D4b). */
 export function ToolRail({ registry }: { registry: CommandRegistry }) {
-  const doc = useDocument();
   const { editMode } = useSelectionInfo();
   const weldArmed = useAtomValue(weldArmedAtom);
   const penActive = useAtomValue(penActiveAtom);
@@ -72,17 +69,9 @@ export function ToolRail({ registry }: { registry: CommandRegistry }) {
     "spline.pen": penActive,
   };
 
-  /** Entering a component mode on a primitive converts it first (Spline-style,
-   * one undoable "Convert to Mesh" step) so components are editable at once. */
-  const enterMode = (mode: EditMode) => {
-    if (mode === "point" || mode === "edge" || mode === "polygon") {
-      const active = doc.selection.active;
-      if (active && ConvertToMeshCommand.eligible(doc, active)) {
-        doc.history.run(new ConvertToMeshCommand(doc, active));
-      }
-    }
-    doc.selection.setEditMode(mode);
-  };
+  /** Mode buttons run the mode.* commands (shared with the keymap: converting a
+   * primitive to an editable mesh first happens in enterEditMode). */
+  const enterMode = (mode: EditMode) => registry.run(`mode.${mode}`);
 
   return (
     <ul className="menu menu-xs w-13 flex-none gap-0.5 border-r border-base-100 bg-base-300 p-1">

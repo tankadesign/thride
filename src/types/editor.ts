@@ -1,4 +1,5 @@
 import type { Uuid } from "./core/ids";
+import type { KeyEventLike, MouseBinding } from "./keymap";
 
 /** Built-in editor cameras; a PaneCamera may also be a scene camera node id. */
 export type BuiltinCamera =
@@ -237,5 +238,11 @@ export interface EditorViewportState {
   toggleLayout(): void;
   /** MMB click on a pane: maximize it, or return to 4-up (C4D behavior). */
   toggleMaximize(pane: number): void;
+  /** Runtime mouse-nav bindings derived from the active navigation preset. */
+  readonly mouseBindings: readonly MouseBinding[];
+  /** Resolve a key event to a viewport-scoped command id (active keymap), or null. */
+  viewportScopedCommand(e: KeyEventLike): string | null;
+  /** Run a registry command by id (enabled() respected). */
+  runCommand(id: string): void;
   subscribe(cb: () => void): () => void;
 }

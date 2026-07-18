@@ -1,11 +1,41 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { CommandRegistry } from "@/ui/commands/CommandRegistry";
-import { shortcutLabel } from "@/ui/commands/CommandRegistry";
+import type { AppCommand, CommandRegistry } from "@/ui/commands/CommandRegistry";
+import { useBindingLabel } from "@/ui/hooks/editor/keymap";
 import { IconSearch } from "@/icons";
 
 interface Props {
   registry: CommandRegistry;
   onClose: () => void;
+}
+
+function PaletteRow({
+  cmd,
+  active,
+  onEnter,
+  onRun,
+}: {
+  cmd: AppCommand;
+  active: boolean;
+  onEnter: () => void;
+  onRun: () => void;
+}) {
+  const label = useBindingLabel(cmd.id);
+  return (
+    <li>
+      <button
+        type="button"
+        className={`flex justify-between gap-6 ${active ? "menu-active" : ""}`}
+        onPointerEnter={onEnter}
+        onPointerDown={onRun}
+      >
+        <span>
+          {cmd.menu ? <span className="opacity-50">{cmd.menu} › </span> : null}
+          {cmd.title}
+        </span>
+        {label ? <kbd className="kbd kbd-xs opacity-60">{label}</kbd> : null}
+      </button>
+    </li>
+  );
 }
 
 /** ⌘K command palette — daisyUI modal + compact menu list. */
@@ -63,25 +93,16 @@ export function CommandPalette({ registry, onClose }: Props) {
         </label>
         <ul className="menu menu-xs max-h-[45vh] w-full flex-nowrap overflow-y-auto p-1">
           {matches.map((cmd, i) => (
-            <li key={cmd.id}>
-              <button
-                type="button"
-                className={`flex justify-between gap-6 ${i === index ? "menu-active" : ""}`}
-                onPointerEnter={() => setIndex(i)}
-                onPointerDown={() => {
-                  setIndex(i);
-                  runSelected();
-                }}
-              >
-                <span>
-                  {cmd.menu ? <span className="opacity-50">{cmd.menu} › </span> : null}
-                  {cmd.title}
-                </span>
-                {cmd.shortcut ? (
-                  <kbd className="kbd kbd-xs opacity-60">{shortcutLabel(cmd.shortcut)}</kbd>
-                ) : null}
-              </button>
-            </li>
+            <PaletteRow
+              key={cmd.id}
+              cmd={cmd}
+              active={i === index}
+              onEnter={() => setIndex(i)}
+              onRun={() => {
+                setIndex(i);
+                runSelected();
+              }}
+            />
           ))}
           {matches.length === 0 ? (
             <li className="menu-disabled">

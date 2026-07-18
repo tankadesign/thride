@@ -365,6 +365,11 @@ export class ViewportSystem {
     return active ? (this.sync.object(active) ?? null) : null;
   }
 
+  /** A drag/modal is mid-flight — used to gate gizmo-mode key commands. */
+  get inputBusy(): boolean {
+    return this.input.isBusy();
+  }
+
   dispose(): void {
     this.disposed = true;
     if (this.renderKick !== null) window.clearTimeout(this.renderKick);

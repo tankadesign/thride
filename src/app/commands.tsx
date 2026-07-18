@@ -34,8 +34,10 @@ import { defaultLightData, LIGHT_LABELS, type LightType } from "@/types/core/lig
 import type { AppCommand } from "@/ui/commands/CommandRegistry";
 import { createProject } from "@/ui/hooks/doc/projects";
 import { openPalette } from "@/ui/hooks/editor/shell";
+import { enterEditMode, toggleEditMode } from "@/ui/hooks/editor/keymap";
 import { editorState } from "@/ui/hooks/editor/viewport";
 import type { AmountKind } from "@/render/tools/AmountTool";
+import type { GizmoMode } from "@/render/gizmo/TransformGizmo";
 import type { ViewportSystem } from "@/render/viewport/ViewportSystem";
 import type { ComponentMode, TransformDTO, Uuid } from "@/types/core";
 import {
@@ -50,7 +52,9 @@ import {
   IconDelete,
   IconDirectionalLight,
   IconCircle,
+  IconCursor,
   IconDisc,
+  IconEdge,
   IconGroup,
   IconHelix,
   IconNSide,
@@ -64,8 +68,11 @@ import {
   IconNull,
   IconPen,
   IconPlane,
+  IconPoint,
   IconPointLight,
+  IconPolygon,
   IconPyramid,
+  IconSettings,
   IconSphere,
   IconSpotlight,
   IconSweep,
@@ -104,8 +111,30 @@ export interface ShellApi {
   openNoiseGallery: () => void;
   openMaterials: () => void;
   openEnvironment: () => void;
+  openKeyboardShortcuts: () => void;
   resetLayout: () => void;
 }
+
+/** Gizmo mode commands share one shape (set the transform gizmo + redraw). */
+const GIZMO_MODES: { id: string; title: string; mode: GizmoMode }[] = [
+  { id: "gizmo.translate", title: "Move Gizmo", mode: "translate" },
+  { id: "gizmo.rotate", title: "Rotate Gizmo", mode: "rotate" },
+  { id: "gizmo.scale", title: "Scale Gizmo", mode: "scale" },
+  { id: "gizmo.all", title: "Multi Gizmo", mode: "all" },
+];
+
+/** Edit-mode switch commands (Object/Point/Edge/Polygon). */
+const EDIT_MODES: {
+  id: string;
+  title: string;
+  mode: "object" | ComponentMode;
+  icon: React.ReactNode;
+}[] = [
+  { id: "mode.object", title: "Object Mode", mode: "object", icon: <IconCursor size={16} /> },
+  { id: "mode.point", title: "Point Mode", mode: "point", icon: <IconPoint size={16} /> },
+  { id: "mode.edge", title: "Edge Mode", mode: "edge", icon: <IconEdge size={16} /> },
+  { id: "mode.polygon", title: "Polygon Mode", mode: "polygon", icon: <IconPolygon size={16} /> },
+];
 
 // icosphere is folded into sphere (Icosa toggle); the legacy type still loads
 const PRIMITIVES: PrimitiveType[] = [
@@ -299,7 +328,6 @@ export function buildCommands(doc: Document, shell: ShellApi): AppCommand[] {
       id: "edit.undo",
       title: "Undo",
       menu: "Edit",
-      shortcut: "mod+z",
       enabled: () => doc.history.canUndo,
       run: () => doc.history.undo(),
     },
@@ -307,7 +335,6 @@ export function buildCommands(doc: Document, shell: ShellApi): AppCommand[] {
       id: "edit.redo",
       title: "Redo",
       menu: "Edit",
-      shortcut: "shift+mod+z",
       enabled: () => doc.history.canRedo,
       run: () => doc.history.redo(),
     },
@@ -317,7 +344,6 @@ export function buildCommands(doc: Document, shell: ShellApi): AppCommand[] {
       menu: "Edit",
       icon: <IconDelete size={16} />,
       sep: true,
-      shortcut: "delete",
       enabled: () => {
         const mode = doc.selection.editMode;
         if (mode === "point" && splinePointTarget() !== null) return true;
@@ -375,7 +401,6 @@ export function buildCommands(doc: Document, shell: ShellApi): AppCommand[] {
       title: "Group Objects",
       menu: "Edit",
       icon: <IconGroup size={16} />,
-      shortcut: "mod+g",
       enabled: () => doc.selection.objectIds.length > 0,
       run: () => {
         const ids = topmostSelection();
@@ -395,7 +420,6 @@ export function buildCommands(doc: Document, shell: ShellApi): AppCommand[] {
       title: "Ungroup Objects",
       menu: "Edit",
       icon: <IconGroup size={16} />,
-      shortcut: "shift+mod+g",
       enabled: () => doc.selection.objectIds.some((id) => ungroupable(doc, id)),
       run: () => {
         const groups = doc.selection.objectIds.filter((id) => ungroupable(doc, id));
@@ -519,7 +543,6 @@ export function buildCommands(doc: Document, shell: ShellApi): AppCommand[] {
       id: "edit.convertToMesh",
       title: "Convert to Mesh",
       menu: "Edit",
-      shortcut: "c",
       enabled: () =>
         doc.selection.objectIds.some(
           (id) =>
@@ -553,9 +576,8 @@ export function buildCommands(doc: Document, shell: ShellApi): AppCommand[] {
       title: "Select All",
       menu: "Edit",
       sep: true,
-      // bare A, scoped to the viewport (Blender-style): object mode selects all
-      // nodes, component modes select all points/edges/polygons of the mesh
-      shortcut: "a",
+      // Select All, scoped to the viewport (bound to A in the built-in presets):
+      // object mode selects all nodes, component modes select all components.
       viewportScoped: true,
       run: () => selectAll(doc),
     },
@@ -563,7 +585,6 @@ export function buildCommands(doc: Document, shell: ShellApi): AppCommand[] {
       id: "edit.deselect",
       title: "Deselect All",
       menu: "Edit",
-      shortcut: "mod+d",
       run: () => {
         // mirror Select All: component modes clear the active mode's components
         const mode = doc.selection.editMode;
@@ -574,6 +595,45 @@ export function buildCommands(doc: Document, shell: ShellApi): AppCommand[] {
         }
       },
     },
+
+    // ---- Edit ▸ Mode (object / component modes; also driven by the ToolRail) ----
+    ...EDIT_MODES.map(
+      ({ id, title, mode, icon }): AppCommand => ({
+        id,
+        title,
+        menu: "Edit",
+        submenu: "Mode",
+        icon,
+        sep: id === "mode.object",
+        run: () => enterEditMode(doc, mode),
+      }),
+    ),
+    {
+      // Blender-style Tab: flip between object mode and the last component mode
+      id: "mode.toggleEdit",
+      title: "Toggle Object / Edit Mode",
+      menu: "Edit",
+      submenu: "Mode",
+      icon: <IconCursor size={16} />,
+      run: () => toggleEditMode(doc),
+    },
+
+    // ---- Edit ▸ Gizmo (transform gizmo mode; was hardcoded E/R/T/V) ----
+    ...GIZMO_MODES.map(
+      ({ id, title, mode }): AppCommand => ({
+        id,
+        title,
+        menu: "Edit",
+        submenu: "Gizmo",
+        // gate like the old bare-key handler: no mode switch mid-drag
+        enabled: () => !(shell.getViewport()?.inputBusy ?? false),
+        run: () => {
+          const vs = shell.getViewport();
+          vs?.gizmo.setMode(mode);
+          vs?.invalidate();
+        },
+      }),
+    ),
 
     // ---- Create ---- (grouped: Primitives ▸ / Splines ▸ / Generators ▸ /
     // Lights ▸, then Camera + Null. Same-submenu commands must stay CONSECUTIVE
@@ -595,7 +655,6 @@ export function buildCommands(doc: Document, shell: ShellApi): AppCommand[] {
       menu: "Create",
       submenu: "Splines",
       icon: <IconPen size={16} />,
-      shortcut: "p",
       run: () => shell.getViewport()?.penTool.toggle(),
     },
     // parametric curve primitives — spline nodes with a live `splinePrimitive`
@@ -749,7 +808,6 @@ export function buildCommands(doc: Document, shell: ShellApi): AppCommand[] {
         title: kind === "extrude" ? "Extrude" : "Inset",
         menu: "Mesh",
         icon: kind === "extrude" ? <IconExtrude size={16} /> : <IconInset size={16} />,
-        shortcut: kind === "extrude" ? "d" : "i",
         enabled: () => doc.selection.editMode === "polygon" && componentTarget("polygon") !== null,
         run: () => shell.getViewport()?.beginAmountTool(kind),
       }),
@@ -760,7 +818,6 @@ export function buildCommands(doc: Document, shell: ShellApi): AppCommand[] {
       title: "Bevel",
       menu: "Mesh",
       icon: <IconBevel size={16} />,
-      shortcut: "b",
       enabled: () => {
         const m = doc.selection.editMode;
         if (m === "point") return componentTarget("point") !== null;
@@ -796,28 +853,24 @@ export function buildCommands(doc: Document, shell: ShellApi): AppCommand[] {
       id: "view.toggleLayout",
       title: "Toggle 1-up / 4-up",
       menu: "View",
-      shortcut: "mod+4",
       run: () => editorState.toggleLayout(),
     },
     {
       id: "view.toggleWorldMode",
       title: "World / Local Gizmo",
       menu: "View",
-      shortcut: "w",
       run: () => editorState.toggleGizmoSpace(),
     },
     {
       id: "view.frameSelection",
       title: "Frame Selection",
       menu: "View",
-      shortcut: "f",
       run: () => shell.getViewport()?.frameSelection(),
     },
     {
       id: "view.frameAll",
       title: "Frame All",
       menu: "View",
-      shortcut: "h",
       run: () => shell.getViewport()?.frameAll(),
     },
     {
@@ -825,8 +878,14 @@ export function buildCommands(doc: Document, shell: ShellApi): AppCommand[] {
       title: "Command Palette…",
       menu: "View",
       sep: true,
-      shortcut: "mod+k",
       run: () => openPalette(),
+    },
+    {
+      id: "view.keyBindings",
+      title: "Keyboard shortcuts",
+      menu: "View",
+      icon: <IconSettings size={16} />,
+      run: () => shell.openKeyboardShortcuts(),
     },
     {
       id: "view.materials",
