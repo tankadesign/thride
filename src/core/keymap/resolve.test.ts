@@ -103,7 +103,7 @@ describe("key lookup", () => {
 
   it("groups entries by canonical chord", () => {
     const lookup = buildKeyLookup(preset);
-    expect(lookup.get("meta+z")?.[0].command).toBe("edit.undo");
+    expect(lookup.get("meta+z")?.[0]?.command).toBe("edit.undo");
     expect(lookup.get("delete")).toHaveLength(1);
   });
 

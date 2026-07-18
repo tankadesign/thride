@@ -14,6 +14,15 @@ export default defineConfig({
     "*": "vp check --fix",
   },
   fmt: {},
+  test: {
+    // Scope collection to THIS tree's src. A git worktree checked out under
+    // .claude/worktrees/ (experimental branches, e.g. the Option-B placement
+    // spike) carries its own *.test.ts files; anchored at the repo root, the
+    // `src/**` glob never descends into `.claude/`, so those don't get run
+    // against this config (they fail collection with a different setup).
+    include: ["src/**/*.{test,spec}.{ts,tsx}"],
+    exclude: ["**/node_modules/**", "**/dist/**", "**/.claude/**"],
+  },
   // Linting is handled by ESLint (`pnpm lint`), not oxlint — oxlint's tsgolint
   // type-aware pass hangs indefinitely on our TSL node-graph files. Skip the
   // lint step in `vp check` so the composite command doesn't freeze; it still

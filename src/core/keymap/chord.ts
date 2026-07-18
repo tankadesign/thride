@@ -31,9 +31,9 @@ export function hasCmdOrCtrl(c: KeyChord): boolean {
 function keyToken(e: KeyEventLike): string | null {
   const code = e.code;
   const letter = /^Key([A-Z])$/.exec(code);
-  if (letter) return letter[1].toLowerCase();
+  if (letter) return letter[1]!.toLowerCase();
   const digit = /^Digit([0-9])$/.exec(code);
-  if (digit) return digit[1];
+  if (digit) return digit[1]!;
   const key = e.key;
   if (key === "Control" || key === "Shift" || key === "Alt" || key === "Meta") return null;
   if (key === " " || code === "Space") return "space";
