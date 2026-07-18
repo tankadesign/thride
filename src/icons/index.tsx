@@ -49,6 +49,7 @@ import {
   StarIcon,
   SunCloud02Icon,
   SunsetIcon,
+  ThreeDMoveIcon,
   TorusIcon,
   TriangleIcon,
   Video02Icon,
@@ -143,3 +144,4 @@ export const IconMagnet = makeIcon(Magnet02Icon);
 export const IconPivotPoint = makeIcon(CenterFocusIcon);
 export const IconSearch = makeIcon(Search01Icon);
 export const IconSettings = makeIcon(Settings01Icon);
+export const IconProjectionTransform = makeIcon(ThreeDMoveIcon);

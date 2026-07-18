@@ -16,7 +16,7 @@ import {
   withChannelLayer,
 } from "@/types/core";
 import { uuidv7 } from "@/core";
-import { IconClose, IconEye } from "@/icons";
+import { IconClose, IconEye, IconEyeOff, IconProjectionTransform } from "@/icons";
 import { noiseDef } from "@/materials/noises";
 import { textureAssets } from "@/io/storage/textureAssets";
 import { NumberDrag } from "@/ui/widgets/NumberDrag";
@@ -81,11 +81,15 @@ export function MapSlot({
   const removeNoise = () =>
     setMat({ procedural: withChannelLayer(mat.procedural, procChannel, null) }, true);
 
-  /**
-   * TODO: toggleNoise() should toggle the map on/off (clear the channel, but keep the
-   * noise layer in the procedural node so it can be re-enabled later).
-   */
-  const toggleNoise = () => {};
+  // The eye toggle mutes/unmutes this channel — keeps its image/noise data in
+  // place (re-enabling restores it), just stops it driving the material.
+  const channelDisabled = mat.disabledChannels?.[channel] === true;
+  const toggleChannel = () => {
+    const disabledChannels = { ...mat.disabledChannels };
+    if (channelDisabled) delete disabledChannels[channel];
+    else disabledChannels[channel] = true;
+    setMat({ disabledChannels }, true);
+  };
 
   const clearImage = () => {
     const textures = { ...mat.textures };
@@ -95,11 +99,7 @@ export function MapSlot({
     setMat({ textures, textureProjections }, true);
   };
 
-  /**
-   * TODO: toggleImage() should toggle the map on/off (clear the channel, but keep the
-   * asset in the textureAssets registry so it can be re-enabled later).
-   */
-  const toggleImage = () => {};
+  const toggleTransformMode = () => {};
 
   const setImageProjection = (projection: Projection) => {
     const textureProjections = { ...mat.textureProjections };
@@ -182,10 +182,10 @@ export function MapSlot({
             <button
               type="button"
               className="btn btn-ghost btn-md px-1 hover:text-primary hover:opacity-100"
-              onClick={toggleNoise}
-              title="Toggle map"
+              onClick={toggleChannel}
+              title={channelDisabled ? "Show map" : "Hide map"}
             >
-              <IconEye size={14} />
+              {channelDisabled ? <IconEyeOff size={14} /> : <IconEye size={14} />}
             </button>
             <button
               type="button"
@@ -239,10 +239,10 @@ export function MapSlot({
             <button
               type="button"
               className="btn btn-ghost btn-md px-1 hover:text-primary hover:opacity-100"
-              onClick={toggleImage}
-              title="Toggle map"
+              onClick={toggleChannel}
+              title={channelDisabled ? "Show map" : "Hide map"}
             >
-              <IconEye size={14} />
+              {channelDisabled ? <IconEyeOff size={14} /> : <IconEye size={14} />}
             </button>
             <button
               type="button"
@@ -281,6 +281,12 @@ export function MapSlot({
                   (d) => (d * Math.PI) / 180,
                 )}
                 {axisRow("Scale", "scale", 0.01)}
+                <Row label="">
+                  <button className="btn btn-sm w-fit btn-outline" onClick={toggleTransformMode}>
+                    <IconProjectionTransform height={12} />
+                    Enable Editor
+                  </button>
+                </Row>
               </>
             ) : null}
           </div>

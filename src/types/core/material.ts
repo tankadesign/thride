@@ -164,6 +164,14 @@ export interface MaterialDTO {
   textureProjectionTransforms?: Partial<Record<TextureChannel, ProjectionTransform>>;
 
   /**
+   * Channels muted by the map's eye toggle. A muted channel keeps its data (the
+   * texture asset / noise layer stay in place) but stops driving the material —
+   * the binder treats it as absent, so the channel falls back to its scalar. One
+   * flag per channel (a channel holds an image OR a noise, never both).
+   */
+  disabledChannels?: Partial<Record<TextureChannel, boolean>>;
+
+  /**
    * Procedural layer stacks (E3), compiled to TSL per channel. Absent = a plain
    * scalar/bitmap material. A channel with a stack overrides the scalar field
    * above it (a `color` stack drives `colorNode`, not `color`).

@@ -113,6 +113,7 @@ export function assignChannelNodes(
   images: Partial<Record<ProceduralChannel, ImageSpec>>,
   cache: ImageNodeCache,
   keepColor = false,
+  disabled?: ReadonlySet<ProceduralChannel>,
 ): void {
   const m = mat as unknown as Record<string, unknown>;
   let changed = false;
@@ -120,12 +121,15 @@ export function assignChannelNodes(
     if (keepColor && channel === "color") continue;
     const slot = CHANNEL_SLOT[channel];
     if (!(slot in mat)) continue;
-    const stack = compiled?.nodes[channel];
-    const next = stack
-      ? SCALAR_CHANNEL.has(channel)
-        ? stack.r
-        : stack
-      : imageNode(channel, images[channel], cache);
+    // muted channel → bind nothing (the plain map prop is already cleared upstream)
+    const stack = disabled?.has(channel) ? undefined : compiled?.nodes[channel];
+    const next = disabled?.has(channel)
+      ? null
+      : stack
+        ? SCALAR_CHANNEL.has(channel)
+          ? stack.r
+          : stack
+        : imageNode(channel, images[channel], cache);
     if (m[slot] === next) continue;
     m[slot] = next;
     changed = true;

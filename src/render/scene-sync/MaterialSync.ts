@@ -339,10 +339,15 @@ export class MaterialSync {
   ): void {
     const m = mat as unknown as Record<string, unknown>;
     const specs: Partial<Record<ProceduralChannel, ImageSpec>> = {};
+    // Channels muted by the eye toggle: keep the data but bind nothing (fall back
+    // to the scalar) — for both the plain map prop and the procedural/image node.
+    const disabled = new Set<ProceduralChannel>();
     let changed = false;
     for (const { channel, applies, colorSpace } of TEXTURE_CHANNELS) {
       if (!(channel in mat)) continue;
-      const id = applies.has(dto.type) ? dto.textures?.[channel] : undefined;
+      const off = dto.disabledChannels?.[channel] === true;
+      if (off) disabled.add(TEXTURE_TO_PROCEDURAL[channel]);
+      const id = off || !applies.has(dto.type) ? undefined : dto.textures?.[channel];
       // normal maps are tangent-space — they only make sense in a UV frame
       const projection =
         channel === "normalMap" ? "uv" : (dto.textureProjections?.[channel] ?? "uv");
@@ -361,7 +366,7 @@ export class MaterialSync {
       }
     }
     if (changed) mat.needsUpdate = true;
-    assignChannelNodes(mat, proc, specs, imgCache, keepColor);
+    assignChannelNodes(mat, proc, specs, imgCache, keepColor, disabled);
   }
 
   private reapplyTextures(): void {
