@@ -416,6 +416,11 @@ export class ViewportSystem {
     return p.z >= -1 && p.z <= 1 && Math.abs(p.x) <= 1 && Math.abs(p.y) <= 1;
   }
 
+  /** A drag/modal is mid-flight — used to gate gizmo-mode key commands. */
+  get inputBusy(): boolean {
+    return this.input.isBusy();
+  }
+
   dispose(): void {
     this.disposed = true;
     if (this.renderKick !== null) window.clearTimeout(this.renderKick);

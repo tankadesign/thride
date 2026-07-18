@@ -1,5 +1,5 @@
 import type { AppCommand, CommandRegistry, MenuId } from "@/ui/commands/CommandRegistry";
-import { shortcutLabel } from "@/ui/commands/CommandRegistry";
+import { useBindingLabel } from "@/ui/hooks/editor/keymap";
 import { useHistoryInfo } from "@/ui/hooks/doc/history";
 import { useSelectionInfo } from "@/ui/hooks/doc/selection";
 
@@ -7,6 +7,7 @@ const MENUS: MenuId[] = ["File", "Edit", "Create", "Mesh", "View", "Help"];
 
 function MenuItem({ cmd }: { cmd: AppCommand }) {
   const enabled = cmd.enabled?.() ?? true;
+  const label = useBindingLabel(cmd.id);
   return (
     <li className={enabled ? "" : "menu-disabled"}>
       {cmd.sep ? <span className="mx-0 my-0.5 block h-px bg-base-300 p-0" /> : null}
@@ -20,9 +21,7 @@ function MenuItem({ cmd }: { cmd: AppCommand }) {
       >
         <span className="flex w-4 justify-center">{cmd.icon}</span>
         <span className="flex-1 text-left">{cmd.title}</span>
-        {cmd.shortcut ? (
-          <kbd className="kbd kbd-xs opacity-60">{shortcutLabel(cmd.shortcut)}</kbd>
-        ) : null}
+        {label ? <kbd className="kbd kbd-xs opacity-60">{label}</kbd> : null}
       </button>
     </li>
   );

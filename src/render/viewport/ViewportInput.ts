@@ -1,9 +1,8 @@
-import { Raycaster, Vector3 } from "three";
-import type { Uuid } from "@/types/core";
-import type { GizmoMode } from "@/render/gizmo/TransformGizmo";
-import { selectAll } from "@/geometry/selection/selectAll";
+import { Vector3 } from "three";
+import { modsOf } from "@/core/keymap/chord";
+import { matchMouseBinding } from "@/core/keymap/resolve";
+import type { MouseBinding, NavAction } from "@/types/keymap";
 import type { SnapHit } from "@/render/picking/snapPoint";
-import { componentClick } from "./componentClick";
 import {
   applyCameraNavTick,
   beginCameraNav,
@@ -11,23 +10,27 @@ import {
   updateCameraNav,
 } from "./cameraNavWriteback";
 import { snapPivot, snapScreen } from "./inputSnap";
+import { firstVisibleNode, performSelectionClick, tryInteractivePress } from "./pointerPick";
 import type { ViewportSystem } from "./ViewportSystem";
 
-type NavMode = "orbit" | "pan" | "dolly" | null;
+type NavMode = NavAction | null;
 
-/** Bare-key gizmo modes (C4D-flavored): E move, R rotate, T scale, V multi. */
-const GIZMO_MODE_KEYS: Record<string, GizmoMode | undefined> = {
-  e: "translate",
-  r: "rotate",
-  t: "scale",
-  v: "all",
-};
+/** A press whose binding can resolve to either a nav drag or a click action. */
+interface Pending {
+  binding: MouseBinding;
+  press: PointerEvent;
+  pane: number;
+  startX: number;
+  startY: number;
+}
 
 /**
- * All pointer/wheel/key input for a ViewportSystem: C4D navigation
- * (Alt+LMB orbit-around-pick, Alt+MMB pan, Alt+RMB dolly), MMB pane
- * maximize, pick/gizmo/handle drags, and right-click context requests.
- * Split from ViewportSystem to keep both under the 500-line rule.
+ * All pointer/wheel/key input for a ViewportSystem. Mouse navigation is driven
+ * by the active navigation preset (via editor.mouseBindings): each press is
+ * matched to a binding that starts a camera drag (orbit/pan/dolly), performs a
+ * fixed click action (select / context menu / pane maximize), or defers between
+ * the two based on drag distance. Keyboard commands resolve through the active
+ * key preset. Split from ViewportSystem to keep both under the 500-line rule.
  */
 export class ViewportInput {
   private readonly vs: ViewportSystem;
@@ -38,7 +41,8 @@ export class ViewportInput {
     lastY: number;
     pivot: Vector3 | null;
   } | null = null;
-  private mmbClick: { x: number; y: number; pane: number } | null = null;
+  /** Armed deferred press (drag-vs-click undecided until move/up). */
+  private pending: Pending | null = null;
   /** Live-bevel width scrub state. */
   private bevelDrag: { startY: number; lastY: number; moved: boolean } | null = null;
   /** Snap target hit during the current gizmo move (for the magnet marker). */
@@ -80,6 +84,35 @@ export class ViewportInput {
     this.pointerInside = false;
   };
 
+  /** Start a camera nav drag, pivoting on the point under the press. */
+  private beginNav(mode: NavAction, press: PointerEvent, pane: number): void {
+    const vs = this.vs;
+    const rect = vs.canvas.getBoundingClientRect();
+    let pivot: Vector3 | null = null;
+    let marker = { x: press.clientX - rect.left, y: press.clientY - rect.top };
+    if (mode === "orbit" || mode === "dolly") {
+      // orbit AND dolly pivot on the point under the cursor (the crosshair), so
+      // zooming homes in on the picked object just like rotating spins around
+      // it. Empty click falls back to the viewport center — no view jump either
+      // way (free-camera rig).
+      const rig = vs.setRayFromEvent(press, pane);
+      const hit = vs.raycaster.intersectObject(vs.sync.root, true)[0];
+      if (rig.isPerspective) {
+        pivot = rig.beginOrbitPivot(hit?.point ?? null);
+        if (!hit) {
+          const paneRect = vs.paneRect(pane);
+          marker = { x: paneRect.x + paneRect.w / 2, y: paneRect.y + paneRect.h / 2 };
+        }
+      } else if (mode === "dolly" && hit) {
+        // ortho doesn't orbit, but dolly can still zoom toward the picked point
+        pivot = hit.point.clone();
+      }
+    }
+    this.nav = { mode, pane, lastX: press.clientX, lastY: press.clientY, pivot };
+    beginCameraNav(vs, pane);
+    vs.onNavMarker?.(marker);
+  }
+
   private onPointerDown = (e: PointerEvent): void => {
     const vs = this.vs;
     const rect = vs.canvas.getBoundingClientRect();
@@ -105,9 +138,12 @@ export class ViewportInput {
       return;
     }
 
-    // Pen tool: LMB locks the plane / places points; RMB finishes.
-    // Alt-nav stays available so you can orbit while drawing.
-    if (vs.penTool.isActive && !e.altKey) {
+    const binding = matchMouseBinding(vs.editor.mouseBindings, e.button, modsOf(e));
+    const navDrag = binding?.drag ?? null;
+
+    // Pen tool: LMB locks the plane / places points; RMB finishes. Navigation
+    // (whatever the preset binds) stays available so you can orbit while drawing.
+    if (vs.penTool.isActive && !navDrag) {
       if (e.button === 0) vs.penTool.onPointerDown(e);
       else if (e.button === 2) {
         vs.penTool.finish();
@@ -118,7 +154,7 @@ export class ViewportInput {
     }
 
     // Live bevel tool: LMB drag scrubs width, a plain click applies, RMB cancels
-    if (vs.bevelTool.isActive && !e.altKey) {
+    if (vs.bevelTool.isActive && !navDrag) {
       if (e.button === 0) {
         this.bevelDrag = { startY: e.clientY, lastY: e.clientY, moved: false };
         vs.bevelTool.beginWidthDrag();
@@ -130,103 +166,37 @@ export class ViewportInput {
       return;
     }
 
-    if (!e.altKey && e.button === 1) {
-      // MMB click (no drag): maximize pane / back to 4-up — armed until movement
-      this.mmbClick = { x: e.clientX, y: e.clientY, pane };
+    if (!binding) return; // unbound press — ignore
+
+    // pure drag → start nav now (C4D alt-drag path, unchanged feel)
+    if (binding.drag && !binding.click) {
+      this.beginNav(binding.drag, e, pane);
       e.preventDefault();
       return;
     }
 
-    if (e.altKey) {
-      const mode: NavMode =
-        e.button === 0 ? "orbit" : e.button === 1 ? "pan" : e.button === 2 ? "dolly" : null;
-      let pivot: Vector3 | null = null;
-      let marker = { x, y };
-      if (mode === "orbit" || mode === "dolly") {
-        // C4D: orbit AND dolly pivot on the point under the cursor (the
-        // crosshair), so zooming homes in on the picked object just like
-        // rotating spins around it. Empty click falls back to the viewport
-        // center — no view jump either way (free-camera rig).
-        const rig = vs.setRayFromEvent(e, pane);
-        const hit = vs.raycaster.intersectObject(vs.sync.root, true)[0];
-        if (rig.isPerspective) {
-          pivot = rig.beginOrbitPivot(hit?.point ?? null);
-          if (!hit) {
-            // marker sits where the pivot actually is: the pane center
-            const paneRect = vs.paneRect(pane);
-            marker = { x: paneRect.x + paneRect.w / 2, y: paneRect.y + paneRect.h / 2 };
-          }
-        } else if (mode === "dolly" && hit) {
-          // ortho doesn't orbit, but dolly can still zoom toward the picked
-          // point; no hit → fall through to plain center zoom
-          pivot = hit.point.clone();
-        }
-      }
-      this.nav = { mode, pane, lastX: e.clientX, lastY: e.clientY, pivot };
-      beginCameraNav(vs, pane);
-      vs.onNavMarker?.(marker);
+    // deferred (drag OR click): a select-click still lets gizmo/handles grab on
+    // the press; otherwise arm and decide on move/up
+    if (binding.drag && binding.click) {
+      if (binding.click === "select" && tryInteractivePress(vs, e, pane)) return;
+      this.pending = { binding, press: e, pane, startX: e.clientX, startY: e.clientY };
       e.preventDefault();
       return;
     }
 
-    if (e.button === 0) {
-      // armed weld tool captures point-mode clicks before gizmo/handles:
-      // drag a vertex to slide-weld, or fall through to normal selection
-      if (vs.doc.selection.editMode === "point" && vs.editor.weldArmed) {
-        if (!vs.weldTool.beginDrag(e, pane)) componentClick(this.vs, e, pane, "point");
-        vs.invalidate();
-        return;
-      }
-      // point mode on a spline node: anchors + tangent handles
-      if (vs.splineEdit.context()) {
-        if (!vs.splineEdit.pointerDown(e)) {
-          // empty click clears this spline's point selection
-          const active = vs.doc.selection.active;
-          if (active && !e.shiftKey && !e.metaKey && !e.ctrlKey) {
-            vs.doc.selection.clearComponents(active, "point");
-          }
-        }
-        vs.invalidate();
-        return;
-      }
-      const rig = vs.setRayFromEvent(e, pane);
-      // primitive adjustment handles take priority over the gizmo
-      if (vs.handles.pointerDown(vs.raycaster, vs.activeObject())) {
-        vs.invalidate();
-        return;
-      }
-      if (vs.gizmo.pointerDown(vs.raycaster)) {
-        vs.invalidate();
-        return;
-      }
-      // move-only mode in a 2D pane: a drag ANYWHERE slides the selection in
-      // the pane's plane (handles and gizmo picks above keep precedence)
-      if (
-        !rig.isPerspective &&
-        vs.gizmo.currentMode === "translate" &&
-        vs.doc.selection.editMode === "object" &&
-        vs.gizmo.beginViewDrag(vs.raycaster)
-      ) {
-        vs.invalidate();
-        return;
-      }
-      // component modes lock clicks to the active editable mesh (C4D-style)
-      const mode = vs.doc.selection.editMode;
-      if (mode === "point" || mode === "edge" || mode === "polygon") {
-        componentClick(this.vs, e, pane, mode);
-        vs.invalidate();
-        return;
-      }
-      // click select — skip hidden objects (raycaster ignores .visible)
-      const nodeId = this.firstVisibleNode(vs.raycaster.intersectObject(vs.sync.root, true));
-      if (nodeId) {
-        const op = e.shiftKey ? "add" : e.metaKey || e.ctrlKey ? "toggle" : "replace";
-        vs.doc.selection.selectObjects([nodeId], op);
-      } else if (!e.shiftKey && !e.metaKey && !e.ctrlKey) {
-        vs.doc.selection.clearObjects();
-      }
-      vs.invalidate();
+    // click-only bindings
+    if (binding.click === "select") {
+      // select on press (C4D LMB): interactive picks win, else raycast select
+      if (!tryInteractivePress(vs, e, pane)) performSelectionClick(vs, e, pane);
+      return;
     }
+    if (binding.click === "maximizePane") {
+      // armed until movement — a drag cancels it (matches the old MMB behavior)
+      this.pending = { binding, press: e, pane, startX: e.clientX, startY: e.clientY };
+      e.preventDefault();
+      return;
+    }
+    // click === "contextMenu": the native contextmenu event handles it
   };
 
   private onPointerMove = (e: PointerEvent): void => {
@@ -256,9 +226,22 @@ export class ViewportInput {
       vs.invalidate();
       return;
     }
-    if (this.mmbClick) {
-      const moved = Math.hypot(e.clientX - this.mmbClick.x, e.clientY - this.mmbClick.y);
-      if (moved > 4) this.mmbClick = null; // became a drag, not a click
+    if (this.pending) {
+      // past the threshold a deferred press becomes a drag; a click-only press
+      // (maximize) simply cancels
+      if (Math.hypot(e.clientX - this.pending.startX, e.clientY - this.pending.startY) > 4) {
+        const p = this.pending;
+        this.pending = null;
+        if (p.binding.drag) {
+          this.beginNav(p.binding.drag, p.press, p.pane);
+          // continue the drag from the current point (no jump from the press)
+          if (this.nav) {
+            this.nav.lastX = e.clientX;
+            this.nav.lastY = e.clientY;
+          }
+        }
+      }
+      return;
     }
     if (this.nav?.mode) {
       const dx = e.clientX - this.nav.lastX;
@@ -338,11 +321,19 @@ export class ViewportInput {
       vs.invalidate();
       return;
     }
-    if (this.mmbClick && e.button === 1) {
-      const pane = this.mmbClick.pane;
-      this.mmbClick = null;
-      vs.editor.toggleMaximize(pane);
-      vs.invalidate();
+    if (this.pending && e.button === this.pending.press.button) {
+      // sub-threshold release → the binding's click action
+      const p = this.pending;
+      this.pending = null;
+      if (p.binding.click === "select") {
+        // the interactive press already had its chance on pointer-down
+        performSelectionClick(vs, e, p.pane);
+      } else if (p.binding.click === "maximizePane") {
+        vs.editor.toggleMaximize(p.pane);
+        vs.invalidate();
+      } else if (p.binding.click === "contextMenu") {
+        this.requestContextMenu(e, p.pane);
+      }
       return;
     }
     if (this.nav) {
@@ -383,6 +374,15 @@ export class ViewportInput {
     vs.invalidate();
   };
 
+  /** Build and dispatch a context-menu request for the point under the event. */
+  private requestContextMenu(e: PointerEvent | MouseEvent, pane: number): void {
+    const vs = this.vs;
+    vs.setRayFromEvent(e, pane);
+    // skip hidden objects — a hidden node shouldn't open its context menu
+    const nodeId = firstVisibleNode(vs, vs.raycaster.intersectObject(vs.sync.root, true));
+    vs.onContextMenuRequest?.({ clientX: e.clientX, clientY: e.clientY, pane, nodeId });
+  }
+
   private onContextMenu = (e: Event): void => {
     e.preventDefault();
     const vs = this.vs;
@@ -391,17 +391,17 @@ export class ViewportInput {
       return;
     }
     const me = e as MouseEvent;
-    if (me.altKey) return; // alt+RMB is dolly
+    // if the right button (with these modifiers) drives a nav drag, the menu is
+    // suppressed here — a pan preset opens it from the pointer-up click instead
+    // (mac fires contextmenu on pointer-DOWN, so it can't own the menu there)
+    if (matchMouseBinding(vs.editor.mouseBindings, 2, modsOf(me))?.drag) return;
     const rect = vs.canvas.getBoundingClientRect();
     const pane = vs.paneAt(me.clientX - rect.left, me.clientY - rect.top);
-    vs.setRayFromEvent(me, pane);
-    // skip hidden objects — a hidden node shouldn't open its context menu
-    const nodeId = this.firstVisibleNode(vs.raycaster.intersectObject(vs.sync.root, true));
-    vs.onContextMenuRequest?.({ clientX: me.clientX, clientY: me.clientY, pane, nodeId });
+    this.requestContextMenu(me, pane);
   };
 
   /** A drag/modal is mid-flight — swallow viewport-scoped keys until it ends. */
-  private isBusy(): boolean {
+  isBusy(): boolean {
     const vs = this.vs;
     return (
       !!vs.modalTool ||
@@ -431,15 +431,6 @@ export class ViewportInput {
     return res ? res.snapped : null;
   };
 
-  /** First raycast hit that resolves to a visible node, or null. */
-  private firstVisibleNode(hits: ReturnType<Raycaster["intersectObject"]>): Uuid | null {
-    for (const h of hits) {
-      const id = this.vs.sync.visibleNodeIdOf(h.object);
-      if (id) return id;
-    }
-    return null;
-  }
-
   private onKeyDown = (e: KeyboardEvent): void => {
     const vs = this.vs;
     // Pen tool owns its keys while active (axis picks, finish, backspace)
@@ -462,28 +453,17 @@ export class ViewportInput {
         return;
       }
     }
-    // Select All (bare A) — only while the pointer is over the viewport and no
-    // drag/modal is in flight; object mode selects all nodes, component modes
-    // select all components of the active mesh
-    if (e.key.toLowerCase() === "a" && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey) {
-      if (!this.pointerInside || this.isBusy() || this.typingTarget(e)) return;
-      selectAll(vs.doc);
-      vs.invalidate();
-      e.preventDefault();
-      return;
-    }
-    // Gizmo modes: E move-only, R rotate-only, T scale-only, V the full multi
-    // gizmo. App-global like the P pen key — NOT gated on pointer position: a
-    // fresh page load fires no pointerenter until the mouse moves, which left
-    // these keys dead until some stray interaction (mode switches are harmless
-    // anywhere, so the typing/busy guards are the only ones that matter).
-    const gizmoMode = GIZMO_MODE_KEYS[e.key.toLowerCase()];
-    if (gizmoMode && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey) {
-      if (this.isBusy() || this.typingTarget(e)) return;
-      vs.gizmo.setMode(gizmoMode);
-      vs.invalidate();
-      e.preventDefault();
-      return;
+    // Viewport-scoped commands (e.g. Select All) — only while the pointer is over
+    // the viewport and no drag/modal is in flight. Global commands (gizmo modes,
+    // etc.) are dispatched by the Shell handler through the same active keymap.
+    if (this.pointerInside && !this.isBusy() && !this.typingTarget(e)) {
+      const id = vs.editor.viewportScopedCommand(e);
+      if (id) {
+        vs.editor.runCommand(id);
+        vs.invalidate();
+        e.preventDefault();
+        return;
+      }
     }
     if (e.key !== "Escape") return;
     if (vs.modalTool) {

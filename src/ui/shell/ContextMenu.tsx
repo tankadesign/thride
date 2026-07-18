@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { shortcutLabel } from "@/ui/commands/CommandRegistry";
+import { commandBindingLabel } from "@/ui/hooks/editor/keymap";
 import { type MenuEntry, useContextMenu, useRegistry } from "@/ui/hooks/editor/shell";
 
 /**
@@ -60,7 +60,7 @@ function EntryList({
         const enabled = !entry.disabled && (cmd ? (cmd.enabled?.() ?? true) : true);
         const icon = entry.icon ?? cmd?.icon;
         const run = entry.run ?? cmd?.run;
-        const shortcut = cmd?.shortcut;
+        const shortcut = entry.commandId ? commandBindingLabel(entry.commandId) : null;
 
         if (entry.children) {
           // flyout opens only while THIS row (or the flyout itself) is hovered —
@@ -97,9 +97,7 @@ function EntryList({
             >
               <span className="flex w-4 justify-center">{icon}</span>
               <span className="flex-1 text-left">{label}</span>
-              {shortcut ? (
-                <kbd className="kbd kbd-xs opacity-60">{shortcutLabel(shortcut)}</kbd>
-              ) : null}
+              {shortcut ? <kbd className="kbd kbd-xs opacity-60">{shortcut}</kbd> : null}
             </button>
           </li>
         );
