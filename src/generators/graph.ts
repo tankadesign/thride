@@ -13,6 +13,7 @@ import type { HEMesh } from "@/geometry/kernel/HEMesh";
 import { buildPrimitive } from "@/geometry/primitives";
 import { meshRegistry } from "@/geometry/store/meshRegistry";
 import { sampleSpline3D } from "@/geometry/splines/eval";
+import { type ClonerParams, clonerMatrices, defaultClonerParams } from "./cloner";
 import {
   buildSplineExtrude,
   defaultSplineExtrudeParams,
@@ -24,7 +25,8 @@ import { buildSweep, defaultSweepParams, type SweepCurve, type SweepParams } fro
 export type GeneratorDescriptor =
   | { type: "splineExtrude"; params: SplineExtrudeParams }
   | { type: "sweep"; params: SweepParams }
-  | { type: "boolean"; params: { op: BooleanOp } };
+  | { type: "boolean"; params: { op: BooleanOp } }
+  | { type: "cloner"; params: ClonerParams };
 
 export const splineExtrudeDescriptor = (): GeneratorDescriptor => ({
   type: "splineExtrude",
@@ -39,6 +41,11 @@ export const sweepDescriptor = (): GeneratorDescriptor => ({
 export const booleanDescriptor = (): GeneratorDescriptor => ({
   type: "boolean",
   params: { op: "subtract" },
+});
+
+export const clonerDescriptor = (): GeneratorDescriptor => ({
+  type: "cloner",
+  params: defaultClonerParams(),
 });
 
 interface CacheEntry {
@@ -108,6 +115,9 @@ export function evaluateGenerator(
     return mesh ? { key, mesh } : null;
   }
 
+  // cloners don't yield a single HEMesh — the render layer pulls evaluateCloner
+  if (desc.type !== "boolean") return null;
+
   // boolean: async — return the cached result, kick a worker job when stale
   const inputs = booleanInputs(doc, node.id);
   const key = `bool:${desc.params.op}:${inputs.key}`;
@@ -141,6 +151,68 @@ export function evaluateGenerator(
   }
   // stale-but-valid result keeps rendering while the worker computes
   return entry.mesh ? { key: entry.key, mesh: entry.mesh } : null;
+}
+
+/**
+ * Cloner evaluation — a SEPARATE path from {@link evaluateGenerator} because a
+ * cloner doesn't produce one HEMesh: it produces a base template mesh (for the
+ * InstancedMesh's geometry) plus a flat matrix array (one transform per clone).
+ * Keeping it apart lets the HEMesh return above stay non-optional for every
+ * consumer (Convert-to-Mesh, syncGeometry) that expects a single mesh.
+ *
+ * Memoized like the others: the key covers the params (a count/effector change
+ * recomputes the matrices) and the template's identity + geometry fingerprint
+ * (a template edit recomputes the base). The child's own transform is ignored
+ * in v1 — the template sits at the cloner's origin and the distribution places
+ * the clones; baking the child matrix into every instance is a later refinement.
+ */
+const clonerCache = new WeakMap<
+  Document,
+  Map<Uuid, { key: string; base: HEMesh | null; matrices: Float32Array | null }>
+>();
+
+export function evaluateCloner(
+  doc: Document,
+  node: SceneNode,
+): { key: string; base: HEMesh; matrices: Float32Array } | null {
+  const desc = node.data?.generator as GeneratorDescriptor | undefined;
+  if (desc?.type !== "cloner") return null;
+  let perDoc = clonerCache.get(doc);
+  if (!perDoc) {
+    perDoc = new Map();
+    clonerCache.set(doc, perDoc);
+  }
+  const template = clonerTemplate(doc, node.id);
+  const key = `clone:${JSON.stringify(desc.params)}:${template?.key ?? "∅"}`;
+  const hit = perDoc.get(node.id);
+  if (hit && hit.key === key) {
+    return hit.base && hit.matrices ? { key, base: hit.base, matrices: hit.matrices } : null;
+  }
+  const base = template?.mesh ?? null;
+  const matrices = base ? clonerMatrices(desc.params) : null;
+  perDoc.set(node.id, { key, base, matrices });
+  return base && matrices ? { key, base, matrices } : null;
+}
+
+/**
+ * The cloner's template: the first child that resolves to a mesh (editable
+ * registry mesh or primitive). Same resolution as {@link booleanInputs} but
+ * single-source and transform-less (see {@link evaluateCloner}).
+ */
+function clonerTemplate(doc: Document, id: Uuid): { mesh: HEMesh; key: string } | null {
+  for (const childId of doc.scene.childrenOf(id)) {
+    const child = doc.scene.get(childId);
+    if (!child) continue;
+    const meshRef = child.data?.mesh as { id: Uuid } | undefined;
+    const prim = child.data?.primitive as PrimitiveDescriptor | undefined;
+    if (meshRef) {
+      const mesh = meshRegistry.get(meshRef.id);
+      if (mesh) return { mesh, key: `m:${meshRef.id}:${mesh.topologyVersion}:${posChecksum(mesh)}` };
+    } else if (prim) {
+      return { mesh: buildPrimitive(prim), key: `p:${JSON.stringify(prim)}` };
+    }
+  }
+  return null;
 }
 
 /** The generator's profile input: its first spline child (data + transform). */
