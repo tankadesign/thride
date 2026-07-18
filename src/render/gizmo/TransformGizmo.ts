@@ -28,6 +28,7 @@ import type { Document } from "@/core";
 import { TransformDragSession } from "@/core/session/TransformDragSession";
 import { viewportTheme } from "@/render/theme/viewportTheme";
 import { ComponentDrag, componentContext } from "./componentDrag";
+import { ProjectionDrag, type ProjectionTarget } from "./projectionDrag";
 
 export interface GizmoModifiers {
   /** Uniform scale on scale handles. */
@@ -137,6 +138,8 @@ interface DragState {
   viewUp?: Vector3;
   /** Set in component edit modes: the drag drives vertices, not transforms. */
   component?: ComponentDrag;
+  /** Set in Texture mode: the drag drives a material projection, not transforms. */
+  projection?: ProjectionDrag;
 }
 
 /**
@@ -154,6 +157,8 @@ export class TransformGizmo {
   private activeObject: Object3D | null = null;
   private readonly hoverColor = viewportTheme.primary;
   private mode: GizmoMode = "all";
+  /** Texture mode: material-channel projection the gizmo edits (null = off). */
+  private projectionTarget: ProjectionTarget | null = null;
 
   constructor(doc: Document, resolveObject?: (id: Uuid) => Object3D | undefined) {
     this.doc = doc;
@@ -170,6 +175,16 @@ export class TransformGizmo {
 
   get currentMode(): GizmoMode {
     return this.mode;
+  }
+
+  /**
+   * Arm/disarm Texture mode: while set, the gizmo anchors on `target.object`,
+   * shows regardless of object selection, and drags edit the material channel's
+   * projection placement instead of the node transform. Pushed each frame by
+   * ViewportSystem (which resolves the object + framing); null clears it.
+   */
+  setProjectionTarget(target: ProjectionTarget | null): void {
+    this.projectionTarget = target;
   }
 
   /** Show only one handle family (E move / R rotate / T scale) or all (V). */
@@ -198,6 +213,19 @@ export class TransformGizmo {
   /** Reposition/orient on the active selection; hide when nothing is selected. */
   update(camera: Camera, activeObject: Object3D | null, space: GizmoSpace = "local"): void {
     this.activeObject = activeObject;
+    // Texture mode: anchor on the material's object (resolved by ViewportSystem)
+    // and show even with nothing selected — the drag edits the projection, not
+    // the transform. Kept BEFORE the no-selection early-return below on purpose.
+    if (this.projectionTarget) {
+      const obj = this.projectionTarget.object;
+      obj.updateWorldMatrix(true, false);
+      obj.getWorldPosition(this.group.position);
+      if (space === "local") obj.getWorldQuaternion(this.group.quaternion);
+      else this.group.quaternion.identity();
+      this.group.visible = true;
+      this.applyScreenScale(camera);
+      return;
+    }
     const ids = this.doc.selection.objectIds;
     const active = this.doc.selection.active;
     if (!active || ids.length === 0 || !this.doc.scene.has(active)) {
@@ -231,7 +259,11 @@ export class TransformGizmo {
       this.group.quaternion.identity();
     }
     this.group.visible = true;
-    // screen-constant size: perspective scales by distance, ortho by frustum height
+    this.applyScreenScale(camera);
+  }
+
+  /** Screen-constant size: perspective scales by distance, ortho by frustum height. */
+  private applyScreenScale(camera: Camera): void {
     const ortho = camera as OrthographicCamera;
     const scale = ortho.isOrthographicCamera
       ? Math.max(0.0001, (ortho.top - ortho.bottom) * 0.092)
@@ -348,7 +380,12 @@ export class TransformGizmo {
     }
 
     let component: ComponentDrag | undefined;
-    if (componentMode) {
+    let projection: ProjectionDrag | undefined;
+    if (this.projectionTarget) {
+      // Texture mode: the drag edits the material's projection placement
+      // (starts its own ProjectionDragSession — one undo step per drag).
+      projection = new ProjectionDrag(this.doc, this.projectionTarget);
+    } else if (componentMode) {
       const ctx = componentContext(this.doc, this.activeObject);
       if (!ctx || !this.activeObject) return false;
       // starts the ComponentTransformSession itself (one undo step per drag)
@@ -371,6 +408,7 @@ export class TransformGizmo {
       viewRight,
       viewUp,
       component,
+      projection,
     };
     return true;
   }
@@ -411,6 +449,10 @@ export class TransformGizmo {
           else delta.copy(sd);
         }
       }
+      if (d.projection) {
+        d.projection.applyTranslate(delta);
+        return;
+      }
       if (d.component) {
         d.component.applyTranslate(delta);
         return;
@@ -441,6 +483,10 @@ export class TransformGizmo {
           this.angleOnPlane(point.clone().sub(d.pivot), d.handle.axis, d.basis) - d.startAngle;
       }
       if (mods.snap) angle = snapTo(angle, ROTATE_SNAP);
+      if (d.projection) {
+        d.projection.applyRotate(axis, angle);
+        return;
+      }
       if (d.component) {
         d.component.applyRotate(axis, angle, d.pivot);
         return;
@@ -469,6 +515,10 @@ export class TransformGizmo {
       // an exact 0 collapses the matrix — hold just off zero until the drag
       // crosses to the mirrored side
       if (Math.abs(ratio) < 0.01) ratio = ratio < 0 ? -0.01 : 0.01;
+      if (d.projection) {
+        d.projection.applyScale(0, ratio, true);
+        return;
+      }
       if (d.component) {
         d.component.applyScale(d.basis, 0, ratio, true, d.pivot);
         return;
@@ -485,6 +535,11 @@ export class TransformGizmo {
       const r1 = point.clone().sub(d.pivot).length();
       let ratio = r0 > 1e-6 ? r1 / r0 : 1;
       if (mods.snap) ratio = Math.max(SCALE_SNAP, snapTo(ratio, SCALE_SNAP));
+      if (d.projection) {
+        // no per-axis-pair path — uniform reads best (matches component drags)
+        d.projection.applyScale(0, ratio, true);
+        return;
+      }
       if (d.component) {
         // component drags have no per-axis-pair path — uniform reads best
         d.component.applyScale(d.basis, d.handle.axis, ratio, true, d.pivot);
@@ -509,6 +564,10 @@ export class TransformGizmo {
       const a1 = point.clone().sub(d.pivot).dot(d.axisWorld);
       let ratio = Math.abs(a0) > 1e-6 ? a1 / a0 : 1;
       if (mods.snap) ratio = Math.max(SCALE_SNAP, snapTo(ratio, SCALE_SNAP));
+      if (d.projection) {
+        d.projection.applyScale(d.handle.axis, ratio, !!mods.uniformScale);
+        return;
+      }
       if (d.component) {
         d.component.applyScale(d.basis, d.handle.axis, ratio, !!mods.uniformScale, d.pivot);
         return;

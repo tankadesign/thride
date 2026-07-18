@@ -489,6 +489,19 @@ export class SceneSynchronizer {
     return null;
   }
 
+  /**
+   * First scene object whose node is assigned `matId` — the Texture-mode gizmo's
+   * fallback anchor when the material's object isn't the current selection.
+   * Insertion order, so it's stable across frames.
+   */
+  objectForMaterial(matId: Uuid): Object3D | null {
+    for (const [id, obj] of this.objects) {
+      if (obj.userData.outline || obj.userData.spline) continue;
+      if ((this.doc.scene.get(id)?.data?.material as Uuid | undefined) === matId) return obj;
+    }
+    return null;
+  }
+
   applyShading(
     mode: "pbr" | "flat" | "wireframe",
     backfaces: boolean,

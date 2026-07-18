@@ -1,6 +1,7 @@
 import {
   AmbientLight,
   Box3,
+  Camera,
   NoToneMapping,
   DirectionalLight,
   Object3D,
@@ -19,6 +20,7 @@ import type { Document } from "@/core";
 import type { Uuid } from "@/types/core";
 import type { BuiltinCamera, EditorViewportState } from "@/types/editor";
 import { TransformGizmo } from "@/render/gizmo/TransformGizmo";
+import type { ProjectionTarget } from "@/render/gizmo/projectionDrag";
 import { PrimitiveHandles } from "@/render/handles/PrimitiveHandles";
 import { applyCameraHelperTheme } from "@/render/helpers/CameraHelper";
 import { applyLightHelperTheme } from "@/render/helpers/LightHelpers";
@@ -365,6 +367,55 @@ export class ViewportSystem {
     return active ? (this.sync.object(active) ?? null) : null;
   }
 
+  /** Key identifying the currently-armed projection target (framing debounce). */
+  private lastProjectionKey: string | null = null;
+
+  /**
+   * Texture mode: the material-channel projection the gizmo edits, anchored on
+   * a scene object using the material — the current selection if it does, else
+   * the first object the material is assigned to. Null outside Texture mode.
+   */
+  private projectionGizmoTarget(): ProjectionTarget | null {
+    const t = this.editor.projectionEditTarget;
+    if (!t || this.doc.selection.editMode !== "texture") return null;
+    const sel = this.doc.selection.active;
+    let object: Object3D | null = null;
+    if (sel && (this.doc.scene.get(sel)?.data?.material as Uuid | undefined) === t.materialId) {
+      object = this.sync.object(sel) ?? null;
+    }
+    object ??= this.sync.objectForMaterial(t.materialId);
+    if (!object) return null;
+    return { materialId: t.materialId, channel: t.textureChannel, object };
+  }
+
+  /**
+   * Resolve the Texture-mode gizmo target and, the first time it arms (or its
+   * object changes), frame that object in the active pane if it isn't already
+   * in view — so the projection is always reachable. One-shot per target: no
+   * reframing every frame, and never mid-drag.
+   */
+  private syncProjectionGizmo(camera: Camera): ProjectionTarget | null {
+    const target = this.projectionGizmoTarget();
+    const key = target ? `${target.materialId}:${target.channel}:${target.object.uuid}` : null;
+    if (
+      key &&
+      key !== this.lastProjectionKey &&
+      !this.gizmo.isDragging &&
+      !this.objectInView(target!.object, camera)
+    ) {
+      this.frameBox(new Box3().setFromObject(target!.object));
+    }
+    this.lastProjectionKey = key;
+    return target;
+  }
+
+  /** True when the object's origin projects inside the camera's NDC frustum. */
+  private objectInView(object: Object3D, camera: Camera): boolean {
+    object.updateWorldMatrix(true, false);
+    const p = new Vector3().setFromMatrixPosition(object.matrixWorld).project(camera);
+    return p.z >= -1 && p.z <= 1 && Math.abs(p.x) <= 1 && Math.abs(p.y) <= 1;
+  }
+
   dispose(): void {
     this.disposed = true;
     if (this.renderKick !== null) window.clearTimeout(this.renderKick);
@@ -553,6 +604,13 @@ export class ViewportSystem {
     // autoClear is false (three's forceClear), so ONLY the first pane gets one —
     // later panes use a null background so their loadOp is Load and they keep the
     // already-drawn panes. (A per-pane active tint can't survive this.)
+    // Texture mode: aim the gizmo at the material's object (pane-independent)
+    // and frame it in the active pane the first time it arms. Done once per
+    // frame before the pane loop so framing doesn't run four times.
+    this.gizmo.setProjectionTarget(
+      this.syncProjectionGizmo(this.rigFor(this.editor.activePane).camera),
+    );
+
     for (let r = 0; r < this.panes.length; r++) {
       const p = this.panes[r]!;
       const i = logical[r]!;
