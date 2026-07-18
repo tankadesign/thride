@@ -65,8 +65,15 @@ export interface Instance {
 
 const TAU = Math.PI * 2;
 
+/** Fill any missing field from the defaults — a cloner serialized before a param
+ * existed (e.g. an early linear-only doc) arrives without grid/radial keys. */
+function norm(p: ClonerParams): ClonerParams {
+  return { ...defaultClonerParams(), ...p };
+}
+
 /** How many instances a param set produces (grid multiplies its axes). */
-export function clonerCount(p: ClonerParams): number {
+export function clonerCount(params: ClonerParams): number {
+  const p = norm(params);
   if (p.mode === "grid") {
     const [nx, ny, nz] = p.gridCount;
     return Math.max(0, Math.floor(nx)) * Math.max(0, Math.floor(ny)) * Math.max(0, Math.floor(nz));
@@ -230,6 +237,7 @@ export function clonerInstanceMatrices(instances: Instance[], p: ClonerParams): 
 }
 
 /** Every clone's world matrix for a built-in distribution (linear/radial/grid). */
-export function clonerMatrices(p: ClonerParams): Float32Array {
+export function clonerMatrices(params: ClonerParams): Float32Array {
+  const p = norm(params);
   return clonerInstanceMatrices(layoutInstances(p), p);
 }

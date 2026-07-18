@@ -15,6 +15,7 @@ import {
   SHADOW_CAPABLE,
   type ShadowResolution,
 } from "@/types/core/light";
+import { defaultClonerParams } from "@/generators/cloner";
 import type { GeneratorDescriptor } from "@/generators/graph";
 import type { SplinePrimitive } from "@/types/geometry/spline";
 import { buildSplinePrimitive } from "@/geometry/splines/primitives";
@@ -668,7 +669,8 @@ function GeneratorParams({ id, gen }: { id: Uuid; gen: GeneratorDescriptor }) {
   };
 
   if (gen.type === "cloner") {
-    const cp = gen.params;
+    // fill any field a pre-grid/radial doc lacks, so the panel + render agree
+    const cp = { ...defaultClonerParams(), ...gen.params };
     const RAD = 180 / Math.PI;
     type VecKey = "step" | "positionJitter" | "rotationJitter" | "gridCount" | "gridSpacing";
     // three x/y/z NumberDrags editing one Vec3 param (rotation shown in degrees)
