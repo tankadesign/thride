@@ -670,9 +670,10 @@ function GeneratorParams({ id, gen }: { id: Uuid; gen: GeneratorDescriptor }) {
   if (gen.type === "cloner") {
     const cp = gen.params;
     const RAD = 180 / Math.PI;
+    type VecKey = "step" | "positionJitter" | "rotationJitter" | "gridCount" | "gridSpacing";
     // three x/y/z NumberDrags editing one Vec3 param (rotation shown in degrees)
-    const vecRow = (key: "step" | "positionJitter" | "rotationJitter", label: string, deg = false) => {
-      const arr = cp[key];
+    const vecRow = (key: VecKey, label: string, opts: { deg?: boolean; integer?: boolean } = {}) => {
+      const arr = cp[key] ?? [0, 0, 0];
       return (
         <div className="grid grid-cols-[96px_1fr] items-center gap-1" key={key}>
           <span className="truncate opacity-60" title={label}>
@@ -682,11 +683,13 @@ function GeneratorParams({ id, gen }: { id: Uuid; gen: GeneratorDescriptor }) {
             {arr.map((v, i) => (
               <NumberDrag
                 key={i}
-                value={deg ? v * RAD : v}
-                step={deg ? 1 : 0.05}
+                value={opts.deg ? v * RAD : v}
+                step={opts.deg ? 1 : opts.integer ? 1 : 0.05}
+                integer={opts.integer}
+                min={opts.integer ? 0 : undefined}
                 onChange={(nv, committed) => {
                   const next = [...arr];
-                  next[i] = deg ? nv / RAD : nv;
+                  next[i] = opts.deg ? nv / RAD : nv;
                   setParam(key, next, committed);
                 }}
               />
@@ -695,21 +698,72 @@ function GeneratorParams({ id, gen }: { id: Uuid; gen: GeneratorDescriptor }) {
         </div>
       );
     };
+    const countRow = (
+      <div className="grid grid-cols-[96px_1fr] items-center gap-1">
+        <span className="opacity-60">Count</span>
+        <NumberDrag
+          value={cp.count}
+          step={1}
+          integer
+          min={0}
+          max={200000}
+          onChange={(v, committed) => setParam("count", v, committed)}
+        />
+      </div>
+    );
     return (
       <fieldset className="fieldset px-2 pt-1.5 pb-6">
         <legend className="fieldset-legend py-2 text-[10px] uppercase opacity-60">Cloner</legend>
         <div className="grid grid-cols-[96px_1fr] items-center gap-1">
-          <span className="opacity-60">Count</span>
-          <NumberDrag
-            value={cp.count}
-            step={1}
-            integer
-            min={0}
-            max={200000}
-            onChange={(v, committed) => setParam("count", v, committed)}
-          />
+          <span className="opacity-60">Mode</span>
+          <select
+            className="select select-md"
+            value={cp.mode}
+            onChange={(e) => setParam("mode", e.target.value, true)}
+          >
+            <option value="linear">Linear</option>
+            <option value="radial">Radial</option>
+            <option value="grid">Grid</option>
+          </select>
         </div>
-        {vecRow("step", "Step")}
+        {cp.mode === "linear" ? (
+          <>
+            {countRow}
+            {vecRow("step", "Step")}
+          </>
+        ) : null}
+        {cp.mode === "radial" ? (
+          <>
+            {countRow}
+            <div className="grid grid-cols-[96px_1fr] items-center gap-1">
+              <span className="opacity-60">Radius</span>
+              <NumberDrag
+                value={cp.radius}
+                step={0.05}
+                min={0}
+                onChange={(v, committed) => setParam("radius", v, committed)}
+              />
+            </div>
+            <div className="grid grid-cols-[96px_1fr] items-center gap-1">
+              <span className="opacity-60">Axis</span>
+              <select
+                className="select select-md"
+                value={cp.radialAxis}
+                onChange={(e) => setParam("radialAxis", e.target.value, true)}
+              >
+                <option value="x">X</option>
+                <option value="y">Y</option>
+                <option value="z">Z</option>
+              </select>
+            </div>
+          </>
+        ) : null}
+        {cp.mode === "grid" ? (
+          <>
+            {vecRow("gridCount", "Count", { integer: true })}
+            {vecRow("gridSpacing", "Spacing")}
+          </>
+        ) : null}
         <legend className="fieldset-legend pt-3 pb-1 text-[10px] uppercase opacity-40">
           Random effector
         </legend>
@@ -723,7 +777,7 @@ function GeneratorParams({ id, gen }: { id: Uuid; gen: GeneratorDescriptor }) {
           />
         </div>
         {vecRow("positionJitter", "Position")}
-        {vecRow("rotationJitter", "Rotation", true)}
+        {vecRow("rotationJitter", "Rotation", { deg: true })}
         <div className="grid grid-cols-[96px_1fr] items-center gap-1">
           <span className="opacity-60">Scale</span>
           <NumberDrag
@@ -733,7 +787,7 @@ function GeneratorParams({ id, gen }: { id: Uuid; gen: GeneratorDescriptor }) {
             onChange={(v, committed) => setParam("scaleJitter", v, committed)}
           />
         </div>
-        <p className="mt-1 text-[10px] opacity-50">Clones the first mesh child (linear).</p>
+        <p className="mt-1 text-[10px] opacity-50">Clones the first mesh child.</p>
       </fieldset>
     );
   }

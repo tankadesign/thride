@@ -76,4 +76,54 @@ describe("cloner matrices", () => {
     expect(clonerCount({ ...defaultClonerParams(), count: -4 })).toBe(0);
     expect(clonerMatrices({ ...defaultClonerParams(), count: 0 })).toHaveLength(0);
   });
+
+  it("grid count is the product of the per-axis counts", () => {
+    const p: ClonerParams = {
+      ...defaultClonerParams(),
+      mode: "grid",
+      gridCount: [3, 2, 4],
+      gridSpacing: [1, 1, 1],
+    };
+    expect(clonerCount(p)).toBe(24);
+    expect(clonerMatrices(p)).toHaveLength(24 * 16);
+  });
+
+  it("grid is a centered lattice", () => {
+    const p: ClonerParams = {
+      ...defaultClonerParams(),
+      mode: "grid",
+      gridCount: [2, 1, 1],
+      gridSpacing: [4, 4, 4],
+    };
+    const m = clonerMatrices(p);
+    // 2 along x, centered → ∓2
+    expect(posOf(m, 0)).toEqual([-2, 0, 0]);
+    expect(posOf(m, 1)).toEqual([2, 0, 0]);
+  });
+
+  it("radial places clones on a ring of the given radius", () => {
+    const p: ClonerParams = {
+      ...defaultClonerParams(),
+      mode: "radial",
+      count: 4,
+      radius: 5,
+      radialAxis: "y",
+    };
+    const m = clonerMatrices(p);
+    // every clone sits at distance `radius` from the origin in the XZ plane
+    for (let i = 0; i < 4; i++) {
+      const [x, y, z] = posOf(m, i);
+      expect(Math.hypot(x, z)).toBeCloseTo(5, 5);
+      expect(y).toBeCloseTo(0, 5);
+    }
+  });
+
+  it("radial fans each clone's orientation (rotation column varies)", () => {
+    const p: ClonerParams = { ...defaultClonerParams(), mode: "radial", count: 4, radius: 3 };
+    const m = clonerMatrices(p);
+    // clone 0 is unrotated (angle 0 → identity basis); clone 1 is not
+    const basis = (i: number) => Array.from(m.slice(i * 16, i * 16 + 3)).map(nz);
+    expect(basis(0)).toEqual([1, 0, 0]);
+    expect(basis(1)).not.toEqual([1, 0, 0]);
+  });
 });
