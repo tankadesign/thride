@@ -90,6 +90,6 @@ now Layers02 in menu + tree.
 2. ✅ **DONE (see PLAN_PROGRESS_29)** — **Convert to Objects**
    (`generators/commands/convertToObjects.ts`). Shares the Convert-to-Mesh shortcut via a new
    `AppCommand.dynamicTitle` (label swaps to "Convert to Objects" for Instancers); bakes instances →
-   a GROUP of clones named `Base.1/.2` (app `uniqueSiblingName` convention, not `.001`), one shared
-   geometry, material per clone, ONE undo step, guarded at `MAX_CONVERT_INSTANCES = 2000`.
+   a GROUP of clones named `Base.001/.002` (zero-padded, as requested), one shared geometry, material
+   per clone (cloner override else template), ONE undo step, guarded at `MAX_CONVERT_INSTANCES = 2000`.
 3. Then **F4 Cameras** to close M3. ← **the remaining M3 chunk.**

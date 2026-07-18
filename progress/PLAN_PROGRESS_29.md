@@ -42,8 +42,9 @@ hideTarget, + effector}`. `Instance` carries a column-major 3×3 `basis`; `basis
 * **Create menu** — Create → Generators → **Instancer** grabs up to 2 selected mesh/primitive/spline
   nodes in selection order → `[target, template]`.
 * **Convert to Objects** (`generators/commands/convertToObjects.ts`, new) — bakes the live instances
-  into a GROUP of real, materialed clone nodes (`Base`, `Base.1`, `Base.2` …), one shared registered
-  geometry, template material per clone, decomposed TRS (pure `mat16 → TRS`, three XYZ Euler). The
+  into a GROUP of real, materialed clone nodes (`Base`, `Base.001`, `Base.002` …), one shared
+  registered geometry, material per clone (cloner-level override else the template's, matching the
+  InstancedMesh resolution), decomposed TRS (pure `mat16 → TRS`, three XYZ Euler). The
   Instancer node + its inputs are replaced by the group in one undo step. Guarded at
   `MAX_CONVERT_INSTANCES = 2000` (caller checks `instanceCount` and `window.alert`s past the cap).
   Shares the Convert-to-Mesh shortcut via a new `AppCommand.dynamicTitle` (label swaps to "Convert to
@@ -63,9 +64,9 @@ hideTarget, + effector}`. `Instance` carries a column-major 3×3 `basis`; `basis
   (edit-one-affects-all until individually re-converted). Documented; acceptable for v1.
 - **`normal`-mode roll** uses a fixed world-Z reference (not a user up-vector) — matches the plain
   reading of the spec (up-vector picker is for `direction` only).
-- **Clone naming uses the app convention** `Base.1/.2` (`uniqueSiblingName`), not zero-padded
-  `.001/.002` — the whole app names siblings this way (Convert to Mesh, duplicate, etc.); a second
-  scheme would look foreign. Flag for the owner if zero-padding is specifically wanted.
+- **Clone naming is zero-padded** `Base.001/.002` (owner asked for `.001/.002` explicitly). Computed
+  directly (not `uniqueSiblingName`, which gives `.1`) since the group is fresh and collision-free.
+  Note this differs from the rest of the app's `.1/.2` sibling naming.
 
 ## Files added / changed
 

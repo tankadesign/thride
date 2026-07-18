@@ -9,8 +9,8 @@ import { evaluateCloner } from "../graph";
 /**
  * "Convert to Objects" — the Instancer analogue of Convert-to-Mesh. Bakes an
  * Instancer's live instances into a GROUP of real, materialed clone nodes
- * (`Base`, `Base.1`, `Base.2` …, following the app's sibling-naming
- * convention). The Instancer node (and its target/template inputs) is replaced
+ * (`Base`, `Base.001`, `Base.002` …, C4D/Blender-style zero-padded siblings).
+ * The Instancer node (and its target/template inputs) is replaced
  * in place by the group; every clone wears the template's material and its
  * baked TRS. All clones share one registered geometry (memory-safe, matching
  * the instancing model) — editing one later affects the set until it is
@@ -58,11 +58,14 @@ export class ConvertClonerToObjectsCommand implements Command {
     this.meshId = uuidv7();
     this.memoryCost = meshBytes(this.mesh);
 
-    // template = child[1]; inherit its name (clone base) + material
+    // template = child[1]; inherit its name (clone base). Material follows the
+    // same resolution the InstancedMesh uses: a cloner-level material overrides,
+    // else the template child's own material.
     const templateId = doc.scene.childrenOf(clonerId)[1];
     const template = templateId ? doc.scene.get(templateId) : undefined;
     const baseName = template?.name ?? node.name;
-    this.materialId = template?.data?.material as Uuid | undefined;
+    this.materialId =
+      (node.data?.material as Uuid | undefined) ?? (template?.data?.material as Uuid | undefined);
 
     // the group replaces the Instancer, inheriting its transform + slot so the
     // baked clones (in Instancer-local space) keep their world placement
@@ -80,7 +83,7 @@ export class ConvertClonerToObjectsCommand implements Command {
     for (let i = 0; i < count; i++) {
       this.clones.push({
         id: uuidv7(),
-        name: i === 0 ? baseName : `${baseName}.${i}`,
+        name: i === 0 ? baseName : `${baseName}.${String(i).padStart(3, "0")}`,
         transform: decomposeTRS(result.matrices, i * 16),
       });
     }
@@ -139,7 +142,7 @@ export class ConvertClonerToObjectsCommand implements Command {
  * Euler XYZ rotation (three.js order, matching `composeTRS`). Scale is read
  * per-axis from the basis column lengths; rotation from the normalized basis.
  */
-function decomposeTRS(m: Float32Array, o: number): TransformDTO {
+export function decomposeTRS(m: Float32Array, o: number): TransformDTO {
   const sx = Math.hypot(m[o]!, m[o + 1]!, m[o + 2]!) || 1;
   const sy = Math.hypot(m[o + 4]!, m[o + 5]!, m[o + 6]!) || 1;
   const sz = Math.hypot(m[o + 8]!, m[o + 9]!, m[o + 10]!) || 1;
