@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { Uuid } from "@/types/core";
 import type { LightDataDTO, LightType } from "@/types/core/light";
+import type { PrimitiveDescriptor, PrimitiveType } from "@/types/geometry/primitives";
 import type { SceneNode } from "@/core";
 import {
   RenameNodeCommand,
@@ -16,22 +17,32 @@ import {
   IconAreaLight,
   IconBoolean,
   IconCamera,
+  IconCapsule,
+  IconCloner,
   IconCollapse,
+  IconCone,
   IconCube,
+  IconCylinder,
   IconDirectionalLight,
+  IconDisc,
   IconExpand,
   IconExtrude,
   IconEye,
   IconEyeOff,
   IconGenerator,
   IconHemisphereLight,
+  IconIcosphere,
   IconLight,
   IconMesh,
   IconNull,
+  IconPlane,
   IconPointLight,
+  IconPyramid,
+  IconSphere,
   IconSpline,
   IconSpotlight,
   IconSweep,
+  IconTorus,
 } from "@/icons";
 
 const ROW_H = 24;
@@ -64,6 +75,21 @@ const GENERATOR_KIND_ICON: Record<string, React.ReactNode> = {
   splineExtrude: <IconExtrude size={14} className="opacity-60" />,
   sweep: <IconSweep size={14} className="opacity-60" />,
   boolean: <IconBoolean size={14} className="opacity-60" />,
+  cloner: <IconCloner size={14} className="opacity-60" />,
+};
+
+/** Per-primitive-type tree glyphs, matching the Create → Primitives submenu. */
+const PRIMITIVE_KIND_ICON: Record<PrimitiveType, React.ReactNode> = {
+  cube: <IconCube size={14} className="opacity-60" />,
+  plane: <IconPlane size={14} className="opacity-60" />,
+  disc: <IconDisc size={14} className="opacity-60" />,
+  sphere: <IconSphere size={14} className="opacity-60" />,
+  icosphere: <IconIcosphere size={14} className="opacity-60" />,
+  cylinder: <IconCylinder size={14} className="opacity-60" />,
+  cone: <IconCone size={14} className="opacity-60" />,
+  capsule: <IconCapsule size={14} className="opacity-60" />,
+  torus: <IconTorus size={14} className="opacity-60" />,
+  pyramid: <IconPyramid size={14} className="opacity-60" />,
 };
 
 /**
@@ -85,6 +111,10 @@ function nodeIcon(node: SceneNode): React.ReactNode {
   // keeps kind "generator" but drops `data.generator`, so it would otherwise
   // fall through to the generic generator gear. Show the mesh glyph instead.
   if (node.data?.mesh !== undefined) return MESH_ICON;
+  // Parametric primitives resolve to their SHAPE (cube/sphere/…) so the tree
+  // matches the Create menu — otherwise every primitive read as a bare cube.
+  const prim = node.data?.primitive as PrimitiveDescriptor | undefined;
+  if (prim) return PRIMITIVE_KIND_ICON[prim.type] ?? KIND_ICON.mesh;
   if (node.kind === "generator") {
     const type = (node.data?.generator as { type?: string } | undefined)?.type;
     return (type && GENERATOR_KIND_ICON[type]) ?? KIND_ICON.generator;
