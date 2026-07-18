@@ -9,6 +9,10 @@ import {
 } from "@/core/history/commands/scene";
 import { Box3, Euler, Matrix4, type Object3D, Quaternion, Vector3 } from "three";
 import { ConvertToMeshCommand } from "@/geometry/commands/convert";
+import {
+  ConvertClonerToObjectsCommand,
+  MAX_CONVERT_INSTANCES,
+} from "@/generators/commands/convertToObjects";
 import { MeshTopologyCommand } from "@/geometry/commands/topology";
 import { HEMesh } from "@/geometry/kernel/HEMesh";
 import { facesForSelection } from "@/geometry/kernel/components";
@@ -59,6 +63,7 @@ import {
   IconEdge,
   IconGroup,
   IconHelix,
+  IconLine,
   IconNSide,
   IconPivotPoint,
   IconStar,
@@ -544,6 +549,19 @@ export function buildCommands(doc: Document, shell: ShellApi): AppCommand[] {
     {
       id: "edit.convertToMesh",
       title: "Convert to Mesh",
+      // Instancers bake to a group of real objects; everything else to a mesh.
+      // The label swaps when only Instancers are selected.
+      dynamicTitle: () => {
+        const sel = doc.selection.objectIds;
+        const hasCloner = sel.some((id) => ConvertClonerToObjectsCommand.eligible(doc, id));
+        const hasOther = sel.some(
+          (id) =>
+            !ConvertClonerToObjectsCommand.eligible(doc, id) &&
+            (ConvertToMeshCommand.eligible(doc, id) ||
+              doc.scene.get(id)?.data?.generator !== undefined),
+        );
+        return hasCloner && !hasOther ? "Convert to Objects" : "Convert to Mesh";
+      },
       menu: "Edit",
       enabled: () =>
         doc.selection.objectIds.some(
@@ -552,15 +570,29 @@ export function buildCommands(doc: Document, shell: ShellApi): AppCommand[] {
             doc.scene.get(id)?.data?.generator !== undefined,
         ),
       run: () => {
-        // primitives convert directly; generators bake their evaluated mesh
-        const prims = doc.selection.objectIds.filter((id) =>
-          ConvertToMeshCommand.eligible(doc, id),
+        const sel = doc.selection.objectIds;
+        const cloners = sel.filter((id) => ConvertClonerToObjectsCommand.eligible(doc, id));
+        // primitives convert directly; non-Instancer generators bake their mesh
+        const prims = sel.filter((id) => ConvertToMeshCommand.eligible(doc, id));
+        const gens = sel.filter(
+          (id) =>
+            !ConvertClonerToObjectsCommand.eligible(doc, id) &&
+            doc.scene.get(id)?.data?.generator !== undefined,
         );
-        const gens = doc.selection.objectIds.filter(
-          (id) => doc.scene.get(id)?.data?.generator !== undefined,
-        );
-        if (prims.length === 0 && gens.length === 0) return;
-        doc.history.transact("Convert to Mesh", () => {
+        // guard: a huge Instancer would spawn a node per clone and hang the tree
+        const okCloners = cloners.filter((id) => {
+          const n = ConvertClonerToObjectsCommand.instanceCount(doc, id);
+          if (n > MAX_CONVERT_INSTANCES) {
+            window.alert(
+              `"${doc.scene.get(id)?.name}" has ${n} clones — too many to convert to objects ` +
+                `(limit ${MAX_CONVERT_INSTANCES}). Reduce the count first.`,
+            );
+            return false;
+          }
+          return n > 0;
+        });
+        if (prims.length === 0 && gens.length === 0 && okCloners.length === 0) return;
+        doc.history.transact("Convert", () => {
           for (const id of prims) doc.history.run(new ConvertToMeshCommand(doc, id));
           for (const id of gens) {
             const result = evaluateGenerator(doc, doc.scene.mustGet(id));
@@ -570,6 +602,7 @@ export function buildCommands(doc: Document, shell: ShellApi): AppCommand[] {
               doc.history.run(new ConvertToMeshCommand(doc, id, baked));
             }
           }
+          for (const id of okCloners) doc.history.run(new ConvertClonerToObjectsCommand(doc, id));
         });
       },
     },
@@ -663,6 +696,7 @@ export function buildCommands(doc: Document, shell: ShellApi): AppCommand[] {
     // recipe (attributes rebuild the points); feed extrude/sweep like any spline
     ...(
       [
+        { type: "line", label: "Line", icon: <IconLine size={16} /> },
         { type: "circle", label: "Circle", icon: <IconCircle size={16} /> },
         { type: "nside", label: "N-Side", icon: <IconNSide size={16} /> },
         { type: "star", label: "Star", icon: <IconStar size={16} /> },
@@ -766,30 +800,39 @@ export function buildCommands(doc: Document, shell: ShellApi): AppCommand[] {
       },
     },
     {
-      // cloner generator: clones its first mesh/primitive child across a
-      // distribution (linear/radial/grid) with a random effector
+      // Instancer generator: child[0] = target to clone onto (mesh or spline),
+      // child[1] = the object to instance. Object-driven distribution + effector.
       id: "create.cloner",
-      title: "Cloner",
+      title: "Instancer",
       menu: "Create",
       submenu: "Generators",
       icon: <IconCloner size={16} />,
       run: () => {
-        const template = doc.selection.objectIds.find((id) => {
-          const n = doc.scene.get(id);
-          return n && (n.data?.mesh !== undefined || n.data?.primitive !== undefined);
-        });
+        // up to two selected mesh/primitive/spline nodes, in selection order →
+        // [target, template]; the user can reorder/add children afterwards
+        const kids = doc.selection.objectIds
+          .filter((id) => {
+            const n = doc.scene.get(id);
+            return (
+              n &&
+              (n.data?.mesh !== undefined ||
+                n.data?.primitive !== undefined ||
+                (n.kind === "spline" && n.data?.spline !== undefined))
+            );
+          })
+          .slice(0, 2);
         let genId: Uuid | null = null;
-        doc.history.transact("Create Cloner", () => {
+        doc.history.transact("Create Instancer", () => {
           const cmd = new CreateNodeCommand(
             "generator",
-            uniqueSiblingName(doc, null, "Cloner"),
+            uniqueSiblingName(doc, null, "Instancer"),
             null,
             undefined,
             { generator: clonerDescriptor() },
           );
           doc.history.run(cmd);
           genId = cmd.nodeId;
-          if (template) doc.history.run(new ReparentNodeCommand(template, genId));
+          for (const id of kids) doc.history.run(new ReparentNodeCommand(id, genId));
         });
         if (genId) doc.selection.selectObjects([genId]);
       },

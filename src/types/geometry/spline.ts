@@ -39,6 +39,7 @@ export const emptySpline = (): SplineData => ({ points: [], closed: false });
  * `rounding` sliders are 0–1000 and read as a 0–1 fraction (value / 1000).
  */
 export type SplinePrimitive =
+  | { type: "line"; length: number }
   | { type: "circle"; radius: number }
   | { type: "nside"; sides: number; radius: number; rounding: number; roundCorners: boolean }
   | {
@@ -55,6 +56,8 @@ export type SplinePrimitiveType = SplinePrimitive["type"];
 
 export const defaultSplinePrimitive = (type: SplinePrimitiveType): SplinePrimitive => {
   switch (type) {
+    case "line":
+      return { type, length: 5 };
     case "circle":
       return { type, radius: 1 };
     case "nside":

@@ -30,7 +30,7 @@ function PaletteRow({
       >
         <span>
           {cmd.menu ? <span className="opacity-50">{cmd.menu} › </span> : null}
-          {cmd.title}
+          {cmd.dynamicTitle?.() ?? cmd.title}
         </span>
         {label ? <kbd className="kbd kbd-xs opacity-60">{label}</kbd> : null}
       </button>

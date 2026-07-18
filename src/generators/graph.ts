@@ -13,7 +13,8 @@ import type { HEMesh } from "@/geometry/kernel/HEMesh";
 import { buildPrimitive } from "@/geometry/primitives";
 import { meshRegistry } from "@/geometry/store/meshRegistry";
 import { sampleSpline3D } from "@/geometry/splines/eval";
-import { type ClonerParams, clonerMatrices, defaultClonerParams } from "./cloner";
+import { type ClonerParams, clonerInstanceMatrices, defaultClonerParams } from "./cloner";
+import { sampleMeshTarget, sampleSplineTarget } from "./instancerSample";
 import {
   buildSplineExtrude,
   defaultSplineExtrudeParams,
@@ -154,17 +155,20 @@ export function evaluateGenerator(
 }
 
 /**
- * Cloner evaluation — a SEPARATE path from {@link evaluateGenerator} because a
- * cloner doesn't produce one HEMesh: it produces a base template mesh (for the
- * InstancedMesh's geometry) plus a flat matrix array (one transform per clone).
- * Keeping it apart lets the HEMesh return above stay non-optional for every
- * consumer (Convert-to-Mesh, syncGeometry) that expects a single mesh.
+ * Instancer evaluation — a SEPARATE path from {@link evaluateGenerator} because
+ * an Instancer doesn't produce one HEMesh: it produces a base template mesh (for
+ * the InstancedMesh's geometry) plus a flat matrix array (one transform per
+ * clone). Keeping it apart lets the HEMesh return above stay non-optional for
+ * every consumer (Convert-to-Mesh, syncGeometry) that expects a single mesh.
  *
- * Memoized like the others: the key covers the params (a count/effector change
- * recomputes the matrices) and the template's identity + geometry fingerprint
- * (a template edit recomputes the base). The child's own transform is ignored
- * in v1 — the template sits at the cloner's origin and the distribution places
- * the clones; baking the child matrix into every instance is a later refinement.
+ * The Instancer takes two children by object-manager order: child[0] = the
+ * TARGET to clone onto (a mesh or spline whose geometry drives the scatter) and
+ * child[1] = the TEMPLATE to instance. The target is sampled
+ * ({@link sampleMeshTarget}/{@link sampleSplineTarget}) into base instances,
+ * which the effector jitters and bakes. Memoized: the key covers the params, the
+ * template fingerprint, and the target fingerprint (identity + geometry +
+ * transform), so a target edit reflows the scatter. (The descriptor key stays
+ * `type: "cloner"` for backward compatibility.)
  */
 const clonerCache = new WeakMap<
   Document,
@@ -182,35 +186,78 @@ export function evaluateCloner(
     perDoc = new Map();
     clonerCache.set(doc, perDoc);
   }
-  const template = clonerTemplate(doc, node.id);
-  const key = `clone:${JSON.stringify(desc.params)}:${template?.key ?? "∅"}`;
+  const children = doc.scene.childrenOf(node.id);
+  const target = children[0] ? instancerTarget(doc, children[0]) : null;
+  const template = children[1] ? instancerTemplate(doc, children[1]) : null;
+  const key = `clone:${JSON.stringify(desc.params)}:t=${template?.key ?? "∅"}:o=${target?.key ?? "∅"}`;
   const hit = perDoc.get(node.id);
   if (hit && hit.key === key) {
     return hit.base && hit.matrices ? { key, base: hit.base, matrices: hit.matrices } : null;
   }
   const base = template?.mesh ?? null;
-  const matrices = base ? clonerMatrices(desc.params) : null;
+  let matrices: Float32Array | null = null;
+  if (base && target) {
+    const instances =
+      target.kind === "mesh"
+        ? sampleMeshTarget(target.mesh, target.transform, desc.params)
+        : sampleSplineTarget(target.data, target.transform, desc.params);
+    matrices = clonerInstanceMatrices(instances, desc.params);
+  }
   perDoc.set(node.id, { key, base, matrices });
   return base && matrices ? { key, base, matrices } : null;
 }
 
 /**
- * The cloner's template: the first child that resolves to a mesh (editable
- * registry mesh or primitive). Same resolution as {@link booleanInputs} but
- * single-source and transform-less (see {@link evaluateCloner}).
+ * The Instancer's template (child[1]): a node resolving to a mesh (editable
+ * registry mesh or primitive), transform-less — it sits at the Instancer's
+ * origin and the distribution places the clones.
  */
-function clonerTemplate(doc: Document, id: Uuid): { mesh: HEMesh; key: string } | null {
-  for (const childId of doc.scene.childrenOf(id)) {
-    const child = doc.scene.get(childId);
-    if (!child) continue;
-    const meshRef = child.data?.mesh as { id: Uuid } | undefined;
-    const prim = child.data?.primitive as PrimitiveDescriptor | undefined;
-    if (meshRef) {
-      const mesh = meshRegistry.get(meshRef.id);
-      if (mesh) return { mesh, key: `m:${meshRef.id}:${mesh.topologyVersion}:${posChecksum(mesh)}` };
-    } else if (prim) {
-      return { mesh: buildPrimitive(prim), key: `p:${JSON.stringify(prim)}` };
+function instancerTemplate(doc: Document, childId: Uuid): { mesh: HEMesh; key: string } | null {
+  const child = doc.scene.get(childId);
+  if (!child) return null;
+  const meshRef = child.data?.mesh as { id: Uuid } | undefined;
+  const prim = child.data?.primitive as PrimitiveDescriptor | undefined;
+  if (meshRef) {
+    const mesh = meshRegistry.get(meshRef.id);
+    if (mesh) return { mesh, key: `m:${meshRef.id}:${mesh.topologyVersion}:${posChecksum(mesh)}` };
+  } else if (prim) {
+    return { mesh: buildPrimitive(prim), key: `p:${JSON.stringify(prim)}` };
+  }
+  return null;
+}
+
+/** The Instancer's target (child[0]): a mesh/primitive to scatter across, or a spline. */
+type InstancerTarget =
+  | { kind: "mesh"; mesh: HEMesh; transform: SceneNode["transform"]; key: string }
+  | { kind: "spline"; data: SplineData; transform: SceneNode["transform"]; key: string };
+
+function instancerTarget(doc: Document, childId: Uuid): InstancerTarget | null {
+  const child = doc.scene.get(childId);
+  if (!child) return null;
+  const tfKey = JSON.stringify(child.transform);
+  const meshRef = child.data?.mesh as { id: Uuid } | undefined;
+  const prim = child.data?.primitive as PrimitiveDescriptor | undefined;
+  const spline = child.data?.spline as SplineData | undefined;
+  if (meshRef) {
+    const mesh = meshRegistry.get(meshRef.id);
+    if (mesh) {
+      const key = `m:${meshRef.id}:${mesh.topologyVersion}:${posChecksum(mesh)}|${tfKey}`;
+      return { kind: "mesh", mesh, transform: child.transform, key };
     }
+  } else if (prim) {
+    return {
+      kind: "mesh",
+      mesh: buildPrimitive(prim),
+      transform: child.transform,
+      key: `p:${JSON.stringify(prim)}|${tfKey}`,
+    };
+  } else if (child.kind === "spline" && spline) {
+    return {
+      kind: "spline",
+      data: spline,
+      transform: child.transform,
+      key: `s:${JSON.stringify(spline)}|${tfKey}`,
+    };
   }
   return null;
 }

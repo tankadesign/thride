@@ -15,7 +15,7 @@ import {
   SHADOW_CAPABLE,
   type ShadowResolution,
 } from "@/types/core/light";
-import { defaultClonerParams } from "@/generators/cloner";
+import { normClonerParams } from "@/generators/cloner";
 import type { GeneratorDescriptor } from "@/generators/graph";
 import type { SplinePrimitive } from "@/types/geometry/spline";
 import { buildSplinePrimitive } from "@/geometry/splines/primitives";
@@ -669,12 +669,26 @@ function GeneratorParams({ id, gen }: { id: Uuid; gen: GeneratorDescriptor }) {
   };
 
   if (gen.type === "cloner") {
-    // fill any field a pre-grid/radial doc lacks, so the panel + render agree
-    const cp = { ...defaultClonerParams(), ...gen.params };
+    const cp = normClonerParams(gen.params);
     const RAD = 180 / Math.PI;
-    type VecKey = "step" | "positionJitter" | "rotationJitter" | "gridCount" | "gridSpacing";
+    // classify child[0] (the target to scatter onto) so the Distribution select
+    // offers the right options: mesh points/faces/edges vs spline points/count
+    const kids = doc.scene.childrenOf(id);
+    const targetNode = kids[0] ? doc.scene.get(kids[0]) : undefined;
+    const targetKind: "mesh" | "spline" | "none" = !targetNode
+      ? "none"
+      : targetNode.kind === "spline" && targetNode.data?.spline
+        ? "spline"
+        : targetNode.data?.mesh !== undefined || targetNode.data?.primitive !== undefined
+          ? "mesh"
+          : "none";
+    const hasTemplate = kids[1] !== undefined;
     // three x/y/z NumberDrags editing one Vec3 param (rotation shown in degrees)
-    const vecRow = (key: VecKey, label: string, opts: { deg?: boolean; integer?: boolean } = {}) => {
+    const vecRow = (
+      key: "positionJitter" | "rotationJitter",
+      label: string,
+      opts: { deg?: boolean } = {},
+    ) => {
       const arr = cp[key] ?? [0, 0, 0];
       return (
         <div className="grid grid-cols-[96px_1fr] items-center gap-1" key={key}>
@@ -686,9 +700,7 @@ function GeneratorParams({ id, gen }: { id: Uuid; gen: GeneratorDescriptor }) {
               <NumberDrag
                 key={i}
                 value={opts.deg ? v * RAD : v}
-                step={opts.deg ? 1 : opts.integer ? 1 : 0.05}
-                integer={opts.integer}
-                min={opts.integer ? 0 : undefined}
+                step={opts.deg ? 1 : 0.05}
                 onChange={(nv, committed) => {
                   const next = [...arr];
                   next[i] = opts.deg ? nv / RAD : nv;
@@ -700,72 +712,88 @@ function GeneratorParams({ id, gen }: { id: Uuid; gen: GeneratorDescriptor }) {
         </div>
       );
     };
-    const countRow = (
-      <div className="grid grid-cols-[96px_1fr] items-center gap-1">
-        <span className="opacity-60">Count</span>
-        <NumberDrag
-          value={cp.count}
-          step={1}
-          integer
-          min={0}
-          max={200000}
-          onChange={(v, committed) => setParam("count", v, committed)}
-        />
-      </div>
-    );
     return (
       <fieldset className="fieldset px-2 pt-1.5 pb-6">
-        <legend className="fieldset-legend py-2 text-[10px] uppercase opacity-60">Cloner</legend>
-        <div className="grid grid-cols-[96px_1fr] items-center gap-1">
-          <span className="opacity-60">Mode</span>
-          <select
-            className="select select-md"
-            value={cp.mode}
-            onChange={(e) => setParam("mode", e.target.value, true)}
-          >
-            <option value="linear">Linear</option>
-            <option value="radial">Radial</option>
-            <option value="grid">Grid</option>
-          </select>
-        </div>
-        {cp.mode === "linear" ? (
+        <legend className="fieldset-legend py-2 text-[10px] uppercase opacity-60">Instancer</legend>
+        {targetKind === "none" ? (
+          <p className="text-[10px] opacity-50">
+            Add two children: the target to clone onto (1st) and the object to instance (2nd).
+          </p>
+        ) : (
           <>
-            {countRow}
-            {vecRow("step", "Step")}
-          </>
-        ) : null}
-        {cp.mode === "radial" ? (
-          <>
-            {countRow}
             <div className="grid grid-cols-[96px_1fr] items-center gap-1">
-              <span className="opacity-60">Radius</span>
-              <NumberDrag
-                value={cp.radius}
-                step={0.05}
-                min={0}
-                onChange={(v, committed) => setParam("radius", v, committed)}
-              />
-            </div>
-            <div className="grid grid-cols-[96px_1fr] items-center gap-1">
-              <span className="opacity-60">Axis</span>
+              <span className="opacity-60">Distribution</span>
               <select
                 className="select select-md"
-                value={cp.radialAxis}
-                onChange={(e) => setParam("radialAxis", e.target.value, true)}
+                value={cp.distribution}
+                onChange={(e) => setParam("distribution", e.target.value, true)}
               >
-                <option value="x">X</option>
-                <option value="y">Y</option>
-                <option value="z">Z</option>
+                {targetKind === "mesh" ? (
+                  <>
+                    <option value="points">Points</option>
+                    <option value="faces">Polygon Centers</option>
+                    <option value="edges">Edge Centers</option>
+                  </>
+                ) : (
+                  <>
+                    <option value="points">Points</option>
+                    <option value="count">Count</option>
+                  </>
+                )}
               </select>
             </div>
+            {targetKind === "spline" && cp.distribution === "count" ? (
+              <div className="grid grid-cols-[96px_1fr] items-center gap-1">
+                <span className="opacity-60">Count</span>
+                <NumberDrag
+                  value={cp.count}
+                  step={1}
+                  integer
+                  min={2}
+                  max={200000}
+                  onChange={(v, committed) => setParam("count", Math.max(2, v), committed)}
+                />
+              </div>
+            ) : null}
+            <div className="grid grid-cols-[96px_1fr] items-center gap-1">
+              <span className="opacity-60">Orientation</span>
+              <select
+                className="select select-md"
+                value={cp.orientation}
+                onChange={(e) => setParam("orientation", e.target.value, true)}
+              >
+                <option value="normal">Normal</option>
+                <option value="direction">Direction</option>
+              </select>
+            </div>
+            {cp.orientation === "direction" ? (
+              <div className="grid grid-cols-[96px_1fr] items-center gap-1">
+                <span className="opacity-60">Up Vector</span>
+                <select
+                  className="select select-md"
+                  value={cp.upVector}
+                  onChange={(e) => setParam("upVector", e.target.value, true)}
+                >
+                  <option value="x+">X+</option>
+                  <option value="x-">X−</option>
+                  <option value="y+">Y+</option>
+                  <option value="y-">Y−</option>
+                  <option value="z+">Z+</option>
+                  <option value="z-">Z−</option>
+                </select>
+              </div>
+            ) : null}
+            <label className="grid grid-cols-[96px_1fr] items-center gap-1">
+              <span className="opacity-60">Hide Target</span>
+              <input
+                type="checkbox"
+                className="toggle toggle-xs justify-self-start"
+                checked={cp.hideTarget}
+                onChange={(e) => setParam("hideTarget", e.target.checked, true)}
+              />
+            </label>
           </>
-        ) : null}
-        {cp.mode === "grid" ? (
-          <>
-            {vecRow("gridCount", "Count", { integer: true })}
-            {vecRow("gridSpacing", "Spacing")}
-          </>
-        ) : null}
+        )}
         <legend className="fieldset-legend pt-3 pb-1 text-[10px] uppercase opacity-40">
           Random effector
         </legend>
@@ -789,7 +817,11 @@ function GeneratorParams({ id, gen }: { id: Uuid; gen: GeneratorDescriptor }) {
             onChange={(v, committed) => setParam("scaleJitter", v, committed)}
           />
         </div>
-        <p className="mt-1 text-[10px] opacity-50">Clones the first mesh child.</p>
+        {targetKind !== "none" && !hasTemplate ? (
+          <p className="mt-1 text-[10px] text-warning opacity-70">
+            Add a 2nd child — the object to instance.
+          </p>
+        ) : null}
       </fieldset>
     );
   }
@@ -938,6 +970,7 @@ interface SplinePrimRow {
 }
 
 const SPLINE_PRIM_ROWS: Record<SplinePrimitive["type"], SplinePrimRow[]> = {
+  line: [{ key: "length", label: "Length", min: 0.001 }],
   circle: [{ key: "radius", label: "Radius", min: 0.001 }],
   nside: [
     { key: "sides", label: "Sides", int: true, min: 2, max: 1000, step: 1 },

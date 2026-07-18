@@ -56,7 +56,7 @@ function EntryList({
     <ul className="menu menu-xs rounded-box border border-neutral bg-base-100" style={{ width }}>
       {entries.map((entry, i) => {
         const cmd = entry.commandId ? registry?.get(entry.commandId) : undefined;
-        const label = entry.label ?? cmd?.title ?? "";
+        const label = entry.label ?? cmd?.dynamicTitle?.() ?? cmd?.title ?? "";
         const enabled = !entry.disabled && (cmd ? (cmd.enabled?.() ?? true) : true);
         const icon = entry.icon ?? cmd?.icon;
         const run = entry.run ?? cmd?.run;

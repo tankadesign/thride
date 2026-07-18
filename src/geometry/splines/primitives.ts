@@ -12,6 +12,8 @@ const CORNER_THRESHOLD_DEG = 15;
 
 export function buildSplinePrimitive(prim: SplinePrimitive): SplineData {
   switch (prim.type) {
+    case "line":
+      return line(prim.length);
     case "circle":
       return circle(prim.radius);
     case "nside": {
@@ -37,6 +39,17 @@ function frac(rounding: number): number {
 }
 
 const zero: Vec3 = [0, 0, 0];
+
+/** Straight open segment of `length` along local X, centered on the origin. Two
+ * linear anchors — a base for linear instancer rows (via a count distribution). */
+function line(length: number): SplineData {
+  const h = Math.max(1e-4, length) / 2;
+  const points: SplinePointDTO[] = [
+    { position: [-h, 0, 0], inHandle: zero, outHandle: zero, mode: "linear" },
+    { position: [h, 0, 0], inHandle: zero, outHandle: zero, mode: "linear" },
+  ];
+  return { points, closed: false };
+}
 
 /** Exact circle from 4 cubic anchors (handle length k = 0.5523·r). */
 function circle(radius: number): SplineData {

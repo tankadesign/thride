@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vite-plus/test";
-import { type ClonerParams, clonerCount, clonerMatrices, defaultClonerParams } from "./cloner";
+import {
+  basisFromUp,
+  type ClonerParams,
+  clonerInstanceMatrices,
+  defaultClonerParams,
+  type Instance,
+  normClonerParams,
+  upVectorAxis,
+} from "./cloner";
 
 /** Normalize IEEE -0 → +0 (harmless in the matrix, but toEqual distinguishes them). */
 const nz = (x: number): number => x + 0;
@@ -11,119 +19,99 @@ const posOf = (m: Float32Array, i: number): [number, number, number] => [
   nz(m[i * 16 + 14]!),
 ];
 
-describe("cloner matrices", () => {
-  it("emits 16 floats per clone", () => {
-    const p = { ...defaultClonerParams(), count: 7 };
-    expect(clonerCount(p)).toBe(7);
-    expect(clonerMatrices(p)).toHaveLength(7 * 16);
+const identityBasis = () => basisFromUp([0, 1, 0]);
+const at = (p: [number, number, number]): Instance => ({ position: p, basis: identityBasis() });
+
+describe("basisFromUp", () => {
+  it("up = +Y yields the identity basis (clones match their template)", () => {
+    expect(basisFromUp([0, 1, 0]).map(nz)).toEqual([1, 0, 0, 0, 1, 0, 0, 0, 1]);
   });
 
-  it("linear layout is centered on the origin and stepped", () => {
-    const p: ClonerParams = { ...defaultClonerParams(), count: 3, step: [2, 0, 0] };
-    const m = clonerMatrices(p);
-    // centered: i-(n-1)/2 → -1, 0, +1 times step
-    expect(posOf(m, 0)).toEqual([-2, 0, 0]);
-    expect(posOf(m, 1)).toEqual([0, 0, 0]);
-    expect(posOf(m, 2)).toEqual([2, 0, 0]);
+  it("aligns the local +Y column to the given direction (unit)", () => {
+    const dir: [number, number, number] = [1, 2, 3];
+    const b = basisFromUp(dir);
+    const l = Math.hypot(dir[0], dir[1], dir[2]);
+    expect(b[3]).toBeCloseTo(dir[0] / l, 6);
+    expect(b[4]).toBeCloseTo(dir[1] / l, 6);
+    expect(b[5]).toBeCloseTo(dir[2] / l, 6);
   });
 
-  it("no effector → identity rotation/scale (matrix is pure translation)", () => {
-    const m = clonerMatrices({ ...defaultClonerParams(), count: 1, step: [0, 0, 0] });
-    // column-major identity basis
+  it("is orthonormal for an arbitrary up", () => {
+    const b = basisFromUp([0.3, -0.7, 0.5]);
+    const col = (c: number): [number, number, number] => [b[c * 3]!, b[c * 3 + 1]!, b[c * 3 + 2]!];
+    const dot = (a: number[], v: number[]) => a[0]! * v[0]! + a[1]! * v[1]! + a[2]! * v[2]!;
+    const [x, y, z] = [col(0), col(1), col(2)];
+    for (const v of [x, y, z]) expect(Math.hypot(...v)).toBeCloseTo(1, 6);
+    expect(dot(x, y)).toBeCloseTo(0, 6);
+    expect(dot(y, z)).toBeCloseTo(0, 6);
+    expect(dot(x, z)).toBeCloseTo(0, 6);
+  });
+});
+
+describe("upVectorAxis", () => {
+  it("maps the six signed axes", () => {
+    expect(upVectorAxis("x+")).toEqual([1, 0, 0]);
+    expect(upVectorAxis("x-")).toEqual([-1, 0, 0]);
+    expect(upVectorAxis("y+")).toEqual([0, 1, 0]);
+    expect(upVectorAxis("y-")).toEqual([0, -1, 0]);
+    expect(upVectorAxis("z+")).toEqual([0, 0, 1]);
+    expect(upVectorAxis("z-")).toEqual([0, 0, -1]);
+  });
+});
+
+describe("normClonerParams", () => {
+  it("fills missing fields from the defaults (old linear/radial/grid docs degrade)", () => {
+    const legacy = { mode: "grid", count: 12, step: [1, 0, 0] } as unknown as ClonerParams;
+    const p = normClonerParams(legacy);
+    expect(p.distribution).toBe("points");
+    expect(p.orientation).toBe("normal");
+    expect(p.upVector).toBe("y+");
+    expect(p.hideTarget).toBe(false);
+    expect(p.count).toBe(12); // a shared field is preserved
+  });
+});
+
+describe("clonerInstanceMatrices", () => {
+  it("emits 16 floats per instance", () => {
+    const m = clonerInstanceMatrices(
+      [at([0, 0, 0]), at([1, 0, 0]), at([2, 0, 0])],
+      defaultClonerParams(),
+    );
+    expect(m).toHaveLength(3 * 16);
+  });
+
+  it("no effector → the instance basis + position pass through unchanged", () => {
+    const m = clonerInstanceMatrices([at([5, 6, 7])], defaultClonerParams());
     expect(Array.from(m.slice(0, 12)).map(nz)).toEqual([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0]);
+    expect(posOf(m, 0)).toEqual([5, 6, 7]);
   });
 
   it("is deterministic — same seed reproduces the same scatter", () => {
     const p: ClonerParams = {
       ...defaultClonerParams(),
-      count: 20,
       positionJitter: [1, 1, 1],
       rotationJitter: [0.5, 0.5, 0.5],
       scaleJitter: 0.3,
       seed: 42,
     };
-    expect(Array.from(clonerMatrices(p))).toEqual(Array.from(clonerMatrices(p)));
+    const insts = Array.from({ length: 20 }, (_, i) => at([i, 0, 0]));
+    expect(Array.from(clonerInstanceMatrices(insts, p))).toEqual(
+      Array.from(clonerInstanceMatrices(insts, p)),
+    );
   });
 
   it("instance jitter is stable as the count grows (i doesn't move when N changes)", () => {
-    const base: ClonerParams = {
-      ...defaultClonerParams(),
-      count: 5,
-      step: [0, 0, 0], // isolate the effector from the layout
-      positionJitter: [1, 1, 1],
-      seed: 7,
-    };
-    const small = clonerMatrices(base);
-    const big = clonerMatrices({ ...base, count: 50 });
+    const p: ClonerParams = { ...defaultClonerParams(), positionJitter: [1, 1, 1], seed: 7 };
+    const insts = Array.from({ length: 50 }, () => at([0, 0, 0])); // isolate the effector
+    const small = clonerInstanceMatrices(insts.slice(0, 5), p);
+    const big = clonerInstanceMatrices(insts, p);
     // instances 0..4 are byte-identical whether N=5 or N=50
     expect(Array.from(big.slice(0, 5 * 16))).toEqual(Array.from(small));
   });
 
-  it("adjacent clones get uncorrelated jitter (index mixed into the seed)", () => {
-    const p: ClonerParams = {
-      ...defaultClonerParams(),
-      count: 2,
-      step: [0, 0, 0],
-      positionJitter: [1, 1, 1],
-      seed: 100,
-    };
-    const m = clonerMatrices(p);
+  it("adjacent instances get uncorrelated jitter (index mixed into the seed)", () => {
+    const p: ClonerParams = { ...defaultClonerParams(), positionJitter: [1, 1, 1], seed: 100 };
+    const m = clonerInstanceMatrices([at([0, 0, 0]), at([0, 0, 0])], p);
     expect(posOf(m, 0)).not.toEqual(posOf(m, 1));
-  });
-
-  it("count floors and never goes negative", () => {
-    expect(clonerCount({ ...defaultClonerParams(), count: 3.9 })).toBe(3);
-    expect(clonerCount({ ...defaultClonerParams(), count: -4 })).toBe(0);
-    expect(clonerMatrices({ ...defaultClonerParams(), count: 0 })).toHaveLength(0);
-  });
-
-  it("grid count is the product of the per-axis counts", () => {
-    const p: ClonerParams = {
-      ...defaultClonerParams(),
-      mode: "grid",
-      gridCount: [3, 2, 4],
-      gridSpacing: [1, 1, 1],
-    };
-    expect(clonerCount(p)).toBe(24);
-    expect(clonerMatrices(p)).toHaveLength(24 * 16);
-  });
-
-  it("grid is a centered lattice", () => {
-    const p: ClonerParams = {
-      ...defaultClonerParams(),
-      mode: "grid",
-      gridCount: [2, 1, 1],
-      gridSpacing: [4, 4, 4],
-    };
-    const m = clonerMatrices(p);
-    // 2 along x, centered → ∓2
-    expect(posOf(m, 0)).toEqual([-2, 0, 0]);
-    expect(posOf(m, 1)).toEqual([2, 0, 0]);
-  });
-
-  it("radial places clones on a ring of the given radius", () => {
-    const p: ClonerParams = {
-      ...defaultClonerParams(),
-      mode: "radial",
-      count: 4,
-      radius: 5,
-      radialAxis: "y",
-    };
-    const m = clonerMatrices(p);
-    // every clone sits at distance `radius` from the origin in the XZ plane
-    for (let i = 0; i < 4; i++) {
-      const [x, y, z] = posOf(m, i);
-      expect(Math.hypot(x, z)).toBeCloseTo(5, 5);
-      expect(y).toBeCloseTo(0, 5);
-    }
-  });
-
-  it("radial fans each clone's orientation (rotation column varies)", () => {
-    const p: ClonerParams = { ...defaultClonerParams(), mode: "radial", count: 4, radius: 3 };
-    const m = clonerMatrices(p);
-    // clone 0 is unrotated (angle 0 → identity basis); clone 1 is not
-    const basis = (i: number) => Array.from(m.slice(i * 16, i * 16 + 3)).map(nz);
-    expect(basis(0)).toEqual([1, 0, 0]);
-    expect(basis(1)).not.toEqual([1, 0, 0]);
   });
 });

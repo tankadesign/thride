@@ -20,7 +20,7 @@ function MenuItem({ cmd }: { cmd: AppCommand }) {
         }}
       >
         <span className="flex w-4 justify-center">{cmd.icon}</span>
-        <span className="flex-1 text-left">{cmd.title}</span>
+        <span className="flex-1 text-left">{cmd.dynamicTitle?.() ?? cmd.title}</span>
         {label ? <kbd className="kbd kbd-xs opacity-60">{label}</kbd> : null}
       </button>
     </li>

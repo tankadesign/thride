@@ -219,23 +219,33 @@ export class SceneSynchronizer {
   }
 
   /**
-   * True when a node is a descendant of a boolean generator, which consumes
-   * its inputs — they must render nothing and never pick (clicks fall through
-   * to the boolean result), matching C4D. Extrude/sweep keep their spline
-   * children visible as guides, so this is boolean-specific.
+   * True when a node's geometry is consumed by an ancestor generator, so it must
+   * render nothing and never pick (clicks fall through to the generated result),
+   * matching C4D. A **boolean** consumes all its operands. An **Instancer**
+   * consumes only its TEMPLATE (child[1]) — the target it scatters onto (child[0])
+   * stays visible unless the Instancer's `hideTarget` is set. Extrude/sweep keep
+   * their spline children visible as guides, so those are never consumed here.
    */
   private isConsumed(id: Uuid): boolean {
-    let parent = this.doc.scene.get(id)?.parent;
-    while (parent) {
-      const node = this.doc.scene.get(parent);
+    let child = id;
+    let parentId = this.doc.scene.get(child)?.parent;
+    while (parentId) {
+      const node = this.doc.scene.get(parentId);
       if (!node) return false;
-      const gen = node.data?.generator as { type?: string } | undefined;
-      // a boolean consumes its operands; a cloner consumes its template (only
-      // the instances render) — both hide + de-pick their children, C4D-style
-      if (node.kind === "generator" && (gen?.type === "boolean" || gen?.type === "cloner")) {
-        return true;
+      if (node.kind === "generator") {
+        const gen = node.data?.generator as
+          | { type?: string; params?: { hideTarget?: boolean } }
+          | undefined;
+        if (gen?.type === "boolean") return true;
+        if (gen?.type === "cloner") {
+          // `child` is the direct Instancer child on this path: [0]=target, [1]=template
+          const idx = this.doc.scene.childrenOf(parentId).indexOf(child);
+          if (idx === 0) return gen.params?.hideTarget ?? false;
+          return true; // template (and any stray extra input) is always consumed
+        }
       }
-      parent = node.parent;
+      child = parentId;
+      parentId = node.parent;
     }
     return false;
   }
@@ -248,13 +258,12 @@ export class SceneSynchronizer {
     );
   }
 
-  /** The material assigned to a cloner's template (its first mesh/primitive child). */
+  /** The material assigned to an Instancer's template (child[1], the instanced object). */
   private clonerTemplateMaterialId(clonerId: Uuid): Uuid | undefined {
-    for (const childId of this.doc.scene.childrenOf(clonerId)) {
-      const child = this.doc.scene.get(childId);
-      if (child && (child.data?.mesh !== undefined || child.data?.primitive !== undefined)) {
-        return child.data?.material as Uuid | undefined;
-      }
+    const templateId = this.doc.scene.childrenOf(clonerId)[1];
+    const template = templateId ? this.doc.scene.get(templateId) : undefined;
+    if (template && (template.data?.mesh !== undefined || template.data?.primitive !== undefined)) {
+      return template.data?.material as Uuid | undefined;
     }
     return undefined;
   }

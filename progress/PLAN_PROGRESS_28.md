@@ -80,14 +80,16 @@ now Layers02 in menu + tree.
 
 ## Next steps (exact, resumable)
 
-1. **F2 object distribution** (the last distribution): child[1] = target (mesh/primitive/spline).
-   Graph layer samples the target — points/polygon-centers/edge-centers (mesh) or arc-length-even
-   samples along a spline (reuse Sweep's resampler) — WITH orientation (vertex/face normal or
-   tangent), passes `Instance[]` to `clonerInstanceMatrices`. Make `clonerTemplate` mode-aware
-   (don't grab the target as template); memo key must include the target fingerprint; decide
-   whether the target surface stays visible (probably yes — remove from `isConsumed` for object mode).
-2. **Convert to Objects** (`edit.convertToObjects`, shares the Convert-to-Mesh shortcut, gated to
-   cloners): bakes each instance matrix → a node TRS under a GROUP (cloner node becomes the group,
-   group icon), clones named `.001/.002` (verify `uniqueSiblingName` format), material persists per
-   clone, ONE undo entry. GUARD against converting a huge cloner (100k nodes hangs).
-3. Then **F4 Cameras** to close M3.
+1. ✅ **DONE (see PLAN_PROGRESS_29)** — **F2 object distribution**, implemented as the **Instancer**:
+   child[0] = target (mesh/primitive/spline), child[1] = template. Built-in linear/radial/grid were
+   **removed entirely** (owner-confirmed); object distribution replaces them (linear → new Line
+   spline + count, radial → Circle, grid → Cube-with-segments). Target stays **visible by default**
+   with a Hide Target toggle. New `generators/instancerSample.ts` samples mesh points/faces/edges or
+   spline points/count with orientation; `evaluateCloner` reworked; memo key includes the target
+   fingerprint.
+2. ✅ **DONE (see PLAN_PROGRESS_29)** — **Convert to Objects**
+   (`generators/commands/convertToObjects.ts`). Shares the Convert-to-Mesh shortcut via a new
+   `AppCommand.dynamicTitle` (label swaps to "Convert to Objects" for Instancers); bakes instances →
+   a GROUP of clones named `Base.1/.2` (app `uniqueSiblingName` convention, not `.001`), one shared
+   geometry, material per clone, ONE undo step, guarded at `MAX_CONVERT_INSTANCES = 2000`.
+3. Then **F4 Cameras** to close M3. ← **the remaining M3 chunk.**

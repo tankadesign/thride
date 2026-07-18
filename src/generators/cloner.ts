@@ -1,37 +1,41 @@
 import type { Vec3 } from "@/types/core";
 
 /**
- * Cloner (F2) — the pure ops half. Produces the per-instance transform matrices
- * for an InstancedMesh; the render layer turns these into an actual mesh. Ops
- * rule: no Three, no DOM, no scene objects — it emits a flat, column-major
- * `Float32Array` (16·N) that drops straight onto `instanceMatrix.array`.
+ * Instancer (F2) — the pure ops half. Produces the per-instance transform
+ * matrices for an InstancedMesh; the render layer turns these into an actual
+ * mesh. Ops rule: no Three, no DOM, no scene objects — it emits a flat,
+ * column-major `Float32Array` (16·N) that drops straight onto
+ * `instanceMatrix.array`.
  *
- * Distributions: **linear** (a stepped row), **radial** (a ring, each clone
- * fanned to face around it), **grid** (a 3D lattice), plus **object** — placing
- * a clone at each of another object's points, driven by the render/graph layer
- * (which samples the target geometry and calls {@link clonerInstanceMatrices}
- * with the resulting {@link Instance}s). The random effector then jitters each
- * clone's position/rotation/scale by a deterministic amount keyed on
- * `(seed, index)` — so an instance never moves when the count changes, and the
- * same seed always reproduces the scatter.
+ * There is a single distribution: **object** — a clone is placed at each of a
+ * target object's points (mesh vertices / polygon centers / edge centers, or a
+ * spline's points / an even count along it). The graph layer samples the target
+ * and hands this module the resulting {@link Instance}s (base position + base
+ * orientation frame); {@link clonerInstanceMatrices} applies the random effector
+ * (position/rotation/scale jitter keyed on `(seed, index)`, so an instance never
+ * moves when the count changes and the same seed reproduces the scatter) and
+ * bakes the matrices. The serialized descriptor key stays `type: "cloner"` for
+ * backward compatibility even though the UI calls it an Instancer.
  */
 
-export type ClonerMode = "linear" | "radial" | "grid" | "object";
-export type Axis = "x" | "y" | "z";
+/** Target-kind-dependent distribution. mesh: points/faces/edges · spline: points/count. */
+export type ClonerDistribution = "points" | "faces" | "edges" | "count";
+/** How each clone is oriented: to the surface normal/tangent, or a fixed axis. */
+export type ClonerOrientation = "normal" | "direction";
+/** The six signed world axes, for `direction` orientation. */
+export type UpVector = "x+" | "x-" | "y+" | "y-" | "z+" | "z-";
 
 export interface ClonerParams {
-  mode: ClonerMode;
-  /** Clone count (linear / radial). Grid uses the per-axis counts. */
+  /** Distribution across the target. Panel shows the subset valid for its kind. */
+  distribution: ClonerDistribution;
+  /** Spline **count** mode: number of clones spread evenly along the curve (≥ 2). */
   count: number;
-  /** Linear: translation between successive clones (the set is centered on 0). */
-  step: Vec3;
-  /** Radial: ring radius. */
-  radius: number;
-  /** Radial: axis the ring lies perpendicular to (its spin axis). */
-  radialAxis: Axis;
-  /** Grid: per-axis counts (floored) and spacing. */
-  gridCount: Vec3;
-  gridSpacing: Vec3;
+  /** `normal` aligns +Y to the surface normal / curve tangent; `direction` to `upVector`. */
+  orientation: ClonerOrientation;
+  /** Fixed world axis for `direction` orientation. */
+  upVector: UpVector;
+  /** Keep the target surface/curve rendered (default) or hide it like the template. */
+  hideTarget: boolean;
   // ---- random effector (all default to 0 = no jitter) ----
   /** Effector RNG seed — same seed, same scatter. */
   seed: number;
@@ -44,97 +48,91 @@ export interface ClonerParams {
 }
 
 export const defaultClonerParams = (): ClonerParams => ({
-  mode: "linear",
-  count: 5,
-  step: [1.5, 0, 0],
-  radius: 3,
-  radialAxis: "y",
-  gridCount: [3, 3, 1],
-  gridSpacing: [1.5, 1.5, 1.5],
+  distribution: "points",
+  count: 10,
+  orientation: "normal",
+  upVector: "y+",
+  hideTarget: false,
   seed: 1,
   positionJitter: [0, 0, 0],
   rotationJitter: [0, 0, 0],
   scaleJitter: 0,
 });
 
-/** One placed clone before the effector: base position + base orientation (Euler). */
+/**
+ * One placed clone before the effector: base position + a base orientation
+ * frame (column-major 3×3 rotation). The graph sampler builds the frame from
+ * the target's surface normal / curve tangent (or a fixed axis).
+ */
 export interface Instance {
   position: Vec3;
-  rotation: Vec3;
+  /** Column-major 3×3 rotation (9 floats). */
+  basis: number[];
 }
 
-const TAU = Math.PI * 2;
-
-/** Fill any missing field from the defaults — a cloner serialized before a param
- * existed (e.g. an early linear-only doc) arrives without grid/radial keys. */
-function norm(p: ClonerParams): ClonerParams {
-  return { ...defaultClonerParams(), ...p };
+/** Fill any missing field from the defaults — a doc serialized before the
+ * object-distribution rework (linear/radial/grid params) degrades gracefully. */
+export function normClonerParams(p: ClonerParams): ClonerParams {
+  const d = defaultClonerParams();
+  return {
+    distribution: p.distribution ?? d.distribution,
+    count: p.count ?? d.count,
+    orientation: p.orientation ?? d.orientation,
+    upVector: p.upVector ?? d.upVector,
+    hideTarget: p.hideTarget ?? d.hideTarget,
+    seed: p.seed ?? d.seed,
+    positionJitter: p.positionJitter ?? d.positionJitter,
+    rotationJitter: p.rotationJitter ?? d.rotationJitter,
+    scaleJitter: p.scaleJitter ?? d.scaleJitter,
+  };
 }
 
-/** How many instances a param set produces (grid multiplies its axes). */
-export function clonerCount(params: ClonerParams): number {
-  const p = norm(params);
-  if (p.mode === "grid") {
-    const [nx, ny, nz] = p.gridCount;
-    return Math.max(0, Math.floor(nx)) * Math.max(0, Math.floor(ny)) * Math.max(0, Math.floor(nz));
+/** The world axis (unit vector) named by an {@link UpVector}. */
+export function upVectorAxis(up: UpVector): Vec3 {
+  switch (up) {
+    case "x+":
+      return [1, 0, 0];
+    case "x-":
+      return [-1, 0, 0];
+    case "y+":
+      return [0, 1, 0];
+    case "y-":
+      return [0, -1, 0];
+    case "z+":
+      return [0, 0, 1];
+    case "z-":
+      return [0, 0, -1];
   }
-  return Math.max(0, Math.floor(p.count));
 }
 
 /**
- * The base placement of each clone (pre-effector) for the built-in distributions.
- * `object` mode returns none — its instances come from the graph layer, which
- * samples the target and calls {@link clonerInstanceMatrices} directly. Every
- * layout is centered on the cloner's origin so growth expands symmetrically.
+ * A column-major 3×3 orthonormal basis whose local +Y axis points along `up`
+ * (a unit vector). Roll is resolved deterministically from the world axis least
+ * aligned with `up`, so the frame is stable and antiparallel `up` is handled.
+ * This is the frame a clone wears so it "stands on" a surface normal / tangent.
  */
-function layoutInstances(p: ClonerParams): Instance[] {
-  const out: Instance[] = [];
-  if (p.mode === "grid") {
-    const nx = Math.max(0, Math.floor(p.gridCount[0]));
-    const ny = Math.max(0, Math.floor(p.gridCount[1]));
-    const nz = Math.max(0, Math.floor(p.gridCount[2]));
-    const [dx, dy, dz] = p.gridSpacing;
-    const mx = (nx - 1) / 2;
-    const my = (ny - 1) / 2;
-    const mz = (nz - 1) / 2;
-    for (let iz = 0; iz < nz; iz++)
-      for (let iy = 0; iy < ny; iy++)
-        for (let ix = 0; ix < nx; ix++)
-          out.push({
-            position: [(ix - mx) * dx, (iy - my) * dy, (iz - mz) * dz],
-            rotation: [0, 0, 0],
-          });
-    return out;
-  }
+export function basisFromUp(up: Vec3): number[] {
+  const y = normalizeV(up);
+  // world +Z is the roll reference unless it's (near) parallel to y, then +X.
+  // Chosen so up = +Y yields the identity basis (clones match their template).
+  const ref: Vec3 = Math.abs(y[2]) < 0.999999 ? [0, 0, 1] : [1, 0, 0];
+  const x = normalizeV(crossV(y, ref));
+  const z = crossV(x, y); // already unit (x ⟂ y, both unit)
+  // columns are the local X, Y, Z axes expressed in world space
+  return [x[0], x[1], x[2], y[0], y[1], y[2], z[0], z[1], z[2]];
+}
 
-  const n = Math.max(0, Math.floor(p.count));
-  if (p.mode === "radial") {
-    const r = p.radius;
-    for (let i = 0; i < n; i++) {
-      const a = (TAU * i) / Math.max(1, n);
-      const c = Math.cos(a);
-      const s = Math.sin(a);
-      // ring in the plane perpendicular to radialAxis; base rotation spins each
-      // clone by its angle about that axis so the set fans around the ring
-      if (p.radialAxis === "y") out.push({ position: [r * s, 0, r * c], rotation: [0, a, 0] });
-      else if (p.radialAxis === "x") out.push({ position: [0, r * c, r * s], rotation: [a, 0, 0] });
-      else out.push({ position: [r * c, r * s, 0], rotation: [0, 0, a] });
-    }
-    return out;
-  }
+const TWO = 2;
 
-  // linear (default)
-  const [sx, sy, sz] = p.step;
-  const mid = (n - 1) / 2;
-  for (let i = 0; i < n; i++) {
-    const t = i - mid;
-    out.push({ position: [sx * t, sy * t, sz * t], rotation: [0, 0, 0] });
-  }
-  return out;
+function normalizeV(v: Vec3): Vec3 {
+  const l = Math.hypot(v[0], v[1], v[2]) || 1;
+  return [v[0] / l, v[1] / l, v[2] / l];
+}
+function crossV(a: Vec3, b: Vec3): Vec3 {
+  return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
 }
 
 // Reused scratch 3×3 matrices (column-major) so the 100k loop never allocates.
-const _rb = new Float64Array(9);
 const _rj = new Float64Array(9);
 const _r = new Float64Array(9);
 
@@ -158,7 +156,7 @@ function eulerMat3(m: Float64Array, x: number, y: number, z: number): void {
 }
 
 /** `out = a · b` for column-major 3×3 matrices (out must differ from a/b). */
-function mat3mul(out: Float64Array, a: Float64Array, b: Float64Array): void {
+function mat3mul(out: Float64Array, a: ArrayLike<number>, b: ArrayLike<number>): void {
   for (let col = 0; col < 3; col++) {
     const b0 = b[col * 3]!;
     const b1 = b[col * 3 + 1]!;
@@ -213,10 +211,11 @@ function mulberry32(seed: number): () => number {
  * result into a flat column-major `Float32Array` (16·N). The jitter for instance
  * `i` is a pure function of `(seed, i)` — the index is hashed INTO the seed so
  * adjacent clones aren't correlated and instance `i` is stable as the count
- * grows. Jitter rotation composes ONTO the base orientation (radial fan, or a
- * target's surface normal), so it perturbs each clone in its own frame.
+ * grows. Jitter rotation composes ONTO the base orientation frame (surface
+ * normal / tangent), so it perturbs each clone in its own frame.
  */
-export function clonerInstanceMatrices(instances: Instance[], p: ClonerParams): Float32Array {
+export function clonerInstanceMatrices(instances: Instance[], params: ClonerParams): Float32Array {
+  const p = normClonerParams(params);
   const n = instances.length;
   const out = new Float32Array(n * 16);
   const [jpx, jpy, jpz] = p.positionJitter;
@@ -224,20 +223,13 @@ export function clonerInstanceMatrices(instances: Instance[], p: ClonerParams): 
   for (let i = 0; i < n; i++) {
     const rng = mulberry32((p.seed ^ Math.imul(i, 0x9e3779b1)) >>> 0);
     const inst = instances[i]!;
-    const px = inst.position[0] + (rng() * 2 - 1) * jpx;
-    const py = inst.position[1] + (rng() * 2 - 1) * jpy;
-    const pz = inst.position[2] + (rng() * 2 - 1) * jpz;
-    eulerMat3(_rb, inst.rotation[0], inst.rotation[1], inst.rotation[2]);
-    eulerMat3(_rj, (rng() * 2 - 1) * jrx, (rng() * 2 - 1) * jry, (rng() * 2 - 1) * jrz);
-    mat3mul(_r, _rb, _rj);
-    const s = 1 + (rng() * 2 - 1) * p.scaleJitter;
+    const px = inst.position[0] + (rng() * TWO - 1) * jpx;
+    const py = inst.position[1] + (rng() * TWO - 1) * jpy;
+    const pz = inst.position[2] + (rng() * TWO - 1) * jpz;
+    eulerMat3(_rj, (rng() * TWO - 1) * jrx, (rng() * TWO - 1) * jry, (rng() * TWO - 1) * jrz);
+    mat3mul(_r, inst.basis, _rj);
+    const s = 1 + (rng() * TWO - 1) * p.scaleJitter;
     composeInto(out, i * 16, px, py, pz, _r, s);
   }
   return out;
-}
-
-/** Every clone's world matrix for a built-in distribution (linear/radial/grid). */
-export function clonerMatrices(params: ClonerParams): Float32Array {
-  const p = norm(params);
-  return clonerInstanceMatrices(layoutInstances(p), p);
 }

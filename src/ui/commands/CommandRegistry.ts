@@ -3,6 +3,8 @@ export type MenuId = "File" | "Edit" | "Create" | "Mesh" | "View" | "Help";
 export interface AppCommand {
   id: string;
   title: string;
+  /** Optional selection-dependent label; falls back to {@link title} when absent. */
+  dynamicTitle?: () => string;
   menu?: MenuId;
   /** Group under a named submenu within its menu (e.g. Create → Lights). */
   submenu?: string;
