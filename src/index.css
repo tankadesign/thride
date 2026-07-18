@@ -86,3 +86,24 @@ body,
   background-image: radial-gradient(rgb(255 255 255 / 0.05) 1px, transparent 1px);
   background-size: var(--gap) var(--gap);
 }
+
+.glow-up {
+  background-image: linear-gradient(
+    to bottom,
+    transparent,
+    color-mix(in oklab, var(--color-neutral-300), transparent 94%)
+  );
+  background-size: 100% 64px;
+  background-position: bottom;
+  background-repeat: no-repeat;
+}
+.glow-down {
+  background-image: linear-gradient(
+    to bottom,
+    color-mix(in oklab, var(--color-neutral-300), transparent 94%),
+    transparent
+  );
+  background-size: 100% 64px;
+  background-position: top;
+  background-repeat: no-repeat;
+}

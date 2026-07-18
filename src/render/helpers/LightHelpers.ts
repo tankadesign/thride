@@ -133,7 +133,12 @@ const DIRECTIONAL_CIRCLE_RADIUS = 0.15;
 
 function buildDirectionalHelper(): Object3D {
   const pts = [
-    0, 0, 0, 0, 0, -DIRECTIONAL_LINE_LENGTH, // axis line: origin → -Z (where it shines)
+    0,
+    0,
+    0,
+    0,
+    0,
+    -DIRECTIONAL_LINE_LENGTH, // axis line: origin → -Z (where it shines)
     // small circle at the axis center, perpendicular to the line (XY plane, z=0)
     ...circleSegmentPoints(CONE_CIRCLE_SEGMENTS, DIRECTIONAL_CIRCLE_RADIUS, 0),
   ];

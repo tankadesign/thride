@@ -59,7 +59,7 @@ export function NoiseEditor({
   );
 
   return (
-    <div className="flex flex-col gap-1.5 border-l border-base-300/60 pl-2">
+    <div className="flex flex-col gap-1.5 border-l border-primary pl-2">
       <Row label="Type">
         <select
           className="select select-xs w-full"

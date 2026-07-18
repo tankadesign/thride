@@ -13,6 +13,7 @@ to `~6.0.2`**: `typescript-eslint`'s parser crashes at load against the TS7 nati
 (peer range `<6.1.0`), so TS7 + ESLint is impossible today.
 
 Shipped:
+
 - **ESLint 10 + typescript-eslint** flat config (`eslint.config.js`); `pnpm lint` / `pnpm lint:fix`.
 - `vp check`'s lint + type-check steps **disabled** in `vite.config.ts` (`check.lint:false`,
   `lint.options.typeAware/typeCheck:false`) so it no longer hangs — it runs fmt only. `tsc -b`
@@ -24,9 +25,8 @@ Shipped:
   imageProjection,uniforms,projections}, render/{grid/InfiniteGrid, scene-sync/{SelectionOutline,
   proceduralBind}, viewport/postEffects}.
 - The `no-unsafe-*` / `no-explicit-any` family is **enforced as errors in `src/materials/**`**
-  (verified it catches a planted `any`) — that's what stops a new `type Node = any` creeping back.
-  Off elsewhere (renderer internals, BVH monkey-patch, third-party SSR effect nodes in
-  `ditherOutput.ts` keep their `any`).
+(verified it catches a planted `any`) — that's what stops a new `type Node = any`creeping back.
+Off elsewhere (renderer internals, BVH monkey-patch, third-party SSR effect nodes in`ditherOutput.ts`keep their`any`).
 - Proper typing surfaced + fixed **two latent bugs `any` hid**: a vec4 texture fed into the vec3
   image-projection path, and the per-component overlay blend.
 - Docs updated so this isn't re-discovered: **AGENTS.md** (→ CLAUDE.md symlink) + **README.md**
@@ -49,10 +49,11 @@ foundation stays but **modeling is frozen** (supporting capability, not the pitc
    revisable in the file.**
 4. Export two ways: **glTF + baked PBR** (any Three.js app) and a live **`.thride`** rendered by an
    **embeddable viewer**.
-5. Animation deferred past files (animate sweep/extrude sliders + procedural params on *unbaked*
+5. Animation deferred past files (animate sweep/extrude sliders + procedural params on _unbaked_
    materials).
 
 ### Grounding (three Explore agents this session)
+
 - **N-gon pipeline is already native end-to-end** — HEMesh kernel (`fromPolygons` takes
   `number[][]`), ops (polygon-soup rebuild), serialization (`meshPack.ts`) all preserve n-gons;
   triangulation is display-only + reversible. **The only import gap is: no mesh importer exists at
@@ -64,12 +65,14 @@ foundation stays but **modeling is frozen** (supporting capability, not the pitc
   persistence is IndexedDB autosave only.
 
 ### Owner decisions (locked)
+
 Import **both OBJ (lossless quads) and GLTF/GLB with an opt-in untriangulate toggle** (best-effort,
 greedy topology-preserving tri-pairing — NOT a remesher); FBX later if needed. Export to **both**
 glTF+baked-maps and the live `.thride` viewer. **S3/GCS cloud dropped.** Cloner+cameras next;
 files > animation.
 
 ### Re-ordered milestones (PLAN.md updated; prior M3–M6 superseded)
+
 - **M3 Scatter & cameras** (F2, F4; + fix Area-light LTC crash)
 - **M4 Import & UV-ready geometry** (N1 OBJ, H3 GLTF + N3 untriangulate, N2 headless unwrap)
 - **M5 Bake & live source** (E6, B-SEL selector, VH golden-image harness)
@@ -84,6 +87,7 @@ H5 cloud dropped). Full detail + critical path in the approved plan
 (`.claude/plans/vast-sauteeing-willow.md`).
 
 ## Files changed
+
 - **Committed (`dc30db3`, 20 files):** the ESLint/TS6 lint migration (see §1).
 - **This session, uncommitted:** `PLAN.md` (north star + M3–M10 + new chunks), this progress file.
 - Pre-existing uncommitted (NOT mine, left alone): a `vitest`→`vite-plus/test` test-import
@@ -91,10 +95,12 @@ H5 cloud dropped). Full detail + critical path in the approved plan
   `InfiniteGrid.ts` gridCellColor→gridLineColor).
 
 ## Test status
+
 - `tsc -b`: clean. `pnpm lint`: 0 errors (58 warnings = flagged pre-existing debt). `vp test`:
   203 passed / 32 files.
 
 ## Next steps (exact, resumable cold)
+
 1. Commit the PLAN.md re-steer + this progress file.
 2. **Start M3 — Scatter & cameras.** Begin with the **Area-light LTC crash fix**
    (`RectAreaLightNode.setupDirectRectArea` reads `null.LTC_FLOAT_1`; needs

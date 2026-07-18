@@ -3,7 +3,7 @@
   "configurations": [
     {
       "name": "thride-dev",
-      "runtimeExecutable": "pnpm",
+      "runtimeExecutable": "/Users/falcon/.vite-plus/bin/vp",
       "runtimeArgs": ["dev", "--port", "5175"],
       "port": 5175,
       "autoPort": false

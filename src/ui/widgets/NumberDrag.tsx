@@ -30,6 +30,7 @@ export function NumberDrag({
   integer = false,
 }: NumberDragProps) {
   const [editing, setEditing] = useState(false);
+  const [dragging, setDragging] = useState(false);
   const [text, setText] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const drag = useRef<{ startX: number; startValue: number; moved: boolean } | null>(null);
@@ -86,6 +87,7 @@ export function NumberDrag({
   const onPointerDown = (e: React.PointerEvent) => {
     if (editing) return;
     pointerFocus.current = true;
+    setDragging(true);
     try {
       (e.target as HTMLElement).setPointerCapture(e.pointerId);
     } catch {
@@ -96,6 +98,7 @@ export function NumberDrag({
   const onPointerMove = (e: React.PointerEvent) => {
     if (!drag.current || editing) return;
     const dx = e.clientX - drag.current.startX;
+    setDragging(true);
     if (Math.abs(dx) > 2) drag.current.moved = true;
     if (drag.current.moved) {
       const scale = e.shiftKey ? 0.1 : e.altKey ? 10 : 1;
@@ -103,6 +106,7 @@ export function NumberDrag({
     }
   };
   const onPointerUp = () => {
+    setDragging(false);
     if (!drag.current || editing) return;
     const wasDrag = drag.current.moved;
     drag.current = null;
@@ -125,7 +129,7 @@ export function NumberDrag({
 
   return (
     <label
-      className={`input input-xs w-full min-w-0 gap-1 px-1.5 ${editing ? "" : "cursor-scrub select-none"}`}
+      className={`input input-md transition-colors duration-300 ease-out w-full min-w-0 gap-1 px-1.5 focus:input-primary outline-none ${editing || dragging ? "input-primary" : "cursor-scrub select-none"}`}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
@@ -133,7 +137,7 @@ export function NumberDrag({
       {label ? <span className="label text-[10px] opacity-60">{label}</span> : null}
       <input
         ref={inputRef}
-        className={`text-right ${editing ? "" : "pointer-events-none"}`}
+        className={`text-right transition-colors duration-300 ease-out focus:text-primary selection:bg-primary/30 ${dragging ? "text-primary cursor-ew-resize" : ""} ${editing ? "" : "pointer-events-none"}`}
         value={shown}
         readOnly={!editing}
         // keyboard focus (Tab) enters type-mode too, not just a pointer click.

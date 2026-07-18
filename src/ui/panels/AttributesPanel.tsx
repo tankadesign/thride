@@ -33,6 +33,7 @@ import { appStore, useDocument, useSliceVersion } from "@/ui/hooks/doc/document"
 import { useSelectionInfo } from "@/ui/hooks/doc/selection";
 import { targetRotationBakerAtom } from "@/ui/hooks/editor/viewport";
 import { NumberDrag } from "@/ui/widgets/NumberDrag";
+import { ColorPicker } from "../widgets/ColorPicker";
 
 const RAD = Math.PI / 180;
 
@@ -120,7 +121,7 @@ function NodeAttributes({ id }: { id: Uuid }) {
           <span className="opacity-60">Name</span>
           <input
             key={node.name}
-            className="input input-ghost input-xs w-full"
+            className="input input-md w-full transition-colors ease-out duration-300 focus:input-primary outline-none focus:text-primary selection:bg-primary/30"
             defaultValue={node.name}
             onBlur={(e) => {
               if (e.target.value && e.target.value !== node.name) {
@@ -132,6 +133,8 @@ function NodeAttributes({ id }: { id: Uuid }) {
               e.stopPropagation();
             }}
           />
+        </div>
+        <div className="grid grid-cols-[96px_1fr] items-center gap-1 pt-2">
           <span className="opacity-60">Visible</span>
           <input
             type="checkbox"
@@ -426,12 +429,15 @@ function LightParams({ id, light }: { id: Uuid; light: LightDataDTO }) {
       </legend>
       <div className="grid grid-cols-[96px_1fr] items-center gap-1">
         <span className="opacity-60">Color</span>
-        <input
-          type="color"
-          className="h-6 w-12 cursor-pointer rounded border border-base-300 bg-base-100"
-          value={light.color}
-          onChange={(e) => setLight({ color: e.target.value }, true)}
-        />
+        <span
+          className="block w-10 h-10 rounded-full outline-transparent outline-offset-1 has-[input:focus]:outline-1 has-[input:focus]:outline-primary"
+          style={{ backgroundColor: light.color }}
+        >
+          <ColorPicker
+            color={light.color}
+            onChange={(e) => setLight({ color: e.target.value }, true)}
+          />
+        </span>
       </div>
       {numeric("Intensity", "intensity", 0.05)}
       {light.type === "spot" ? numeric("Angle", "angle", 0.005, Math.PI / 2) : null}
@@ -441,10 +447,8 @@ function LightParams({ id, light }: { id: Uuid; light: LightDataDTO }) {
       {light.type === "hemisphere" ? (
         <div className="grid grid-cols-[96px_1fr] items-center gap-1">
           <span className="opacity-60">Ground</span>
-          <input
-            type="color"
-            className="h-6 w-12 cursor-pointer rounded border border-base-300 bg-base-100"
-            value={light.groundColor ?? "#443c30"}
+          <ColorPicker
+            color={light.groundColor ?? "#443c30"}
             onChange={(e) => setLight({ groundColor: e.target.value }, true)}
           />
         </div>
@@ -539,10 +543,13 @@ function TargetSelector({ id }: { id: Uuid }) {
 /** Color chip for a material: base color fill with a subtle white ring (12px radius). */
 function Swatch({ color }: { color: string }) {
   return (
-    <span
-      className="inline-block shrink-0 rounded-full border border-white/30"
-      style={{ width: 24, height: 24, backgroundColor: color }}
-    />
+    <span className="relative overflow-hidden rounded-full inline-block">
+      <span
+        className="block shrink-0 border border-white/30"
+        style={{ width: "14px", height: "14px", backgroundColor: color }}
+      />
+      <span className="absolute block w-4 h-4 left-1 -top-0.5 inset-0 rounded-full bg-radial from-white/60 to-white/0" />
+    </span>
   );
 }
 
@@ -572,16 +579,18 @@ function MaterialSelector({ id }: { id: Uuid }) {
 
   return (
     <fieldset className="fieldset border-b border-base-200 px-2 pt-1.5 pb-6">
-      <legend className="fieldset-legend py-2 text-[10px] uppercase opacity-60">Material</legend>
+      <div className="fieldset-legend py-2 inline-block text-[10px] uppercase opacity-60">
+        Material
+      </div>
       {/* opens upward: the Material section sits at the panel bottom, and the
           panel's overflow would otherwise clip a downward menu off-screen */}
       <div className="dropdown dropdown-top w-full">
         <div
           tabIndex={0}
           role="button"
-          className="btn btn-xs btn-block justify-between font-normal"
+          className="btn btn-md btn-block justify-between font-normal border-base-content/20 bg-transparent"
         >
-          <span className="flex min-w-0 items-center gap-2">
+          <span className="flex min-w-0 items-center gap-2 py-4">
             {current ? <Swatch color={current.color} /> : null}
             <span className="truncate">{current ? current.name : "None"}</span>
           </span>

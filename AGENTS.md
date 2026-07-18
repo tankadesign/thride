@@ -38,10 +38,9 @@ indefinitely on our TSL node-graph files, so it is disabled:
 `Node<T>` alias @types/three doesn't export, named via barrel values). Uniform nodes
 follow the `ReturnType<typeof makeXU>` factory pattern in `materials/procedural/uniforms.ts`.
 The strict `no-unsafe-*` / `no-explicit-any` family is **enforced as errors in
-`src/materials/**`** (see `eslint.config.js`) — that's what stops a new `type Node = any`
-from creeping back into the noise/procedural graph code. Elsewhere the family is off
+`src/materials/**`** (see `eslint.config.js`) — that's what stops a new `type Node = any`from creeping back into the noise/procedural graph code. Elsewhere the family is off
 (scattered escape hatches: renderer internals, the BVH monkey-patch, the third-party
-SSR effect nodes in `render/viewport/ditherOutput.ts`).
+SSR effect nodes in`render/viewport/ditherOutput.ts`).
 
 ## Session workflow
 

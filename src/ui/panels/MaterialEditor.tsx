@@ -14,6 +14,7 @@ import { useDocument, useSliceVersion } from "@/ui/hooks/doc/document";
 import { NumberDrag } from "@/ui/widgets/NumberDrag";
 import { Row, Section } from "./materialEditor/controls";
 import { MapSlot } from "./materialEditor/MapSlot";
+import { ColorPicker } from "@/ui/widgets/ColorPicker";
 
 type NumKey =
   | "roughness"
@@ -86,10 +87,8 @@ export function MaterialEditor({
 
   const color = (label: string, key: ColorKey, fallback = "#ffffff") => (
     <Row label={label} key={key}>
-      <input
-        type="color"
-        className="h-6 w-12 cursor-pointer rounded border border-base-300 bg-base-100"
-        value={mat[key] ?? fallback}
+      <ColorPicker
+        color={mat[key] ?? fallback}
         onChange={(e) => setMat({ [key]: e.target.value }, true)}
       />
     </Row>
@@ -117,7 +116,7 @@ export function MaterialEditor({
         disabled={disabled}
         className={`flex min-w-0 flex-col ${disabled ? "pointer-events-none opacity-45" : ""}`}
       >
-        <Section title="Base" defaultOpen>
+        <Section title="Base" defaultOpen openClassNames="pb-8 glow-down">
           <Row label="Type">
             <select
               className="select select-xs w-full"
@@ -145,11 +144,13 @@ export function MaterialEditor({
         </Section>
 
         {HAS_PBR.has(mat.type) || hasNormalMap ? (
-          <Section title="Surface" defaultOpen>
+          <Section title="Surface" defaultOpen openClassNames="pb-8 glow-down">
             {HAS_PBR.has(mat.type) ? slider("Roughness", "roughness", 0.01, 1) : null}
             {texSlot("roughnessMap", "Roughness Map")}
+            <div className="h-2"></div>
             {HAS_PBR.has(mat.type) ? slider("Metalness", "metalness", 0.01, 1) : null}
             {texSlot("metalnessMap", "Metalness Map")}
+            <div className="h-2"></div>
             {physical
               ? slider("Specular", "specularIntensity", 0.01, 1, PD.specularIntensity)
               : null}
@@ -159,14 +160,14 @@ export function MaterialEditor({
         ) : null}
 
         {physical ? (
-          <Section title="Clearcoat">
+          <Section title="Clearcoat" openClassNames="pb-8 glow-down">
             {slider("Clearcoat", "clearcoat", 0.01, 1)}
             {slider("Roughness", "clearcoatRoughness", 0.01, 1)}
           </Section>
         ) : null}
 
         {physical ? (
-          <Section title="Transmission">
+          <Section title="Transmission" openClassNames="pb-8 glow-down">
             {slider("Transmission", "transmission", 0.01, 1)}
             {slider("IOR", "ior", 0.01, 2.5, PD.ior)}
             {slider("Thickness", "thickness", 0.02, 5)}
@@ -174,7 +175,7 @@ export function MaterialEditor({
         ) : null}
 
         {physical ? (
-          <Section title="Sheen">
+          <Section title="Sheen" openClassNames="pb-8 glow-down">
             {slider("Sheen", "sheen", 0.01, 1)}
             {slider("Roughness", "sheenRoughness", 0.01, 1, PD.sheenRoughness)}
             {color("Color", "sheenColor", PD.sheenColor)}
@@ -182,14 +183,14 @@ export function MaterialEditor({
         ) : null}
 
         {physical ? (
-          <Section title="Iridescence">
+          <Section title="Iridescence" openClassNames="pb-8 glow-down">
             {slider("Iridescence", "iridescence", 0.01, 1)}
             {slider("IOR", "iridescenceIOR", 0.01, 2.5, PD.iridescenceIOR)}
           </Section>
         ) : null}
 
         {HAS_EMISSIVE.has(mat.type) ? (
-          <Section title="Emission">
+          <Section title="Emission" openClassNames="pb-8 glow-down">
             {color("Emissive", "emissive", "#000000")}
             {slider("Strength", "emissiveIntensity", 0.05, 10, 1)}
             {texSlot("emissiveMap", "Emissive Map")}

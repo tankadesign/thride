@@ -4,6 +4,7 @@ import type { EnvironmentDTO } from "@/types/core";
 import { textureAssets } from "@/io/storage/textureAssets";
 import { useDocument, useSliceVersion } from "@/ui/hooks/doc/document";
 import { NumberDrag } from "@/ui/widgets/NumberDrag";
+import { ColorPicker } from "@/ui/widgets/ColorPicker";
 
 /**
  * Environment / dome-light panel: edits the document's EnvironmentDTO — IBL
@@ -111,10 +112,8 @@ export function EnvironmentPanel() {
         </Row>
         {env.background === "color" ? (
           <Row label="Color">
-            <input
-              type="color"
-              className="h-6 w-12 cursor-pointer rounded border border-base-300 bg-base-100"
-              value={env.backgroundColor}
+            <ColorPicker
+              color={env.backgroundColor}
               onChange={(e) => doc.setEnvironment({ backgroundColor: e.target.value })}
             />
           </Row>
