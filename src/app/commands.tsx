@@ -23,6 +23,7 @@ import { defaultSplinePrimitive } from "@/types/geometry/spline";
 import { buildSplinePrimitive } from "@/geometry/splines/primitives";
 import {
   booleanDescriptor,
+  clonerDescriptor,
   evaluateGenerator,
   splineExtrudeDescriptor,
   sweepDescriptor,
@@ -45,6 +46,7 @@ import {
   IconAreaLight,
   IconBevel,
   IconBoolean,
+  IconCloner,
   IconCamera,
   IconCone,
   IconCube,
@@ -759,6 +761,35 @@ export function buildCommands(doc: Document, shell: ShellApi): AppCommand[] {
           doc.history.run(cmd);
           genId = cmd.nodeId;
           for (const id of kids) doc.history.run(new ReparentNodeCommand(id, genId));
+        });
+        if (genId) doc.selection.selectObjects([genId]);
+      },
+    },
+    {
+      // cloner generator: clones its first mesh/primitive child across a
+      // distribution (linear/radial/grid) with a random effector
+      id: "create.cloner",
+      title: "Cloner",
+      menu: "Create",
+      submenu: "Generators",
+      icon: <IconCloner size={16} />,
+      run: () => {
+        const template = doc.selection.objectIds.find((id) => {
+          const n = doc.scene.get(id);
+          return n && (n.data?.mesh !== undefined || n.data?.primitive !== undefined);
+        });
+        let genId: Uuid | null = null;
+        doc.history.transact("Create Cloner", () => {
+          const cmd = new CreateNodeCommand(
+            "generator",
+            uniqueSiblingName(doc, null, "Cloner"),
+            null,
+            undefined,
+            { generator: clonerDescriptor() },
+          );
+          doc.history.run(cmd);
+          genId = cmd.nodeId;
+          if (template) doc.history.run(new ReparentNodeCommand(template, genId));
         });
         if (genId) doc.selection.selectObjects([genId]);
       },

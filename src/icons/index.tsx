@@ -18,6 +18,7 @@ import {
   EyeIcon,
   Folder01Icon,
   GitMergeIcon,
+  Grid2X2Icon,
   GridTableIcon,
   HexagonIcon,
   Idea01Icon,
@@ -112,6 +113,7 @@ export const IconStar = makeIcon(StarIcon);
 export const IconHelix = makeIcon(SpiralsIcon);
 export const IconSweep = makeIcon(PipelineIcon);
 export const IconBoolean = makeIcon(PathfinderUniteIcon);
+export const IconCloner = makeIcon(Grid2X2Icon);
 
 // lights
 export const IconAmbientLight = makeIcon(SunCloud02Icon);

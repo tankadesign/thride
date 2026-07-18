@@ -6,6 +6,7 @@ import {
   DoubleSide,
   FrontSide,
   Group,
+  InstancedMesh,
   LineBasicMaterial,
   LineSegments,
   type Material,
@@ -33,6 +34,7 @@ import { buildPickProxy } from "@/render/helpers/pickProxy";
 import { HELPER_LAYER } from "@/render/layers";
 import { viewportTheme } from "@/render/theme/viewportTheme";
 import { evaluateGenerator } from "@/generators/graph";
+import { ClonerSync } from "./ClonerSync";
 import { LightSync } from "./LightSync";
 import { MaterialSync, type WarmFn } from "./MaterialSync";
 import { SelectionOutline } from "./SelectionOutline";
@@ -107,6 +109,8 @@ export class SceneSynchronizer {
   /** Per mesh node: kernel-edge wireframe (Display > Lines + wireframe shading). */
   private edgeWires = new Map<Uuid, LineSegments>();
   private readonly lights = new LightSync(this.root);
+  /** Cloner generators: each maps to an InstancedMesh instead of a plain Mesh. */
+  private cloners!: ClonerSync;
   /** Library-material cache; resolves per-mesh materials in the PBR shading path. */
   private materials!: MaterialSync;
   /** Last-seen shadow-caster count — drives material recompiles (see below). */
@@ -122,6 +126,7 @@ export class SceneSynchronizer {
     this.doc = doc;
     this.onDirty = onDirty;
     this.materials = new MaterialSync(doc, BASE_MAT, onDirty);
+    this.cloners = new ClonerSync(doc);
     this.root.name = "thride-document";
     this.unsubs.push(
       doc.events.on("scene:node-added", ({ id }) => {
@@ -225,10 +230,22 @@ export class SceneSynchronizer {
       const node = this.doc.scene.get(parent);
       if (!node) return false;
       const gen = node.data?.generator as { type?: string } | undefined;
-      if (node.kind === "generator" && gen?.type === "boolean") return true;
+      // a boolean consumes its operands; a cloner consumes its template (only
+      // the instances render) — both hide + de-pick their children, C4D-style
+      if (node.kind === "generator" && (gen?.type === "boolean" || gen?.type === "cloner")) {
+        return true;
+      }
       parent = node.parent;
     }
     return false;
+  }
+
+  /** A cloner generator maps to an InstancedMesh, not the single-Mesh path. */
+  private isCloner(node: SceneNode): boolean {
+    return (
+      node.kind === "generator" &&
+      (node.data?.generator as { type?: string } | undefined)?.type === "cloner"
+    );
   }
 
   /** Current local Euler (XYZ) of a node's live object — used to bake a
@@ -243,6 +260,7 @@ export class SceneSynchronizer {
     for (const u of this.unsubs) u();
     for (const { rm } of this.renderMeshes.values()) rm.dispose();
     this.renderMeshes.clear();
+    this.cloners.dispose();
     this.objects.clear();
     this.root.clear();
   }
@@ -286,7 +304,8 @@ export class SceneSynchronizer {
     const node = this.doc.scene.mustGet(id);
     let obj: Object3D;
     try {
-      if (node.kind === "mesh" || node.kind === "generator") obj = this.buildMeshObject(node);
+      if (node.kind === "mesh" || node.kind === "generator")
+        obj = this.isCloner(node) ? this.cloners.build(node, BASE_MAT) : this.buildMeshObject(node);
       else if (node.kind === "spline") obj = buildSplineObject(node);
       else if (node.kind === "light") obj = this.lights.build(node);
       else if (node.kind === "camera") obj = this.buildCameraObject();
@@ -332,6 +351,7 @@ export class SceneSynchronizer {
       if (nid) {
         this.objects.delete(nid);
         this.dropRenderMesh(nid);
+        this.cloners.remove(nid);
         this.materials.releasePlanar(nid);
         this.edgeWires.get(nid)?.geometry.dispose();
         this.edgeWires.delete(nid);
@@ -370,7 +390,15 @@ export class SceneSynchronizer {
       // splines: see addNode. Consumed = a boolean input (hidden + unpickable).
       if (!obj.userData.spline) obj.visible = node.visible && !this.isConsumed(id);
       this.applyTransform(node, obj);
-      if (
+      if (this.isCloner(node) && obj instanceof InstancedMesh) {
+        // cloner: refresh instances; a count that outgrew the buffer returns a
+        // fresh InstancedMesh to swap into the scene graph (NOT the HEMesh path)
+        const next = this.cloners.sync(node, obj);
+        if (next !== obj) {
+          this.swapObject(id, obj, next);
+          obj = next;
+        }
+      } else if (
         (node.kind === "mesh" || node.kind === "generator") &&
         obj instanceof Mesh &&
         !obj.userData.spline
@@ -394,6 +422,25 @@ export class SceneSynchronizer {
       if (pNode.kind === "generator") this.updateNode(parent, preview);
       parent = pNode.parent;
     }
+  }
+
+  /**
+   * Replace a node's live object in the scene graph and the id→object map,
+   * carrying over identity/visibility/transform. Used when a cloner's instance
+   * count outgrows its buffer and the InstancedMesh must be rebuilt (its
+   * material re-resolves on the next applyShading pass).
+   */
+  private swapObject(id: Uuid, oldObj: Object3D, newObj: Object3D): void {
+    newObj.name = oldObj.name;
+    newObj.userData.nodeId = id;
+    newObj.visible = oldObj.visible;
+    newObj.position.copy(oldObj.position);
+    newObj.quaternion.copy(oldObj.quaternion);
+    newObj.scale.copy(oldObj.scale);
+    const parent = oldObj.parent;
+    oldObj.removeFromParent();
+    (parent ?? this.root).add(newObj);
+    this.objects.set(id, newObj);
   }
 
   /**

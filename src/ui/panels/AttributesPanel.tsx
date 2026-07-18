@@ -648,7 +648,11 @@ function GeneratorParams({ id, gen }: { id: Uuid; gen: GeneratorDescriptor }) {
   const doc = useDocument();
   const scrub = useRef<{ before: Record<string, unknown> } | null>(null);
 
-  const setParam = (key: string, value: number | boolean | string, committed: boolean) => {
+  const setParam = (
+    key: string,
+    value: number | boolean | string | number[],
+    committed: boolean,
+  ) => {
     const node = doc.scene.mustGet(id);
     scrub.current ??= { before: structuredClone(node.data!) };
     const data = structuredClone(node.data!);
@@ -662,6 +666,77 @@ function GeneratorParams({ id, gen }: { id: Uuid; gen: GeneratorDescriptor }) {
       doc.setNodeData(id, data, true);
     }
   };
+
+  if (gen.type === "cloner") {
+    const cp = gen.params;
+    const RAD = 180 / Math.PI;
+    // three x/y/z NumberDrags editing one Vec3 param (rotation shown in degrees)
+    const vecRow = (key: "step" | "positionJitter" | "rotationJitter", label: string, deg = false) => {
+      const arr = cp[key];
+      return (
+        <div className="grid grid-cols-[96px_1fr] items-center gap-1" key={key}>
+          <span className="truncate opacity-60" title={label}>
+            {label}
+          </span>
+          <div className="flex gap-1">
+            {arr.map((v, i) => (
+              <NumberDrag
+                key={i}
+                value={deg ? v * RAD : v}
+                step={deg ? 1 : 0.05}
+                onChange={(nv, committed) => {
+                  const next = [...arr];
+                  next[i] = deg ? nv / RAD : nv;
+                  setParam(key, next, committed);
+                }}
+              />
+            ))}
+          </div>
+        </div>
+      );
+    };
+    return (
+      <fieldset className="fieldset px-2 pt-1.5 pb-6">
+        <legend className="fieldset-legend py-2 text-[10px] uppercase opacity-60">Cloner</legend>
+        <div className="grid grid-cols-[96px_1fr] items-center gap-1">
+          <span className="opacity-60">Count</span>
+          <NumberDrag
+            value={cp.count}
+            step={1}
+            integer
+            min={0}
+            max={200000}
+            onChange={(v, committed) => setParam("count", v, committed)}
+          />
+        </div>
+        {vecRow("step", "Step")}
+        <legend className="fieldset-legend pt-3 pb-1 text-[10px] uppercase opacity-40">
+          Random effector
+        </legend>
+        <div className="grid grid-cols-[96px_1fr] items-center gap-1">
+          <span className="opacity-60">Seed</span>
+          <NumberDrag
+            value={cp.seed}
+            step={1}
+            integer
+            onChange={(v, committed) => setParam("seed", v, committed)}
+          />
+        </div>
+        {vecRow("positionJitter", "Position")}
+        {vecRow("rotationJitter", "Rotation", true)}
+        <div className="grid grid-cols-[96px_1fr] items-center gap-1">
+          <span className="opacity-60">Scale</span>
+          <NumberDrag
+            value={cp.scaleJitter}
+            step={0.05}
+            min={0}
+            onChange={(v, committed) => setParam("scaleJitter", v, committed)}
+          />
+        </div>
+        <p className="mt-1 text-[10px] opacity-50">Clones the first mesh child (linear).</p>
+      </fieldset>
+    );
+  }
 
   if (gen.type === "boolean") {
     return (
