@@ -143,7 +143,7 @@ export function MaterialManagerPanel() {
         </span>
       </div>
       <div
-        className="dot-bg grid min-h-0 flex-1 grid-cols-[repeat(auto-fill,minmax(88px,1fr))] content-start gap-2 overflow-auto p-2 max-h-80"
+        className="dot-bg grid h-80 grid-cols-[repeat(auto-fill,minmax(88px,1fr))] content-start gap-2 overflow-auto p-2"
         onPointerEnter={() => {
           hoverGrid.current = true;
         }}

@@ -109,7 +109,7 @@ export function MaterialEditor({
   );
 
   return (
-    <div className="flex max-h-[55%] flex-col overflow-auto bg-base-200/40 text-xs">
+    <div className="flex flex-col overflow-auto bg-base-200/40 text-xs">
       <div className="flex-none truncate px-2 py-1.5 font-semibold opacity-80" title={title}>
         {title ?? mat.name}
       </div>
