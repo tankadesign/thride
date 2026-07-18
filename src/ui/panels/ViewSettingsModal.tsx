@@ -58,7 +58,7 @@ export function ViewSettingsModal({
 
   return (
     <div
-      className="absolute z-20 w-60 select-none rounded-box border border-base-300 bg-base-200/95 text-xs shadow-xl backdrop-blur"
+      className="absolute z-20 w-64 select-none rounded-box border border-base-300 bg-base-200/95 text-xs shadow-xl backdrop-blur"
       style={{ left: pos.x, top: pos.y }}
     >
       <div
@@ -71,13 +71,16 @@ export function ViewSettingsModal({
         </button>
       </div>
 
-      <div role="tablist" className="tabs tabs-box tabs-xs m-1">
+      <div
+        role="tablist"
+        className="tabs tabs-box tabs-sm m-1 mb-3 ring ring-base-content/10 ring-inset"
+      >
         {TABS.map((t) => (
           <button
             key={t.id}
             type="button"
             role="tab"
-            className={`tab flex-1 ${tab === t.id ? "tab-active" : ""}`}
+            className={`tab flex-1 ${tab === t.id ? "tab-active bg-base-content/20" : ""}`}
             onClick={() => setTab(t.id)}
           >
             {t.label}
@@ -85,7 +88,7 @@ export function ViewSettingsModal({
         ))}
       </div>
 
-      <div className="max-h-[min(60vh,32rem)] overflow-auto">
+      <div className="max-h-[min(60vh,32rem)] overflow-auto border-t border-base-content/10">
         {tab === "view" ? (
           <ViewTab pane={pane} vs={vs} disp={disp} set={set} />
         ) : (

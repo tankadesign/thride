@@ -16,7 +16,7 @@ import {
   withChannelLayer,
 } from "@/types/core";
 import { uuidv7 } from "@/core";
-import { IconClose } from "@/icons";
+import { IconClose, IconEye } from "@/icons";
 import { noiseDef } from "@/materials/noises";
 import { textureAssets } from "@/io/storage/textureAssets";
 import { NumberDrag } from "@/ui/widgets/NumberDrag";
@@ -81,6 +81,12 @@ export function MapSlot({
   const removeNoise = () =>
     setMat({ procedural: withChannelLayer(mat.procedural, procChannel, null) }, true);
 
+  /**
+   * TODO: toggleNoise() should toggle the map on/off (clear the channel, but keep the
+   * noise layer in the procedural node so it can be re-enabled later).
+   */
+  const toggleNoise = () => {};
+
   const clearImage = () => {
     const textures = { ...mat.textures };
     delete textures[channel];
@@ -88,6 +94,12 @@ export function MapSlot({
     delete textureProjections[channel];
     setMat({ textures, textureProjections }, true);
   };
+
+  /**
+   * TODO: toggleImage() should toggle the map on/off (clear the channel, but keep the
+   * asset in the textureAssets registry so it can be re-enabled later).
+   */
+  const toggleImage = () => {};
 
   const setImageProjection = (projection: Projection) => {
     const textureProjections = { ...mat.textureProjections };
@@ -169,11 +181,19 @@ export function MapSlot({
             </button>
             <button
               type="button"
-              className="btn btn-ghost btn-xs px-1 opacity-60"
+              className="btn btn-ghost btn-md px-1 hover:text-primary hover:opacity-100"
+              onClick={toggleNoise}
+              title="Toggle map"
+            >
+              <IconEye size={14} />
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost btn-md px-1 hover:text-primary hover:opacity-100"
               onClick={removeNoise}
               title="Remove noise"
             >
-              <IconClose size={11} />
+              <IconClose size={14} />
             </button>
           </div>
         </Row>
@@ -218,11 +238,19 @@ export function MapSlot({
             </button>
             <button
               type="button"
-              className="btn btn-ghost btn-xs px-1 opacity-60"
+              className="btn btn-ghost btn-md px-1 hover:text-primary hover:opacity-100"
+              onClick={toggleImage}
+              title="Toggle map"
+            >
+              <IconEye size={14} />
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost btn-md px-1 hover:text-primary hover:opacity-100"
               onClick={clearImage}
               title="Clear"
             >
-              <IconClose size={11} />
+              <IconClose size={14} />
             </button>
             {filePicker}
           </div>
@@ -231,7 +259,7 @@ export function MapSlot({
           <div className="flex flex-col gap-1.5 border-l border-primary pl-2">
             <Row label="Projection">
               <select
-                className="select select-xs w-full"
+                className="select select-md w-full"
                 value={projection}
                 onChange={(e) => setImageProjection(e.target.value as Projection)}
               >

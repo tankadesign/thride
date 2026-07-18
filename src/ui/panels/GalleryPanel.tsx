@@ -43,7 +43,7 @@ export function GalleryPanel() {
         <h3 className="mb-2 text-[10px] font-semibold uppercase opacity-60">Inputs</h3>
         <div className="flex w-72 flex-col gap-2">
           <input className="input input-xs" placeholder="Text input" />
-          <select className="select select-xs">
+          <select className="select select-md">
             <option>Option A</option>
             <option>Option B</option>
           </select>

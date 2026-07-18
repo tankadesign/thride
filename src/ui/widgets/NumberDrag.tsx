@@ -129,7 +129,7 @@ export function NumberDrag({
 
   return (
     <label
-      className={`input input-md transition-colors duration-300 ease-out w-full min-w-0 gap-1 px-1.5 focus:input-primary outline-none ${editing || dragging ? "input-primary" : "cursor-scrub select-none"}`}
+      className={`input input-sm transition-colors duration-300 ease-out w-full min-w-0 gap-1 px-1.5 focus:input-primary outline-none ${editing || dragging ? "input-primary" : "cursor-scrub select-none"}`}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}

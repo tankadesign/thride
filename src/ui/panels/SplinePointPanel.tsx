@@ -69,7 +69,7 @@ export function SplinePointPanel({ vs }: { vs: ViewportSystem }) {
           Closed
           <input
             type="checkbox"
-            className="toggle toggle-xs"
+            className="toggle toggle-sm"
             checked={data.closed}
             onChange={toggleClosed}
           />

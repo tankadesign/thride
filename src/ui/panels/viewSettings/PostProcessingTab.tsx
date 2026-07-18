@@ -1,6 +1,7 @@
 import type { PaneDisplay } from "@/types/editor";
 import { NumberDrag } from "@/ui/widgets/NumberDrag";
-import { Row, Section, Select, Toggle } from "./controls";
+import { Row, Select, Toggle } from "./controls";
+import { CollapsingSection } from "@/ui/panels/CollapsingSection";
 
 /**
  * The Post Processing tab of the View Settings modal (chunk C6).
@@ -45,7 +46,7 @@ export function PostProcessingTab({
 
   return (
     <>
-      <Section title="Ambient Shadows" defaultOpen>
+      <CollapsingSection title="Ambient Shadows" defaultOpen>
         <Toggle
           label="Enabled"
           checked={disp.ssao}
@@ -125,9 +126,9 @@ export function PostProcessingTab({
             onChange={(v) => set({ aoTint: aoTint(v) })}
           />
         </Row>
-      </Section>
+      </CollapsingSection>
 
-      <Section title="Reflections">
+      <CollapsingSection title="Reflections">
         <Toggle
           label="Enabled"
           checked={disp.ssr}
@@ -256,9 +257,9 @@ export function PostProcessingTab({
             </Row>
           </>
         )}
-      </Section>
+      </CollapsingSection>
 
-      <Section title="Bloom">
+      <CollapsingSection title="Bloom">
         <Toggle
           label="Enabled"
           checked={disp.bloom}
@@ -292,9 +293,9 @@ export function PostProcessingTab({
             onChange={(v) => set({ bloomRadius: v })}
           />
         </Row>
-      </Section>
+      </CollapsingSection>
 
-      <Section title="Chromatic Aberration">
+      <CollapsingSection title="Chromatic Aberration">
         <Toggle
           label="Enabled"
           checked={disp.chromatic}
@@ -310,9 +311,9 @@ export function PostProcessingTab({
             onChange={(v) => set({ chromaticAmount: v })}
           />
         </Row>
-      </Section>
+      </CollapsingSection>
 
-      <Section title="Vignette">
+      <CollapsingSection title="Vignette">
         <Toggle
           label="Enabled"
           checked={disp.vignette}
@@ -337,7 +338,7 @@ export function PostProcessingTab({
             onChange={(v) => set({ vignetteRadius: v })}
           />
         </Row>
-      </Section>
+      </CollapsingSection>
     </>
   );
 }

@@ -1,6 +1,3 @@
-import { useState } from "react";
-import { IconCaretRight } from "@/icons";
-
 /**
  * Shared row/toggle/select/section primitives for the View Settings modal.
  * Split out of `ViewSettingsModal.tsx` when C6 added the Post Processing tab —
@@ -32,7 +29,7 @@ export function Toggle({
     <Row label={label}>
       <input
         type="checkbox"
-        className="toggle toggle-xs"
+        className="toggle toggle-sm"
         checked={checked}
         disabled={disabled}
         onChange={(e) => onChange(e.target.checked)}
@@ -54,7 +51,7 @@ export function Select({
 }) {
   return (
     <select
-      className="select select-xs w-full"
+      className="select select-md w-full"
       value={value}
       disabled={disabled}
       onChange={(e) => onChange(e.target.value)}
@@ -65,35 +62,5 @@ export function Select({
         </option>
       ))}
     </select>
-  );
-}
-
-export function Section({
-  title,
-  defaultOpen = false,
-  children,
-}: {
-  title: string;
-  defaultOpen?: boolean;
-  children: React.ReactNode;
-}) {
-  const [open, setOpen] = useState(defaultOpen);
-  return (
-    <div className="border-t border-base-300/60 first:border-t-0">
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center gap-1.5 px-2 py-1 text-left hover:bg-base-300/40"
-      >
-        <IconCaretRight
-          size={12}
-          className={`opacity-60 transition-transform ${open ? "rotate-90" : ""}`}
-        />
-        <span className="text-[10px] font-semibold uppercase tracking-wide opacity-70">
-          {title}
-        </span>
-      </button>
-      {open ? <div className="flex flex-col gap-1.5 px-2 pb-2">{children}</div> : null}
-    </div>
   );
 }

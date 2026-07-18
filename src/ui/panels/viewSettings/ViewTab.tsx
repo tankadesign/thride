@@ -4,7 +4,8 @@ import { appStore } from "@/ui/hooks/doc/document";
 import { splineThicknessAtom } from "@/ui/hooks/editor/settings";
 import { NumberDrag } from "@/ui/widgets/NumberDrag";
 import type { ViewportSystem } from "@/render/viewport/ViewportSystem";
-import { Row, Section, Select, Toggle } from "./controls";
+import { Row, Select, Toggle } from "./controls";
+import { CollapsingSection } from "@/ui/panels/CollapsingSection";
 
 /**
  * The View tab of the View Settings modal — how the pane draws the scene, as
@@ -43,7 +44,7 @@ export function ViewTab({
 
   return (
     <>
-      <Section title="Shading" defaultOpen>
+      <CollapsingSection title="Shading" defaultOpen>
         <Row label="Mode">
           <Select
             value={disp.shading}
@@ -70,9 +71,9 @@ export function ViewTab({
           checked={disp.backfaces}
           onChange={(v) => set({ backfaces: v })}
         />
-      </Section>
+      </CollapsingSection>
 
-      <Section title="Overlays" defaultOpen>
+      <CollapsingSection title="Overlays" defaultOpen>
         <Toggle label="Grid" checked={disp.grid} onChange={(v) => set({ grid: v })} />
         <Toggle label="Main Axis" checked={disp.mainAxis} onChange={(v) => set({ mainAxis: v })} />
         <Toggle
@@ -99,9 +100,9 @@ export function ViewTab({
             }}
           />
         </Row>
-      </Section>
+      </CollapsingSection>
 
-      <Section title="Camera">
+      <CollapsingSection title="Camera">
         <button
           type="button"
           className="btn btn-xs btn-block"
@@ -109,7 +110,7 @@ export function ViewTab({
         >
           Reset Camera PSR
         </button>
-      </Section>
+      </CollapsingSection>
     </>
   );
 }

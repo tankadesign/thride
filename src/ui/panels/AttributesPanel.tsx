@@ -121,7 +121,7 @@ function NodeAttributes({ id }: { id: Uuid }) {
           <span className="opacity-60">Name</span>
           <input
             key={node.name}
-            className="input input-md w-full transition-colors ease-out duration-300 focus:input-primary outline-none focus:text-primary selection:bg-primary/30"
+            className="input input-sm w-full transition-colors ease-out duration-300 focus:input-primary outline-none focus:text-primary selection:bg-primary/30"
             defaultValue={node.name}
             onBlur={(e) => {
               if (e.target.value && e.target.value !== node.name) {
@@ -138,7 +138,7 @@ function NodeAttributes({ id }: { id: Uuid }) {
           <span className="opacity-60">Visible</span>
           <input
             type="checkbox"
-            className="toggle toggle-xs"
+            className="toggle toggle-sm"
             checked={node.visible}
             onChange={(e) =>
               doc.history.run(new SetFlagsCommand(id, { visible: e.target.checked }))
@@ -348,7 +348,7 @@ function PlanarReflectionSection({ id, planar }: { id: Uuid; planar?: PlanarRefl
           <span className="opacity-60">Enabled</span>
           <input
             type="checkbox"
-            className="toggle toggle-xs"
+            className="toggle toggle-sm"
             checked={!!planar}
             onChange={(e) => setPlanar(e.target.checked ? {} : null, true)}
           />
@@ -356,7 +356,7 @@ function PlanarReflectionSection({ id, planar }: { id: Uuid; planar?: PlanarRefl
             <>
               <span className="opacity-60">Axis</span>
               <select
-                className="select select-xs w-full"
+                className="select select-md w-full"
                 value={planar.axis}
                 onChange={(e) =>
                   setPlanar({ axis: e.target.value as PlanarReflectionDTO["axis"] }, true)
@@ -458,7 +458,7 @@ function LightParams({ id, light }: { id: Uuid; light: LightDataDTO }) {
           <span className="opacity-60">Shadows</span>
           <input
             type="checkbox"
-            className="toggle toggle-xs"
+            className="toggle toggle-sm"
             checked={light.castShadow ?? true}
             onChange={(e) => setLight({ castShadow: e.target.checked }, true)}
           />
@@ -469,7 +469,7 @@ function LightParams({ id, light }: { id: Uuid; light: LightDataDTO }) {
           <div className="grid grid-cols-[96px_1fr] items-center gap-1">
             <span className="opacity-60">Quality</span>
             <select
-              className="select select-xs"
+              className="select select-md"
               value={light.shadowResolution ?? "normal"}
               onChange={(e) =>
                 setLight({ shadowResolution: e.target.value as ShadowResolution }, true)
@@ -525,7 +525,7 @@ function TargetSelector({ id }: { id: Uuid }) {
     <fieldset className="fieldset px-2 pt-1.5 pb-6">
       <legend className="fieldset-legend py-2 text-[10px] uppercase opacity-60">Target</legend>
       <select
-        className="select select-xs w-full"
+        className="select select-md w-full"
         value={target as string}
         onChange={(e) => setTarget(e.target.value)}
       >
@@ -670,7 +670,7 @@ function GeneratorParams({ id, gen }: { id: Uuid; gen: GeneratorDescriptor }) {
         <div className="grid grid-cols-[96px_1fr] items-center gap-1">
           <span className="opacity-60">Operation</span>
           <select
-            className="select select-xs"
+            className="select select-md"
             value={gen.params.op}
             onChange={(e) => setParam("op", e.target.value, true)}
           >
@@ -723,7 +723,7 @@ function GeneratorParams({ id, gen }: { id: Uuid; gen: GeneratorDescriptor }) {
           <span className="opacity-60">Use path points</span>
           <input
             type="checkbox"
-            className="toggle toggle-xs"
+            className="toggle toggle-sm"
             checked={usePathPoints}
             onChange={(e) => setParam("usePathPoints", e.target.checked, true)}
           />
@@ -747,7 +747,7 @@ function GeneratorParams({ id, gen }: { id: Uuid; gen: GeneratorDescriptor }) {
           <span className="opacity-60">Invert Normals</span>
           <input
             type="checkbox"
-            className="toggle toggle-xs"
+            className="toggle toggle-sm"
             checked={sp.invertNormals ?? false}
             onChange={(e) => setParam("invertNormals", e.target.checked, true)}
           />
@@ -787,7 +787,7 @@ function GeneratorParams({ id, gen }: { id: Uuid; gen: GeneratorDescriptor }) {
         <span className="opacity-60">Caps</span>
         <input
           type="checkbox"
-          className="toggle toggle-xs"
+          className="toggle toggle-sm"
           checked={(p.caps as boolean) ?? true}
           onChange={(e) => setParam("caps", e.target.checked, true)}
         />
@@ -866,7 +866,7 @@ function SplinePrimitiveParams({ id, prim }: { id: Uuid; prim: SplinePrimitive }
           {row.bool ? (
             <input
               type="checkbox"
-              className="toggle toggle-xs"
+              className="toggle toggle-sm"
               checked={Boolean(values[row.key])}
               onChange={(e) => setParam(row.key, e.target.checked, true)}
             />
@@ -929,7 +929,7 @@ function PrimitiveParams({ id, prim }: { id: Uuid; prim: PrimitiveDescriptor }) 
               </span>
               <input
                 type="checkbox"
-                className="toggle toggle-xs"
+                className="toggle toggle-sm"
                 checked={value}
                 onChange={(e) => setParam(key, e.target.checked, true)}
               />

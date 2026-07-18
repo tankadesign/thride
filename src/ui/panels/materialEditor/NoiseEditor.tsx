@@ -62,7 +62,7 @@ export function NoiseEditor({
     <div className="flex flex-col gap-1.5 border-l border-primary pl-2">
       <Row label="Type">
         <select
-          className="select select-xs w-full"
+          className="select select-md w-full"
           value={layer.source}
           onChange={(e) => swapType(e.target.value)}
         >
@@ -110,7 +110,7 @@ export function NoiseEditor({
 
       <Row label="Projection">
         <select
-          className="select select-xs w-full"
+          className="select select-md w-full"
           value={layer.projection}
           onChange={(e) => set({ projection: e.target.value as Projection }, true)}
         >

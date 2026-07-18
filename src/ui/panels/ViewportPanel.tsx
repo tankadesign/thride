@@ -221,7 +221,7 @@ export function ViewportPanel({ onSystem }: Props) {
       {slots.map((pane, slot) => (
         <div key={pane} className="absolute flex items-center gap-1" style={slotStyle(slot)}>
           <select
-            className="select select-xs w-32 border-base-300 bg-base-100/80 backdrop-blur"
+            className="select select-md w-32 border-base-300 bg-base-100/80 backdrop-blur"
             value={paneCameras[pane] as string}
             onChange={(e) => setPaneCamera(pane, e.target.value as PaneCamera)}
           >

@@ -37,7 +37,7 @@ export function EnvironmentPanel() {
         </legend>
         <Row label="Source">
           <select
-            className="select select-xs w-full"
+            className="select select-md w-full"
             value={env.source}
             onChange={(e) =>
               doc.setEnvironment({ source: e.target.value as EnvironmentDTO["source"] })
@@ -99,7 +99,7 @@ export function EnvironmentPanel() {
         </legend>
         <Row label="Mode">
           <select
-            className="select select-xs w-full"
+            className="select select-md w-full"
             value={env.background}
             onChange={(e) =>
               doc.setEnvironment({ background: e.target.value as EnvironmentDTO["background"] })
