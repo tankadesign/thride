@@ -18,6 +18,7 @@ import type { Uuid } from "@/types/core";
 import { defaultLightData, type LightDataDTO, SHADOW_RESOLUTION_PX } from "@/types/core/light";
 import type { SceneNode } from "@/core";
 import { buildPickProxy } from "@/render/helpers/pickProxy";
+import { ensureRectAreaLTC } from "@/render/lights/rectAreaLTC";
 import {
   buildBillboardCircle,
   buildOrientedLightHelper,
@@ -227,6 +228,7 @@ export class LightSync {
         light = new HemisphereLight(data.color, data.groundColor ?? "#443c30", data.intensity);
         break;
       case "area":
+        ensureRectAreaLTC(); // install LTC tables or the node material throws on setup
         light = new RectAreaLight(data.color, data.intensity, data.width ?? 2, data.height ?? 2);
         break;
     }
