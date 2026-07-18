@@ -1,4 +1,15 @@
 import type { Uuid } from "./core/ids";
+import type { TextureChannel } from "./core/material";
+
+/**
+ * What the viewport projection-transform ("Texture") mode is editing: one image
+ * channel of one material. Null = not in projection-edit mode. Ephemeral editor
+ * state (not in the document); drives the TRS gizmo's projection branch.
+ */
+export interface ProjectionEditTarget {
+  materialId: Uuid;
+  textureChannel: TextureChannel;
+}
 
 /** Built-in editor cameras; a PaneCamera may also be a scene camera node id. */
 export type BuiltinCamera =
@@ -220,6 +231,10 @@ export interface EditorViewportState {
   /** Spline pen tool active (work-plane pick or drawing). */
   readonly penActive: boolean;
   setPenActive(on: boolean): void;
+  /** Projection-transform ("Texture") mode target: the material+channel whose
+   * projection the gizmo edits, or null when not in that mode. */
+  readonly projectionEditTarget: ProjectionEditTarget | null;
+  setProjectionEditTarget(t: ProjectionEditTarget | null): void;
   /** Live edge-bevel tool: active flag + adjustable params (C4D-style). */
   readonly bevelActive: boolean;
   readonly bevelParams: BevelToolParams;

@@ -1,11 +1,12 @@
-import { useAtom, useAtomValue } from "jotai";
+import { useAtom, useAtomValue, useSetAtom } from "jotai";
+import { useEffect } from "react";
 import type { EditMode } from "@/types/core";
 import { ConvertToMeshCommand } from "@/geometry/commands/convert";
 import type { CommandRegistry } from "@/ui/commands/CommandRegistry";
 import { useDocument } from "@/ui/hooks/doc/document";
 import { useSelectionInfo } from "@/ui/hooks/doc/selection";
 import { snapEnabledAtom } from "@/ui/hooks/editor/settings";
-import { penActiveAtom, weldArmedAtom } from "@/ui/hooks/editor/viewport";
+import { penActiveAtom, projectionEditTargetAtom, weldArmedAtom } from "@/ui/hooks/editor/viewport";
 import {
   IconBevel,
   IconCube,
@@ -30,8 +31,9 @@ const MODES: { mode: EditMode; icon: React.ReactNode; title: string; enabled: bo
   { mode: "point", icon: <IconPoint />, title: "Point mode", enabled: true },
   { mode: "edge", icon: <IconEdge />, title: "Edge mode", enabled: true },
   { mode: "polygon", icon: <IconPolygon />, title: "Polygon mode", enabled: true },
-  // needs E4's projection gizmo, which moved to M5 alongside the UV editor
-  { mode: "texture", icon: <IconTexture />, title: "Texture mode (M5)", enabled: false },
+  // enabled only while a map's projection is being edited (see MapSlot's
+  // "Enable Editor" button); the enablement is overridden per-render below.
+  { mode: "texture", icon: <IconTexture />, title: "Texture mode", enabled: false },
 ];
 
 const QUICK_CREATE: { cmd: string; icon: React.ReactNode; title: string }[] = [
@@ -65,7 +67,14 @@ export function ToolRail({ registry }: { registry: CommandRegistry }) {
   const { editMode } = useSelectionInfo();
   const weldArmed = useAtomValue(weldArmedAtom);
   const penActive = useAtomValue(penActiveAtom);
+  const projectionTarget = useAtomValue(projectionEditTargetAtom);
+  const setProjectionTarget = useSetAtom(projectionEditTargetAtom);
   const [snapEnabled, setSnapEnabled] = useAtom(snapEnabledAtom);
+
+  // Leaving Texture mode (any other tool) ends projection editing.
+  useEffect(() => {
+    if (editMode !== "texture" && projectionTarget) setProjectionTarget(null);
+  }, [editMode, projectionTarget, setProjectionTarget]);
   /** Armed state per toggle-style rail tool. */
   const toggleActive: Record<string, boolean> = {
     "mesh.weldTool": weldArmed,
@@ -86,18 +95,22 @@ export function ToolRail({ registry }: { registry: CommandRegistry }) {
 
   return (
     <ul className="menu menu-xs w-13 flex-none gap-0.5 border-r border-base-100 bg-base-300 p-1">
-      {MODES.map((m) => (
-        <li key={m.mode} className={m.enabled ? "" : "menu-disabled"}>
-          <button
-            type="button"
-            className={`btn btn-square border border-base-100 tooltip tooltip-right p-0 ${m.enabled ? "" : "btn-disabled"} ${editMode === m.mode ? "menu-active text-primary" : ""}`}
-            data-tip={m.title}
-            onClick={() => m.enabled && enterMode(m.mode)}
-          >
-            {m.icon}
-          </button>
-        </li>
-      ))}
+      {MODES.map((m) => {
+        // Texture mode is enabled only while a projection edit is armed.
+        const enabled = m.mode === "texture" ? !!projectionTarget : m.enabled;
+        return (
+          <li key={m.mode} className={enabled ? "" : "menu-disabled"}>
+            <button
+              type="button"
+              className={`btn btn-square border border-base-100 tooltip tooltip-right p-0 ${enabled ? "" : "btn-disabled"} ${editMode === m.mode ? "menu-active text-primary" : ""}`}
+              data-tip={m.title}
+              onClick={() => enabled && enterMode(m.mode)}
+            >
+              {m.icon}
+            </button>
+          </li>
+        );
+      })}
       {(MODE_TOOLS[editMode] ?? []).length > 0 ? (
         <>
           <li className="pointer-events-none my-1 h-px bg-base-100 p-0" />

@@ -6,6 +6,7 @@ import type {
   GizmoSpace,
   PaneCamera,
   PaneDisplay,
+  ProjectionEditTarget,
   ViewportLayout,
   ViewportSettingsDTO,
 } from "@/types/editor";
@@ -45,6 +46,8 @@ export const bevelActiveAtom = atom(false);
 export const bevelParamsAtom = atom<BevelToolParams>(defaultBevelParams());
 /** Spline pen tool active (plane pick / drawing). */
 export const penActiveAtom = atom(false);
+/** Texture mode: which material+channel projection the gizmo edits (null = off). */
+export const projectionEditTargetAtom = atom<ProjectionEditTarget | null>(null);
 /** Per-logical-pane display settings (viewport context menu → Display). */
 export const paneDisplaysAtom = atom<PaneDisplay[]>([
   defaultPaneDisplay(0),
@@ -156,6 +159,14 @@ class EditorStateStore implements EditorViewportState {
     return appStore.get(penActiveAtom);
   }
 
+  get projectionEditTarget(): ProjectionEditTarget | null {
+    return appStore.get(projectionEditTargetAtom);
+  }
+
+  setProjectionEditTarget(t: ProjectionEditTarget | null): void {
+    appStore.set(projectionEditTargetAtom, t);
+  }
+
   setPenActive(on: boolean): void {
     appStore.set(penActiveAtom, on);
   }
@@ -230,6 +241,7 @@ class EditorStateStore implements EditorViewportState {
       appStore.sub(weldArmedAtom, cb),
       appStore.sub(bevelActiveAtom, cb),
       appStore.sub(penActiveAtom, cb),
+      appStore.sub(projectionEditTargetAtom, cb),
       appStore.sub(snapEnabledAtom, cb),
       appStore.sub(paneDisplaysAtom, cb),
     ];

@@ -1,3 +1,4 @@
+import { useSetAtom } from "jotai";
 import { useEffect, useRef, useState } from "react";
 import type {
   MaterialDTO,
@@ -19,6 +20,8 @@ import { uuidv7 } from "@/core";
 import { IconClose, IconEye, IconEyeOff, IconProjectionTransform } from "@/icons";
 import { noiseDef } from "@/materials/noises";
 import { textureAssets } from "@/io/storage/textureAssets";
+import { useDocument } from "@/ui/hooks/doc/document";
+import { projectionEditTargetAtom } from "@/ui/hooks/editor/viewport";
 import { NumberDrag } from "@/ui/widgets/NumberDrag";
 import { useLayerPreview } from "./noisePreview";
 import { NoiseEditor } from "./NoiseEditor";
@@ -49,6 +52,8 @@ export function MapSlot({
   const assetId = mat.textures?.[channel];
   const noise = channelLayer(mat.procedural, procChannel);
   const [open, setOpen] = useState(false);
+  const doc = useDocument();
+  const setProjectionTarget = useSetAtom(projectionEditTargetAtom);
 
   const imageUrl = useAssetUrl(assetId);
   const noiseUrl = useLayerPreview(noise);
@@ -99,7 +104,13 @@ export function MapSlot({
     setMat({ textures, textureProjections }, true);
   };
 
-  const toggleTransformMode = () => {};
+  // Enter the viewport projection-transform editor for THIS map: arm the target
+  // (which enables the ToolRail's Texture mode) and switch to it. The user exits
+  // by picking another tool (see ToolRail — leaving texture mode clears this).
+  const toggleTransformMode = () => {
+    setProjectionTarget({ materialId: mat.id, textureChannel: channel });
+    doc.selection.setEditMode("texture");
+  };
 
   const setImageProjection = (projection: Projection) => {
     const textureProjections = { ...mat.textureProjections };
