@@ -4,8 +4,8 @@ import {
   acos,
   atan,
   length,
-  normalLocal,
-  positionLocal,
+  normalGeometry,
+  positionGeometry,
   pow,
   screenUV,
   uv,
@@ -73,9 +73,15 @@ function rotateEuler(p: Vec3, rot: Vec3): Vec3 {
   return vec3(x3, y3, z2);
 }
 
-/** Surface position moved into the projector's frame (offset + rotation, no scale). */
+/** Surface position moved into the projector's frame (offset + rotation, no scale).
+ * Uses `positionGeometry` (the raw pre-transform vertex), NOT `positionLocal`:
+ * on an InstancedMesh (a cloner) `positionLocal` is post-instance, so every
+ * clone would sample a different slice of one texture stretched across the whole
+ * cloner. `positionGeometry` is each instance's own base frame, so the texture
+ * is identical per clone and glued to it — surviving effector rotation/scale.
+ * For a non-instanced mesh the two are equal, so nothing else changes. */
 function oriented(t: TransformNodes): Vec3 {
-  return rotateEuler(positionLocal.sub(t.offset), t.rotation);
+  return rotateEuler(positionGeometry.sub(t.offset), t.rotation);
 }
 
 /**
@@ -87,9 +93,11 @@ function scaled2d(u: Float, v: Float, t: TransformNodes): Vec3 {
   return vec3(u.div(t.scale.x), v.div(t.scale.y), 0);
 }
 
-/** Normal in the projector's frame — the triplanar blend axis. */
+/** Normal in the projector's frame — the triplanar blend axis. Pre-instance
+ * (`normalGeometry`) for the same reason as {@link oriented}: the blend must run
+ * in each clone's base frame so its triplanar mapping rotates with it. */
 function orientedNormal(t: TransformNodes): Vec3 {
-  return rotateEuler(normalLocal, t.rotation);
+  return rotateEuler(normalGeometry, t.rotation);
 }
 
 /**

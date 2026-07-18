@@ -5,7 +5,7 @@
  */
 import { normalLocal as _normalLocal } from "three/tsl";
 
-export { normalLocal, positionLocal, uniform } from "three/tsl";
+export { normalGeometry, normalLocal, positionGeometry, positionLocal, uniform } from "three/tsl";
 
 /**
  * TSL node value types. @types/three does NOT export the general method-chaining
