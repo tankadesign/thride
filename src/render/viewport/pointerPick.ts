@@ -30,17 +30,16 @@ export function tryInteractivePress(vs: ViewportSystem, e: PointerEvent, pane: n
     vs.invalidate();
     return true;
   }
-  // point mode on a spline node: anchors + tangent handles
+  // point mode on a spline node: anchors + tangent handles. Only CONSUME the
+  // press when a point/handle was actually grabbed — an empty-space press must
+  // fall through so a drag can orbit the camera (the deferred-press path). The
+  // empty click itself (no drag) clears the selection in performSelectionClick.
   if (vs.splineEdit.context()) {
-    if (!vs.splineEdit.pointerDown(e)) {
-      // empty click clears this spline's point selection
-      const active = vs.doc.selection.active;
-      if (active && !e.shiftKey && !e.metaKey && !e.ctrlKey) {
-        vs.doc.selection.clearComponents(active, "point");
-      }
+    if (vs.splineEdit.pointerDown(e)) {
+      vs.invalidate();
+      return true;
     }
-    vs.invalidate();
-    return true;
+    return false;
   }
   const rig = vs.setRayFromEvent(e, pane);
   // primitive adjustment handles take priority over the gizmo
@@ -75,6 +74,16 @@ export function performSelectionClick(vs: ViewportSystem, e: PointerEvent, pane:
   vs.setRayFromEvent(e, pane);
   const mode = vs.doc.selection.editMode;
   if (mode === "point" || mode === "edge" || mode === "polygon") {
+    // spline point mode: the active node is a spline (componentClick only picks
+    // kernel meshes). A hit selected the anchor on press; a miss reaching here
+    // is an empty click — clear this spline's point selection (unless additive).
+    const active = vs.doc.selection.active;
+    if (mode === "point" && active && vs.doc.scene.get(active)?.kind === "spline") {
+      if (!e.shiftKey && !e.metaKey && !e.ctrlKey)
+        vs.doc.selection.clearComponents(active, "point");
+      vs.invalidate();
+      return;
+    }
     componentClick(vs, e, pane, mode);
     vs.invalidate();
     return;

@@ -275,17 +275,14 @@ export class SplineEditTool {
     const node = this.vs.doc.scene.mustGet(ctx.nodeId);
     const label = drag.kind === "anchor" ? "Move Points" : "Adjust Tangent";
     // editing points detaches a parametric spline into a free one (the preview
-    // kept the recipe, so materialize the drop here); undo restores the recipe
+    // kept the recipe, so materialize the drop here); undo restores the recipe.
+    // Capture `before` (which still holds splinePrimitive) BEFORE the setNodeData
+    // below overwrites node.data — else undo can't get back to the primitive.
+    const before = { ...node.data, spline: drag.before };
     const after = detachedData(node.data, ctx.data);
     this.vs.doc.setNodeData(ctx.nodeId, after, true);
     this.vs.doc.history.pushWithoutExecute(
-      new SetNodeDataCommand(
-        ctx.nodeId,
-        after,
-        { ...node.data, spline: drag.before },
-        label,
-        false,
-      ),
+      new SetNodeDataCommand(ctx.nodeId, after, before, label, false),
     );
     return true;
   }
