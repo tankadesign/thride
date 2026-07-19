@@ -36,6 +36,14 @@ export interface ClonerParams {
   upVector: UpVector;
   /** Keep the target surface/curve rendered (default) or hide it like the template. */
   hideTarget: boolean;
+  // ---- instance transform (applied identically to EVERY clone, in the clone's
+  //      local frame, before the step transform) ----
+  /** Position offset applied to every clone along its local axes. */
+  instancePosition: Vec3;
+  /** Rotation applied to every clone (Euler XYZ radians). */
+  instanceRotation: Vec3;
+  /** Per-axis scale applied to every clone (1 = no change). */
+  instanceScale: Vec3;
   // ---- step transform (per-clone, accumulated by clone index, in the clone's
   //      local frame; clone 0 is unchanged) ----
   /** Position offset added per step (clone i moves by i·step along its local axes). */
@@ -61,6 +69,9 @@ export const defaultClonerParams = (): ClonerParams => ({
   orientation: "normal",
   upVector: "y+",
   hideTarget: false,
+  instancePosition: [0, 0, 0],
+  instanceRotation: [0, 0, 0],
+  instanceScale: [1, 1, 1],
   stepPosition: [0, 0, 0],
   stepRotation: [0, 0, 0],
   stepScale: [1, 1, 1],
@@ -91,6 +102,9 @@ export function normClonerParams(p: ClonerParams): ClonerParams {
     orientation: p.orientation ?? d.orientation,
     upVector: p.upVector ?? d.upVector,
     hideTarget: p.hideTarget ?? d.hideTarget,
+    instancePosition: p.instancePosition ?? d.instancePosition,
+    instanceRotation: p.instanceRotation ?? d.instanceRotation,
+    instanceScale: p.instanceScale ?? d.instanceScale,
     stepPosition: p.stepPosition ?? d.stepPosition,
     stepRotation: p.stepRotation ?? d.stepRotation,
     stepScale: p.stepScale ?? d.stepScale,
@@ -149,8 +163,10 @@ function crossV(a: Vec3, b: Vec3): Vec3 {
 // Reused scratch 3×3 matrices (column-major) so the 100k loop never allocates.
 const _rj = new Float64Array(9);
 const _r = new Float64Array(9);
+const _ri = new Float64Array(9); // instance rotation (same for every clone)
 const _step = new Float64Array(9); // per-clone step rotation
-const _rb = new Float64Array(9); // base basis · step rotation
+const _is = new Float64Array(9); // instance · step rotation
+const _rb = new Float64Array(9); // base basis · instance · step rotation
 
 /** Column-major 3×3 rotation from Euler XYZ, written into `m` (matches three). */
 function eulerMat3(m: Float64Array, x: number, y: number, z: number): void {
@@ -227,14 +243,19 @@ function mulberry32(seed: number): () => number {
 
 /**
  * Bake base {@link Instance}s into a flat column-major `Float32Array` (16·N),
- * applying the per-clone **step transform** then the **random effector**.
+ * applying the **instance transform**, then the per-clone **step transform**,
+ * then the **random effector**.
  *
- * Step transform (index-based, clone 0 unchanged): clone `i` is offset by
- * `i·stepPosition` along its own axes, turned by `i·stepRotation`, and scaled by
+ * Instance transform (uniform): EVERY clone is offset/turned/scaled identically
+ * in its own local frame — it comes before the step, so clone `i`'s step offset
+ * lands in the instance-rotated frame. Step transform (index-based): clone `i`
+ * is offset by `i·stepPosition`, turned by `i·stepRotation`, and scaled by
  * `stepScale^i` — a spiral/taper builder. The effector jitter for instance `i`
  * is a pure function of `(seed, i)` (index hashed IN, so adjacent clones aren't
- * correlated and `i` is stable as the count grows) and composes ONTO the stepped
- * frame. Both perturb each clone in its own local frame.
+ * correlated and `i` is stable as the count grows) and composes ONTO the
+ * transformed frame. All three perturb each clone in its own local frame.
+ * Non-uniform instance scale under a step rotation is approximated per-axis in
+ * the clone frame (no shear — TRS matrices can't hold it anyway).
  */
 export function clonerInstanceMatrices(instances: Instance[], params: ClonerParams): Float32Array {
   const p = normClonerParams(params);
@@ -242,23 +263,32 @@ export function clonerInstanceMatrices(instances: Instance[], params: ClonerPara
   const out = new Float32Array(n * 16);
   const [jpx, jpy, jpz] = p.positionJitter;
   const [jrx, jry, jrz] = p.rotationJitter;
+  const [ipx, ipy, ipz] = p.instancePosition;
+  const [irx, iry, irz] = p.instanceRotation;
+  const [isx, isy, isz] = p.instanceScale;
   const [spx, spy, spz] = p.stepPosition;
   const [srx, sry, srz] = p.stepRotation;
   const [ssx, ssy, ssz] = p.stepScale;
+  eulerMat3(_ri, irx, iry, irz); // shared by every clone
   for (let i = 0; i < n; i++) {
     const rng = mulberry32((p.seed ^ Math.imul(i, 0x9e3779b1)) >>> 0);
     const inst = instances[i]!;
     const B = inst.basis;
-    // step rotation onto the base frame (i·step); scratch _rb = B · stepRot
+    // rotation = B · instanceRot · stepRot(i)  (instance innermost ⇒ first)
     eulerMat3(_step, i * srx, i * sry, i * srz);
-    mat3mul(_rb, B, _step);
-    // step position offset (i·step) in the base local frame: B · offset
+    mat3mul(_is, _ri, _step);
+    mat3mul(_rb, B, _is);
+    // local offset = instancePosition + instanceRot · (i·stepPosition) — the
+    // step offset lands in the instance-rotated frame; then into world via B
     const ox = i * spx;
     const oy = i * spy;
     const oz = i * spz;
-    const sox = B[0]! * ox + B[3]! * oy + B[6]! * oz;
-    const soy = B[1]! * ox + B[4]! * oy + B[7]! * oz;
-    const soz = B[2]! * ox + B[5]! * oy + B[8]! * oz;
+    const lx = ipx + _ri[0]! * ox + _ri[3]! * oy + _ri[6]! * oz;
+    const ly = ipy + _ri[1]! * ox + _ri[4]! * oy + _ri[7]! * oz;
+    const lz = ipz + _ri[2]! * ox + _ri[5]! * oy + _ri[8]! * oz;
+    const sox = B[0]! * lx + B[3]! * ly + B[6]! * lz;
+    const soy = B[1]! * lx + B[4]! * ly + B[7]! * lz;
+    const soz = B[2]! * lx + B[5]! * ly + B[8]! * lz;
     // random effector: position + rotation jitter, then a uniform scale jitter
     const px = inst.position[0] + sox + (rng() * TWO - 1) * jpx;
     const py = inst.position[1] + soy + (rng() * TWO - 1) * jpy;
@@ -266,7 +296,7 @@ export function clonerInstanceMatrices(instances: Instance[], params: ClonerPara
     eulerMat3(_rj, (rng() * TWO - 1) * jrx, (rng() * TWO - 1) * jry, (rng() * TWO - 1) * jrz);
     mat3mul(_r, _rb, _rj);
     const js = 1 + (rng() * TWO - 1) * p.scaleJitter;
-    // per-axis scale = step^i · uniform jitter (Math.pow(_, 0) = 1 → clone 0 unscaled)
+    // per-axis scale = instance · step^i · uniform jitter (step^0 = 1)
     composeInto(
       out,
       i * 16,
@@ -274,9 +304,9 @@ export function clonerInstanceMatrices(instances: Instance[], params: ClonerPara
       py,
       pz,
       _r,
-      Math.pow(ssx, i) * js,
-      Math.pow(ssy, i) * js,
-      Math.pow(ssz, i) * js,
+      isx * Math.pow(ssx, i) * js,
+      isy * Math.pow(ssy, i) * js,
+      isz * Math.pow(ssz, i) * js,
     );
   }
   return out;

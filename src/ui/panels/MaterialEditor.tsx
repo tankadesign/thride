@@ -120,7 +120,7 @@ export function MaterialEditor({
         <CollapsingSection title="Base" defaultOpen>
           <Row label="Type">
             <select
-              className="select select-md w-full"
+              className="select select-sm w-full"
               value={mat.type}
               onChange={(e) => setMat({ type: e.target.value as MaterialType }, true)}
             >

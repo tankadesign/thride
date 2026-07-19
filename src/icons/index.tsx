@@ -1,6 +1,7 @@
 import { iconSizeAtom } from "@/ui/hooks/editor/settings";
 import {
   ArrowDown01Icon,
+  ArrowReloadHorizontalIcon,
   ArrowRight01Icon,
   Axis3DIcon,
   BulbIcon,
@@ -147,6 +148,8 @@ export const IconEye = makeIcon(EyeIcon);
 export const IconEyeOff = makeIcon(EyeClosedIcon);
 export const IconMagnet = makeIcon(Magnet02Icon);
 export const IconPivotPoint = makeIcon(CenterFocusIcon);
+/** Reset a transform/effector group to its defaults (inspector section legend). */
+export const IconReset = makeIcon(ArrowReloadHorizontalIcon);
 export const IconSearch = makeIcon(Search01Icon);
 export const IconSettings = makeIcon(Settings01Icon);
 export const IconProjectionTransform = makeIcon(ThreeDMoveIcon);

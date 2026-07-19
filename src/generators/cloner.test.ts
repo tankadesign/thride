@@ -158,4 +158,85 @@ describe("step transform", () => {
       expect(posOf(m, i)).toEqual([0, 0, 0]);
     }
   });
+
+  it("with an instance transform set, clone 0 is no longer the untouched base", () => {
+    const m = clonerInstanceMatrices(three(), {
+      ...defaultClonerParams(),
+      instancePosition: [1, 2, 3],
+      stepPosition: [2, 0, 0],
+    });
+    // clone 0 wears the instance offset; the step still accumulates on top
+    expect(posOf(m, 0)).toEqual([1, 2, 3]);
+    expect(posOf(m, 1)).toEqual([3, 2, 3]);
+    expect(posOf(m, 2)).toEqual([5, 2, 3]);
+  });
+});
+
+describe("instance transform", () => {
+  const three = () => [at([0, 0, 0]), at([0, 0, 0]), at([0, 0, 0])];
+  const scaleOf = (m: Float32Array, i: number, col: 0 | 1 | 2) =>
+    Math.hypot(m[i * 16 + col * 4]!, m[i * 16 + col * 4 + 1]!, m[i * 16 + col * 4 + 2]!);
+
+  it("position/scale apply identically to every clone", () => {
+    const m = clonerInstanceMatrices(three(), {
+      ...defaultClonerParams(),
+      instancePosition: [1, 2, 3],
+      instanceScale: [2, 3, 4],
+    });
+    for (let i = 0; i < 3; i++) {
+      expect(posOf(m, i)).toEqual([1, 2, 3]);
+      expect(scaleOf(m, i, 0)).toBeCloseTo(2, 5);
+      expect(scaleOf(m, i, 1)).toBeCloseTo(3, 5);
+      expect(scaleOf(m, i, 2)).toBeCloseTo(4, 5);
+    }
+  });
+
+  it("rotation applies identically to every clone", () => {
+    const m = clonerInstanceMatrices(three(), {
+      ...defaultClonerParams(),
+      instanceRotation: [0, Math.PI / 2, 0],
+    });
+    for (let i = 0; i < 3; i++) {
+      // identity basis rotated 90° about Y: local +X lands on −Z
+      const col0 = [m[i * 16]!, m[i * 16 + 1]!, m[i * 16 + 2]!];
+      expect(col0[0]).toBeCloseTo(0, 6);
+      expect(col0[1]).toBeCloseTo(0, 6);
+      expect(col0[2]).toBeCloseTo(-1, 6);
+    }
+  });
+
+  it("applies BEFORE the step: the step offset lands in the instance-rotated frame", () => {
+    // 90° about Y turns the step's +X into −Z — clone i offsets by i·[0,0,−1],
+    // which discriminates instance-first from step-first composition
+    const m = clonerInstanceMatrices(three(), {
+      ...defaultClonerParams(),
+      instanceRotation: [0, Math.PI / 2, 0],
+      stepPosition: [1, 0, 0],
+    });
+    for (let i = 0; i < 3; i++) {
+      const p = posOf(m, i);
+      expect(p[0]).toBeCloseTo(0, 5);
+      expect(p[1]).toBeCloseTo(0, 5);
+      expect(p[2]).toBeCloseTo(-i, 5);
+    }
+  });
+
+  it("composes with step scale multiplicatively (instance · step^i)", () => {
+    const m = clonerInstanceMatrices(three(), {
+      ...defaultClonerParams(),
+      instanceScale: [3, 3, 3],
+      stepScale: [2, 2, 2],
+    });
+    expect(scaleOf(m, 0, 0)).toBeCloseTo(3, 5);
+    expect(scaleOf(m, 1, 0)).toBeCloseTo(6, 5);
+    expect(scaleOf(m, 2, 0)).toBeCloseTo(12, 4);
+  });
+
+  it("normClonerParams fills instance-transform fields on pre-feature docs", () => {
+    const legacy = { distribution: "points", count: 5 } as unknown as ClonerParams;
+    const p = normClonerParams(legacy);
+    expect(p.instancePosition).toEqual([0, 0, 0]);
+    expect(p.instanceRotation).toEqual([0, 0, 0]);
+    expect(p.instanceScale).toEqual([1, 1, 1]);
+  });
 });

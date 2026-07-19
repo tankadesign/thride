@@ -192,7 +192,7 @@ export function MapSlot({
             </button>
             <button
               type="button"
-              className="btn btn-ghost btn-md px-1 hover:text-primary hover:opacity-100"
+              className="btn btn-ghost btn-sm px-1 hover:text-primary hover:opacity-100"
               onClick={toggleChannel}
               title={channelDisabled ? "Show map" : "Hide map"}
             >
@@ -200,7 +200,7 @@ export function MapSlot({
             </button>
             <button
               type="button"
-              className="btn btn-ghost btn-md px-1 hover:text-primary hover:opacity-100"
+              className="btn btn-ghost btn-sm px-1 hover:text-primary hover:opacity-100"
               onClick={removeNoise}
               title="Remove noise"
             >
@@ -249,7 +249,7 @@ export function MapSlot({
             </button>
             <button
               type="button"
-              className="btn btn-ghost btn-md px-1 hover:text-primary hover:opacity-100"
+              className="btn btn-ghost btn-sm px-1 hover:text-primary hover:opacity-100"
               onClick={toggleChannel}
               title={channelDisabled ? "Show map" : "Hide map"}
             >
@@ -257,7 +257,7 @@ export function MapSlot({
             </button>
             <button
               type="button"
-              className="btn btn-ghost btn-md px-1 hover:text-primary hover:opacity-100"
+              className="btn btn-ghost btn-sm px-1 hover:text-primary hover:opacity-100"
               onClick={clearImage}
               title="Clear"
             >
@@ -270,7 +270,7 @@ export function MapSlot({
           <div className="flex flex-col gap-1.5 border-l border-primary pl-2">
             <Row label="Projection">
               <select
-                className="select select-md w-full"
+                className="select select-sm w-full"
                 value={projection}
                 onChange={(e) => setImageProjection(e.target.value as Projection)}
               >

@@ -48,7 +48,11 @@ const RETIRE_MS = 500;
 
 const asMaterial = (m: Material | Material[]): Material => (Array.isArray(m) ? m[0]! : m);
 
-const makeInstanced = (geom: BufferGeometry, material: Material, capacity: number): InstancedMesh => {
+const makeInstanced = (
+  geom: BufferGeometry,
+  material: Material,
+  capacity: number,
+): InstancedMesh => {
   const inst = new InstancedMesh(geom, material, capacity);
   inst.frustumCulled = false;
   inst.castShadow = true;
@@ -128,6 +132,10 @@ export class ClonerSync {
     inst.instanceMatrix.array.set(result.matrices);
     inst.instanceMatrix.needsUpdate = true;
     inst.count = count;
+    // three's InstancedMesh.raycast broad-phases against a cached boundingSphere
+    // it never recomputes on matrix changes — clear it so the next pick rebuilds
+    // it from the fresh matrices (else spread-out clones become unpickable)
+    inst.boundingSphere = null;
     rec.inst = inst;
     return inst;
   }
