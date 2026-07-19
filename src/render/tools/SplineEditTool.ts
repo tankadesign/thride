@@ -10,6 +10,21 @@ import type { ViewportSystem } from "@/render/viewport/ViewportSystem";
 const ANCHOR_PX = 10;
 const HANDLE_PX = 8;
 
+/**
+ * Node data for a spline whose points were just edited: the new `spline`, and
+ * the parametric `splinePrimitive` recipe DROPPED — editing the points detaches
+ * a Line/Circle/… into a free spline (its object-manager glyph reverts to the
+ * generic spline icon, and the attributes stop offering the shape params).
+ */
+export function detachedData(
+  data: Record<string, unknown> | undefined,
+  spline: SplineData,
+): Record<string, unknown> {
+  const next: Record<string, unknown> = { ...(data ?? {}), spline };
+  delete next.splinePrimitive;
+  return next;
+}
+
 export interface SplineContext {
   nodeId: Uuid;
   data: SplineData;
@@ -259,10 +274,14 @@ export class SplineEditTool {
     if (!drag.moved) return true; // pure click — selection already handled
     const node = this.vs.doc.scene.mustGet(ctx.nodeId);
     const label = drag.kind === "anchor" ? "Move Points" : "Adjust Tangent";
+    // editing points detaches a parametric spline into a free one (the preview
+    // kept the recipe, so materialize the drop here); undo restores the recipe
+    const after = detachedData(node.data, ctx.data);
+    this.vs.doc.setNodeData(ctx.nodeId, after, true);
     this.vs.doc.history.pushWithoutExecute(
       new SetNodeDataCommand(
         ctx.nodeId,
-        { ...node.data, spline: ctx.data },
+        after,
         { ...node.data, spline: drag.before },
         label,
         false,
@@ -287,12 +306,12 @@ export class SplineEditTool {
     if (!ctx) return;
     const sel = this.selectedIndices(ctx);
     if (sel.length === 0) return;
-    const after = op(ctx.data, sel);
+    const result = op(ctx.data, sel);
     const node = this.vs.doc.scene.mustGet(ctx.nodeId);
     this.vs.doc.history.run(
       new SetNodeDataCommand(
         ctx.nodeId,
-        { ...node.data, spline: after },
+        detachedData(node.data, result),
         { ...node.data, spline: ctx.data },
         label,
         false,

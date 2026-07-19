@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { Uuid } from "@/types/core";
 import type { LightDataDTO, LightType } from "@/types/core/light";
 import type { PrimitiveDescriptor, PrimitiveType } from "@/types/geometry/primitives";
+import type { SplinePrimitive, SplinePrimitiveType } from "@/types/geometry/spline";
 import type { SceneNode } from "@/core";
 import {
   RenameNodeCommand,
@@ -18,6 +19,7 @@ import {
   IconBoolean,
   IconCamera,
   IconCapsule,
+  IconCircle,
   IconCloner,
   IconCollapse,
   IconCone,
@@ -30,10 +32,13 @@ import {
   IconEye,
   IconEyeOff,
   IconGenerator,
+  IconHelix,
   IconHemisphereLight,
   IconIcosphere,
   IconLight,
+  IconLine,
   IconMesh,
+  IconNSide,
   IconNull,
   IconPlane,
   IconPointLight,
@@ -41,6 +46,7 @@ import {
   IconSphere,
   IconSpline,
   IconSpotlight,
+  IconStar,
   IconSweep,
   IconTorus,
 } from "@/icons";
@@ -76,6 +82,17 @@ const GENERATOR_KIND_ICON: Record<string, React.ReactNode> = {
   sweep: <IconSweep size={14} className="opacity-60" />,
   boolean: <IconBoolean size={14} className="opacity-60" />,
   cloner: <IconCloner size={14} className="opacity-60" />,
+};
+
+/** Per-spline-primitive tree glyphs, matching the Create → Splines submenu.
+ * Accent-tinted like the generic spline glyph, so they still read as splines. */
+const SPLINE_PRIM_CLASS = "opacity-60 text-accent brightness-125";
+const SPLINE_PRIMITIVE_KIND_ICON: Record<SplinePrimitiveType, React.ReactNode> = {
+  line: <IconLine size={14} className={SPLINE_PRIM_CLASS} />,
+  circle: <IconCircle size={14} className={SPLINE_PRIM_CLASS} />,
+  nside: <IconNSide size={14} className={SPLINE_PRIM_CLASS} />,
+  star: <IconStar size={14} className={SPLINE_PRIM_CLASS} />,
+  helix: <IconHelix size={14} className={SPLINE_PRIM_CLASS} />,
 };
 
 /** Per-primitive-type tree glyphs, matching the Create → Primitives submenu. */
@@ -115,6 +132,11 @@ function nodeIcon(node: SceneNode): React.ReactNode {
   // matches the Create menu — otherwise every primitive read as a bare cube.
   const prim = node.data?.primitive as PrimitiveDescriptor | undefined;
   if (prim) return PRIMITIVE_KIND_ICON[prim.type] ?? KIND_ICON.mesh;
+  // A parametric spline primitive keeps its shape glyph (line/circle/…) UNTIL
+  // it's edited into a free spline — editing drops `data.splinePrimitive`, so it
+  // then falls through to the generic spline glyph below.
+  const splinePrim = node.data?.splinePrimitive as SplinePrimitive | undefined;
+  if (splinePrim) return SPLINE_PRIMITIVE_KIND_ICON[splinePrim.type] ?? KIND_ICON.spline;
   if (node.kind === "generator") {
     const type = (node.data?.generator as { type?: string } | undefined)?.type;
     return (type && GENERATOR_KIND_ICON[type]) ?? KIND_ICON.generator;
