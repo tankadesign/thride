@@ -55,7 +55,7 @@ const C4D_KEYS: KeyBindingEntry[] = [
   { command: "edit.group", chord: "mod+g" },
   { command: "edit.ungroup", chord: "shift+mod+g" },
   { command: "edit.convertToMesh", chord: "c" },
-  { command: "edit.selectAll", chord: "a" },
+  { command: "edit.selectAll", chord: "mod+a" },
   { command: "edit.deselect", chord: "mod+d" },
   { command: "spline.pen", chord: "p" },
   { command: "mesh.extrude", chord: "d" },
