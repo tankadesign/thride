@@ -115,3 +115,47 @@ describe("clonerInstanceMatrices", () => {
     expect(posOf(m, 0)).not.toEqual(posOf(m, 1));
   });
 });
+
+describe("step transform", () => {
+  const three = () => [at([0, 0, 0]), at([0, 0, 0]), at([0, 0, 0])];
+  /** The uniform scale of instance i (identity basis → column-0 length). */
+  const scaleOf = (m: Float32Array, i: number) =>
+    Math.hypot(m[i * 16]!, m[i * 16 + 1]!, m[i * 16 + 2]!);
+
+  it("step position offsets clone i by i·step (clone 0 unchanged)", () => {
+    const m = clonerInstanceMatrices(three(), {
+      ...defaultClonerParams(),
+      stepPosition: [2, 0, 0],
+    });
+    expect(posOf(m, 0)).toEqual([0, 0, 0]);
+    expect(posOf(m, 1)).toEqual([2, 0, 0]);
+    expect(posOf(m, 2)).toEqual([4, 0, 0]);
+  });
+
+  it("step scale multiplies clone i by step^i (clone 0 = 1)", () => {
+    const m = clonerInstanceMatrices(three(), { ...defaultClonerParams(), stepScale: [2, 2, 2] });
+    expect(scaleOf(m, 0)).toBeCloseTo(1, 6);
+    expect(scaleOf(m, 1)).toBeCloseTo(2, 6);
+    expect(scaleOf(m, 2)).toBeCloseTo(4, 6);
+  });
+
+  it("step rotation turns clone i by i·step (clone 0 unrotated, clone 1 rotated)", () => {
+    const m = clonerInstanceMatrices(three(), {
+      ...defaultClonerParams(),
+      stepRotation: [0, Math.PI / 2, 0],
+    });
+    // clone 0 keeps the identity basis; clone 1 is rotated 90° about Y
+    expect(Array.from(m.slice(0, 3)).map(nz)).toEqual([1, 0, 0]);
+    const col0 = [nz(m[16]!), nz(m[17]!), nz(m[18]!)];
+    expect(col0[0]).toBeCloseTo(0, 6);
+    expect(Math.abs(col0[2]!)).toBeCloseTo(1, 6); // +X rotated into ±Z
+  });
+
+  it("defaults (no step) leave every clone identical to its base", () => {
+    const m = clonerInstanceMatrices(three(), defaultClonerParams());
+    for (let i = 0; i < 3; i++) {
+      expect(scaleOf(m, i)).toBeCloseTo(1, 6);
+      expect(posOf(m, i)).toEqual([0, 0, 0]);
+    }
+  });
+});

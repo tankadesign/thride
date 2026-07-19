@@ -22,6 +22,8 @@ import {
 import { computeBoundsTree, disposeBoundsTree, acceleratedRaycast } from "three-mesh-bvh";
 import type { PlanarReflectionDTO, Uuid } from "@/types/core";
 import { type LightDataDTO, SHADOW_CAPABLE } from "@/types/core/light";
+import type { SplineData } from "@/types/geometry/spline";
+import { sampleSpline } from "@/geometry/splines/eval";
 import type { Document, SceneNode } from "@/core";
 import type { PrimitiveDescriptor } from "@/types/geometry/primitives";
 import type { HEMesh } from "@/geometry/kernel/HEMesh";
@@ -258,6 +260,29 @@ export class SceneSynchronizer {
     );
   }
 
+  /**
+   * Re-apply the visibility of an Instancer's target (child[0]) — hidden when the
+   * Instancer's `hideTarget` is set (via {@link isConsumed}), else shown. Needed
+   * because toggling `hideTarget` doesn't touch the target node, so its own sync
+   * never re-runs. Recomputes a spline target's drawable state so un-hiding
+   * doesn't leave it stuck hidden.
+   */
+  private refreshClonerTargetVisibility(clonerId: Uuid): void {
+    const targetId = this.doc.scene.childrenOf(clonerId)[0];
+    if (!targetId) return;
+    const child = this.doc.scene.get(targetId);
+    const obj = this.objects.get(targetId);
+    if (!child || !obj) return;
+    const shown = child.visible && !this.isConsumed(targetId);
+    if (obj.userData.spline) {
+      const data = child.data?.spline as SplineData | undefined;
+      const drawable = !!data && sampleSpline(data).length >= 6;
+      obj.visible = shown && drawable;
+    } else {
+      obj.visible = shown;
+    }
+  }
+
   /** The material assigned to an Instancer's template (child[1], the instanced object). */
   private clonerTemplateMaterialId(clonerId: Uuid): Uuid | undefined {
     const templateId = this.doc.scene.childrenOf(clonerId)[1];
@@ -415,6 +440,10 @@ export class SceneSynchronizer {
         // outgrew the buffer returns a fresh InstancedMesh to swap into the graph
         const next = this.cloners.sync(node, obj);
         if (next !== obj) this.swapObject(id, obj, next);
+        // the target's visibility depends on the Instancer's `hideTarget`, but
+        // dirty propagation only runs UPWARD — refresh child[0] here so the
+        // toggle takes effect (and un-hiding restores its drawable state)
+        this.refreshClonerTargetVisibility(id);
       } else if (
         (node.kind === "mesh" || node.kind === "generator") &&
         obj instanceof Mesh &&
@@ -454,6 +483,10 @@ export class SceneSynchronizer {
     newObj.position.copy(oldObj.position);
     newObj.quaternion.copy(oldObj.quaternion);
     newObj.scale.copy(oldObj.scale);
+    // carry the old object's child nodes over — an Instancer that GROWS gets a
+    // fresh InstancedMesh, and its child objects (the visible target, the hidden
+    // template) live under it; leaving them behind orphans them (target vanishes)
+    while (oldObj.children.length > 0) newObj.add(oldObj.children[0]!);
     const parent = oldObj.parent;
     oldObj.removeFromParent();
     (parent ?? this.root).add(newObj);

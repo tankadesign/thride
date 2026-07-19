@@ -842,11 +842,13 @@ function GeneratorParams({ id, gen }: { id: Uuid; gen: GeneratorDescriptor }) {
           : "none";
     const hasTemplate = kids[1] !== undefined;
     // three x/y/z NumberDrags editing one Vec3 param (rotation shown in degrees)
-    const vecRow = (
-      key: "positionJitter" | "rotationJitter",
-      label: string,
-      opts: { deg?: boolean } = {},
-    ) => {
+    type VecKey =
+      | "positionJitter"
+      | "rotationJitter"
+      | "stepPosition"
+      | "stepRotation"
+      | "stepScale";
+    const vecRow = (key: VecKey, label: string, opts: { deg?: boolean } = {}) => {
       const arr = cp[key] ?? [0, 0, 0];
       return (
         <div className="grid grid-cols-[96px_1fr] items-center gap-1" key={key}>
@@ -952,6 +954,12 @@ function GeneratorParams({ id, gen }: { id: Uuid; gen: GeneratorDescriptor }) {
             </label>
           </>
         )}
+        <legend className="fieldset-legend pt-3 pb-1 text-[10px] uppercase opacity-40">
+          Step transform
+        </legend>
+        {vecRow("stepPosition", "Position")}
+        {vecRow("stepRotation", "Rotation", { deg: true })}
+        {vecRow("stepScale", "Scale")}
         <legend className="fieldset-legend pt-3 pb-1 text-[10px] uppercase opacity-40">
           Random effector
         </legend>

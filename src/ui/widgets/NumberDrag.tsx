@@ -195,7 +195,10 @@ export function NumberDrag({
   );
 }
 
-function format(v: number, precision: number): string {
+export function format(v: number, precision: number): string {
   const s = v.toFixed(precision);
-  return s.replace(/\.?0+$/, "") || "0";
+  // strip trailing zeros only in the FRACTIONAL part — never integer digits
+  // (else "400" → "4"); then drop a dangling decimal point ("4.000" → "4").
+  if (!s.includes(".")) return s;
+  return s.replace(/0+$/, "").replace(/\.$/, "");
 }
