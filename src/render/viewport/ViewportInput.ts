@@ -166,6 +166,21 @@ export class ViewportInput {
       return;
     }
 
+    // Option-click on a spline segment inserts a point (point mode). Checked
+    // BEFORE nav so it takes priority over Alt-orbit when over the curve, but
+    // falls through (returns false) elsewhere so Alt-orbit still works.
+    if (
+      e.button === 0 &&
+      e.altKey &&
+      !e.shiftKey &&
+      !e.metaKey &&
+      !e.ctrlKey &&
+      vs.splineEdit.tryInsertPoint(e)
+    ) {
+      e.preventDefault();
+      return;
+    }
+
     if (!binding) return; // unbound press — ignore
 
     // pure drag → start nav now (C4D alt-drag path, unchanged feel)
@@ -284,6 +299,8 @@ export class ViewportInput {
       vs.invalidate();
       return;
     }
+    // spline point mode: Option over a segment shows the "+" insert cursor
+    vs.splineEdit.updateHoverCursor(e, e.altKey);
     // hover feedback: handles win over gizmo (matching pick priority)
     const rect = vs.canvas.getBoundingClientRect();
     const pane = vs.paneAt(e.clientX - rect.left, e.clientY - rect.top);

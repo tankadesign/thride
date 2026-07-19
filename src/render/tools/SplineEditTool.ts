@@ -3,12 +3,22 @@ import type { Uuid } from "@/types/core";
 import { Bitset } from "@/core/selection/Bitset";
 import { SetNodeDataCommand } from "@/core/history/commands/scene";
 import type { SplineData } from "@/types/geometry/spline";
-import { splineStamp } from "@/geometry/splines/eval";
+import { pointOnSpan, spanCount, splineStamp } from "@/geometry/splines/eval";
+import { insertPoint } from "@/geometry/splines/ops";
 import type { ViewportSystem } from "@/render/viewport/ViewportSystem";
 
 /** Screen-space pick tolerances (pane px). Handles win over anchors. */
 const ANCHOR_PX = 10;
 const HANDLE_PX = 8;
+/** How close (pane px) the cursor must be to the curve to Option-insert / show +. */
+const CURVE_PX = 8;
+/** Samples per span for the curve hit-test. */
+const CURVE_SAMPLES = 32;
+/** A "+" cursor (white glyph, black outline) for the insert affordance. */
+const INSERT_CURSOR =
+  `url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24">` +
+  `<path d="M12 4v16M4 12h16" stroke="black" stroke-width="5" fill="none"/>` +
+  `<path d="M12 4v16M4 12h16" stroke="white" stroke-width="2.5" fill="none"/></svg>') 12 12, crosshair`;
 
 /**
  * Node data for a spline whose points were just edited: the new `spline`, and
@@ -42,6 +52,9 @@ interface DragState {
   /** ⌘/Ctrl at drag start breaks the tangent link (Alt belongs to nav). */
   breakLink: boolean;
   moved: boolean;
+  /** Set for an Option-insert drag: the PRE-insert spline, so undo removes the
+   * new point (insert + reposition commit as one step, even without a drag). */
+  insertBefore?: SplineData;
 }
 
 /**
@@ -62,6 +75,8 @@ export class SplineEditTool {
   private readonly vs: ViewportSystem;
   private drag: DragState | null = null;
   private readonly plane = new Plane();
+  /** Whether the canvas currently shows the Option-insert "+" cursor. */
+  private insertCursor = false;
 
   constructor(vs: ViewportSystem) {
     this.vs = vs;
@@ -147,6 +162,55 @@ export class SplineEditTool {
   }
 
   /**
+   * The closest point on the spline CURVE (not its anchors) under the cursor,
+   * as a `{ span, t }`, or null when the cursor isn't within {@link CURVE_PX} of
+   * any span. Linear spans are sampled as straight lines so the returned `t`
+   * feeds {@link insertPoint} back to the same place.
+   */
+  private pickCurve(
+    e: PointerEvent | MouseEvent,
+    ctx: SplineContext,
+  ): { span: number; t: number } | null {
+    const spans = spanCount(ctx.data);
+    if (spans === 0) return null;
+    const obj = this.vs.sync.object(ctx.nodeId);
+    if (!obj) return null;
+    const rect = this.vs.canvas.getBoundingClientRect();
+    const px = e.clientX - rect.left;
+    const py = e.clientY - rect.top;
+    const pane = this.vs.paneRect(this.vs.editor.activePane);
+    const cam = this.vs.rigFor(this.vs.editor.activePane).camera;
+    cam.updateMatrixWorld();
+    obj.updateMatrixWorld();
+    const project = (local: [number, number, number]): { x: number; y: number } | null => {
+      const v = new Vector3(...local).applyMatrix4(obj.matrixWorld);
+      v.applyMatrix4(cam.matrixWorldInverse);
+      if ((cam as { isPerspectiveCamera?: boolean }).isPerspectiveCamera && v.z >= -1e-6)
+        return null;
+      v.applyMatrix4(cam.projectionMatrix);
+      return { x: pane.x + ((v.x + 1) / 2) * pane.w, y: pane.y + ((1 - v.y) / 2) * pane.h };
+    };
+    const pts = ctx.data.points;
+    let best: { span: number; t: number } | null = null;
+    let bestDist = CURVE_PX;
+    for (let sp = 0; sp < spans; sp++) {
+      const a = pts[sp]!;
+      const b = pts[(sp + 1) % pts.length]!;
+      for (let k = 0; k <= CURVE_SAMPLES; k++) {
+        const t = k / CURVE_SAMPLES;
+        const s = project(pointOnSpan(a, b, t));
+        if (!s) continue;
+        const d = Math.hypot(s.x - px, s.y - py);
+        if (d < bestDist) {
+          bestDist = d;
+          best = { span: sp, t };
+        }
+      }
+    }
+    return best;
+  }
+
+  /**
    * Right-click select: if the pointer is over an anchor that isn't already in
    * the selection, replace the selection with it — so the point-mode context
    * menu's tangent ops target the clicked point (like object-mode right-click
@@ -167,6 +231,63 @@ export class SplineEditTool {
       order: [hit.index],
       topologyVersion: splineStamp(ctx.data),
     });
+  }
+
+  /**
+   * Option-click insert: split the spline at the curve point under the cursor
+   * (shape preserved; a linear segment stays linear) and start a drag on the new
+   * anchor, so the same gesture can flow into a reposition. Returns false when
+   * the cursor is over an existing anchor/handle (not a bare segment) or off the
+   * curve — the caller then falls through to normal handling (e.g. Alt-orbit).
+   */
+  tryInsertPoint(e: PointerEvent): boolean {
+    const ctx = this.context();
+    if (!ctx) return false;
+    if (this.pick(e, ctx)) return false; // over an anchor/handle → not a segment insert
+    const at = this.pickCurve(e, ctx);
+    if (!at) return false;
+    const { data: inserted, index } = insertPoint(ctx.data, at.span, at.t);
+    // select + preview the new point, keeping the recipe (detach happens on commit)
+    const bits = new Bitset();
+    bits.add(index);
+    this.vs.doc.selection.setComponents(ctx.nodeId, {
+      mode: "point",
+      bits,
+      order: [index],
+      topologyVersion: splineStamp(inserted),
+    });
+    const node = this.vs.doc.scene.mustGet(ctx.nodeId);
+    this.vs.doc.setNodeData(ctx.nodeId, { ...node.data, spline: inserted }, true);
+    // start an anchor drag on the new point (insert + move commit as one step)
+    const newPos = inserted.points[index]!.position;
+    const plane = this.cameraPlane(e, ctx.nodeId, newPos);
+    const startLocal = plane ? this.rayToLocal(e, ctx.nodeId, plane) : null;
+    this.drag = {
+      kind: "anchor",
+      index,
+      startLocal: startLocal ?? new Vector3(...newPos),
+      plane: plane ?? this.plane.clone(),
+      before: inserted,
+      insertBefore: ctx.data,
+      breakLink: false,
+      moved: false,
+    };
+    this.vs.invalidate();
+    return true;
+  }
+
+  /**
+   * Hover feedback: show the "+" insert cursor when Option is held and the
+   * cursor is over a spline segment (not an existing point) in point mode.
+   * Only flips the canvas cursor on the transition, so it never clobbers other
+   * cursors during normal use.
+   */
+  updateHoverCursor(e: PointerEvent | MouseEvent, alt: boolean): void {
+    const ctx = this.context();
+    const insert = !!ctx && alt && !this.pick(e, ctx) && !!this.pickCurve(e, ctx);
+    if (insert === this.insertCursor) return;
+    this.insertCursor = insert;
+    this.vs.canvas.style.cursor = insert ? INSERT_CURSOR : "";
   }
 
   /**
@@ -294,14 +415,20 @@ export class SplineEditTool {
     this.drag = null;
     const ctx = this.context();
     if (!drag || !ctx) return false;
-    if (!drag.moved) return true; // pure click — selection already handled
+    // an Option-insert commits even without a drag; a plain click does not
+    if (!drag.moved && !drag.insertBefore) return true;
     const node = this.vs.doc.scene.mustGet(ctx.nodeId);
-    const label = drag.kind === "anchor" ? "Move Points" : "Adjust Tangent";
+    const label = drag.insertBefore
+      ? "Add Point"
+      : drag.kind === "anchor"
+        ? "Move Points"
+        : "Adjust Tangent";
     // editing points detaches a parametric spline into a free one (the preview
     // kept the recipe, so materialize the drop here); undo restores the recipe.
     // Capture `before` (which still holds splinePrimitive) BEFORE the setNodeData
     // below overwrites node.data — else undo can't get back to the primitive.
-    const before = { ...node.data, spline: drag.before };
+    // For an insert, `before` is the PRE-insert spline so undo removes the point.
+    const before = { ...node.data, spline: drag.insertBefore ?? drag.before };
     const after = detachedData(node.data, ctx.data);
     this.vs.doc.setNodeData(ctx.nodeId, after, true);
     this.vs.doc.history.pushWithoutExecute(
@@ -316,7 +443,8 @@ export class SplineEditTool {
     const ctx = this.context();
     if (!drag || !ctx) return;
     const node = this.vs.doc.scene.mustGet(ctx.nodeId);
-    this.vs.doc.setNodeData(ctx.nodeId, { ...node.data, spline: drag.before });
+    // a cancelled insert reverts to the pre-insert spline (removes the new point)
+    this.vs.doc.setNodeData(ctx.nodeId, { ...node.data, spline: drag.insertBefore ?? drag.before });
     this.vs.invalidate();
   }
 

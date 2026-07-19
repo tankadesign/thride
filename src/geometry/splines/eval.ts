@@ -40,6 +40,24 @@ function spanLinear(a: SplinePointDTO, b: SplinePointDTO): boolean {
 }
 
 /**
+ * A point on span (a → b) at parameter t. Matches the rendered/insert
+ * parameterization: a straight (linear) span interpolates its endpoints,
+ * a curved span evaluates the cubic — so a t picked here feeds `insertPoint`
+ * back to the same location. Used for curve hit-testing (Option-click insert).
+ */
+export function pointOnSpan(a: SplinePointDTO, b: SplinePointDTO, t: number): Vec3 {
+  if (spanLinear(a, b)) {
+    const p = a.position;
+    const q = b.position;
+    return [p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t, p[2] + (q[2] - p[2]) * t];
+  }
+  const c = spanControls(a, b);
+  const out = [0, 0, 0];
+  evalCubic(c, t, out, 0);
+  return [out[0]!, out[1]!, out[2]!];
+}
+
+/**
  * Sample the whole spline into a flat xyz polyline (local space). Curved
  * spans get `perSpan` segments, straight spans a single segment, so linear
  * points render crisp corners at no cost. Includes the final point; a

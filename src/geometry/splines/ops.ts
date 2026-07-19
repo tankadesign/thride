@@ -138,3 +138,69 @@ export function setClosed(data: SplineData, closed: boolean): SplineData {
   next.closed = closed;
   return next;
 }
+
+const add = (a: Vec3, b: Vec3): Vec3 => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+const lerp = (a: Vec3, b: Vec3, t: number): Vec3 => [
+  a[0] + (b[0] - a[0]) * t,
+  a[1] + (b[1] - a[1]) * t,
+  a[2] + (b[2] - a[2]) * t,
+];
+const isZero = (v: Vec3): boolean => v[0] === 0 && v[1] === 0 && v[2] === 0;
+
+/**
+ * Split span `span` at parameter `t ∈ (0,1)` and insert a new anchor there,
+ * preserving the curve's shape exactly (de Casteljau subdivision): the split
+ * point's handles come out collinear (a `smooth` point) and the two neighbouring
+ * anchors' facing handles are shortened so the two new sub-curves trace the
+ * original. A straight (linear) span yields a `linear` point on the line, with
+ * every handle left at zero. Returns the new data + the inserted point's index
+ * (`span + 1`, i.e. appended for a closed spline's wrap span). Pure — the caller
+ * wraps it in one SetNodeDataCommand.
+ */
+export function insertPoint(
+  data: SplineData,
+  span: number,
+  t: number,
+): { data: SplineData; index: number } {
+  const n = data.points.length;
+  const bIdx = (span + 1) % n;
+  const next = clone(data);
+  const A = next.points[span]!;
+  const B = next.points[bIdx]!;
+  const p0 = A.position;
+  const p3 = B.position;
+  const index = span + 1;
+
+  if (isZero(A.outHandle) && isZero(B.inHandle)) {
+    // straight segment → a linear point on the line; neighbours stay linear
+    const point: SplinePointDTO = {
+      position: lerp(p0, p3, t),
+      inHandle: [0, 0, 0],
+      outHandle: [0, 0, 0],
+      mode: "linear",
+    };
+    next.points.splice(index, 0, point);
+    return { data: next, index };
+  }
+
+  const p1 = add(p0, A.outHandle);
+  const p2 = add(p3, B.inHandle);
+  // de Casteljau at t
+  const q0 = lerp(p0, p1, t);
+  const q1 = lerp(p1, p2, t);
+  const q2 = lerp(p2, p3, t);
+  const r0 = lerp(q0, q1, t);
+  const r1 = lerp(q1, q2, t);
+  const s = lerp(r0, r1, t); // the split point, on the curve
+  // shorten the neighbours' facing handles so their sub-curves still trace it
+  A.outHandle = sub(q0, p0);
+  B.inHandle = sub(q2, p3);
+  const point: SplinePointDTO = {
+    position: s,
+    inHandle: sub(r0, s),
+    outHandle: sub(r1, s),
+    mode: "smooth",
+  };
+  next.points.splice(index, 0, point);
+  return { data: next, index };
+}
