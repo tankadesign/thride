@@ -94,7 +94,7 @@ export class SplineEditTool {
    * Pick anchors + (selected points') handle knobs by screen distance.
    * Handles win: they're smaller targets and sit on top visually.
    */
-  pick(e: PointerEvent, ctx: SplineContext): SplinePick {
+  pick(e: PointerEvent | MouseEvent, ctx: SplineContext): SplinePick {
     const obj = this.vs.sync.object(ctx.nodeId);
     if (!obj) return null;
     const rect = this.vs.canvas.getBoundingClientRect();
@@ -144,6 +144,29 @@ export class SplineEditTool {
       }
     }
     return best;
+  }
+
+  /**
+   * Right-click select: if the pointer is over an anchor that isn't already in
+   * the selection, replace the selection with it — so the point-mode context
+   * menu's tangent ops target the clicked point (like object-mode right-click
+   * selects the clicked node). Right-clicking a selected point or empty space
+   * leaves the current selection alone. No-op when not point-editing a spline.
+   */
+  selectAtPointer(e: PointerEvent | MouseEvent): void {
+    const ctx = this.context();
+    if (!ctx) return;
+    const hit = this.pick(e, ctx);
+    if (hit?.kind !== "anchor") return;
+    if (this.selectedIndices(ctx).includes(hit.index)) return;
+    const bits = new Bitset();
+    bits.add(hit.index);
+    this.vs.doc.selection.setComponents(ctx.nodeId, {
+      mode: "point",
+      bits,
+      order: [hit.index],
+      topologyVersion: splineStamp(ctx.data),
+    });
   }
 
   /**

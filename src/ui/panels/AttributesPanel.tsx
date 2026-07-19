@@ -17,8 +17,9 @@ import {
 } from "@/types/core/light";
 import { normClonerParams } from "@/generators/cloner";
 import type { GeneratorDescriptor } from "@/generators/graph";
-import type { SplinePrimitive } from "@/types/geometry/spline";
+import type { SplineData, SplinePrimitive } from "@/types/geometry/spline";
 import { buildSplinePrimitive } from "@/geometry/splines/primitives";
+import { setClosed } from "@/geometry/splines/ops";
 import { ComponentTransformSession } from "@/geometry/commands/meshEdit";
 import { vertexCentroid, vertexExtents, vertsForSelection } from "@/geometry/kernel/components";
 import { meshRegistry } from "@/geometry/store/meshRegistry";
@@ -110,6 +111,7 @@ function NodeAttributes({ id }: { id: Uuid }) {
   const axes = ["X", "Y", "Z"] as const;
   const prim = node.data?.primitive as PrimitiveDescriptor | undefined;
   const splinePrim = node.data?.splinePrimitive as SplinePrimitive | undefined;
+  const spline = node.data?.spline as SplineData | undefined;
   const meshRef = node.data?.mesh as { id: Uuid } | undefined;
   const light = node.data?.light as LightDataDTO | undefined;
   const generator = node.data?.generator as GeneratorDescriptor | undefined;
@@ -170,6 +172,7 @@ function NodeAttributes({ id }: { id: Uuid }) {
         ))}
       </fieldset>
 
+      {spline ? <SplineSection id={id} data={spline} /> : null}
       {prim ? <PrimitiveParams id={id} prim={prim} /> : null}
       {splinePrim ? <SplinePrimitiveParams id={id} prim={splinePrim} /> : null}
       {generator ? <GeneratorParams id={id} gen={generator} /> : null}
@@ -992,6 +995,43 @@ const SPLINE_PRIM_ROWS: Record<SplinePrimitive["type"], SplinePrimRow[]> = {
     { key: "segments", label: "Seg/Turn", int: true, min: 3, max: 256, step: 0.5 },
   ],
 };
+
+/**
+ * Spline-level attributes shared by every spline (parametric or hand-drawn) —
+ * currently just the open/closed toggle, which used to live in the floating
+ * point-edit panel. Sits right after Transform. Preserves the recipe on
+ * parametric splines (no detach); a later param edit re-derives closedness.
+ */
+function SplineSection({ id, data }: { id: Uuid; data: SplineData }) {
+  const doc = useDocument();
+  const toggleClosed = () => {
+    const node = doc.scene.mustGet(id);
+    const after = setClosed(data, !data.closed);
+    doc.history.run(
+      new SetNodeDataCommand(
+        id,
+        { ...node.data, spline: after },
+        { ...node.data, spline: data },
+        after.closed ? "Close Spline" : "Open Spline",
+        false,
+      ),
+    );
+  };
+  return (
+    <fieldset className="fieldset border-b border-base-200 px-2 pt-1.5 pb-6">
+      <legend className="fieldset-legend py-2 text-[10px] uppercase opacity-60">Spline</legend>
+      <label className="grid grid-cols-[96px_1fr] items-center gap-1">
+        <span className="opacity-60">Closed</span>
+        <input
+          type="checkbox"
+          className="toggle toggle-sm justify-self-start"
+          checked={data.closed}
+          onChange={toggleClosed}
+        />
+      </label>
+    </fieldset>
+  );
+}
 
 /** Live editor for a parametric curve primitive — each change rebuilds the spline points. */
 function SplinePrimitiveParams({ id, prim }: { id: Uuid; prim: SplinePrimitive }) {

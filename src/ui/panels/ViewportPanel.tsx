@@ -15,7 +15,7 @@ import {
   useViewportState,
 } from "@/ui/hooks/editor/viewport";
 import { BevelSettings } from "./BevelSettings";
-import { SplinePointPanel } from "./SplinePointPanel";
+import { buildSplinePointMenu } from "./splinePointMenu";
 import {
   type PaneAxes,
   type ViewportStats,
@@ -137,6 +137,12 @@ export function ViewportPanel({ onSystem }: Props) {
       // component modes keep the old rule — object menu only, nothing on
       // background. Camera & Display live in the View Settings modal.
       const registry = appStore.get(registryAtom);
+      // point mode on a spline: the tangent-op menu (Linear/Curve/Break/…)
+      const splineMenu = doc.selection.editMode === "point" ? buildSplinePointMenu(vs) : null;
+      if (splineMenu) {
+        openContextMenu({ x: clientX, y: clientY, entries: splineMenu });
+        return;
+      }
       const objectMode = doc.selection.editMode === "object";
       const entries: MenuEntry[] = objectMode && registry ? [createMenuEntry(registry)] : [];
       if (nodeId) {
@@ -217,7 +223,6 @@ export function ViewportPanel({ onSystem }: Props) {
     >
       <canvas ref={canvasRef} className="block h-full w-full" />
       {bevelActive && system ? <BevelSettings vs={system} /> : null}
-      {system ? <SplinePointPanel vs={system} /> : null}
       {slots.map((pane, slot) => (
         <div key={pane} className="absolute flex items-center gap-1" style={slotStyle(slot)}>
           <select

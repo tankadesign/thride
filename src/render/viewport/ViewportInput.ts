@@ -378,6 +378,9 @@ export class ViewportInput {
   private requestContextMenu(e: PointerEvent | MouseEvent, pane: number): void {
     const vs = this.vs;
     vs.setRayFromEvent(e, pane);
+    // point mode on a spline: right-clicking an anchor selects it, so the
+    // context menu's tangent ops act on the clicked point
+    vs.splineEdit.selectAtPointer(e);
     // skip hidden objects — a hidden node shouldn't open its context menu
     const nodeId = firstVisibleNode(vs, vs.raycaster.intersectObject(vs.sync.root, true));
     vs.onContextMenuRequest?.({ clientX: e.clientX, clientY: e.clientY, pane, nodeId });
