@@ -54,7 +54,7 @@ const MESH_ICON = <IconMesh size={14} className="opacity-60" />;
 const KIND_ICON: Record<string, React.ReactNode> = {
   null: <IconNull size={14} className="opacity-60" />,
   mesh: <IconCube size={14} className="opacity-60" />,
-  spline: <IconSpline size={14} className="opacity-60" />,
+  spline: <IconSpline size={14} className="opacity-60 text-accent brightness-125" />,
   generator: <IconGenerator size={14} className="opacity-60" />,
   light: <IconLight size={14} className="opacity-60" />,
   camera: <IconCamera size={14} className="opacity-60" />,
@@ -62,12 +62,12 @@ const KIND_ICON: Record<string, React.ReactNode> = {
 
 /** Per-light-type tree glyphs — the Create menu already distinguishes all six. */
 const LIGHT_KIND_ICON: Record<LightType, React.ReactNode> = {
-  spot: <IconSpotlight size={14} className="opacity-60" />,
-  point: <IconPointLight size={14} className="opacity-60" />,
-  directional: <IconDirectionalLight size={14} className="opacity-60" />,
-  ambient: <IconAmbientLight size={14} className="opacity-60" />,
-  hemisphere: <IconHemisphereLight size={14} className="opacity-60" />,
-  area: <IconAreaLight size={14} className="opacity-60" />,
+  spot: <IconSpotlight size={14} className="opacity-80 text-warning" />,
+  point: <IconPointLight size={14} className="opacity-80 text-warning" />,
+  directional: <IconDirectionalLight size={14} className="text-warning" />,
+  ambient: <IconAmbientLight size={14} className="text-warning" />,
+  hemisphere: <IconHemisphereLight size={14} className="text-warning" />,
+  area: <IconAreaLight size={14} className="opacity-80 text-warning" />,
 };
 
 /** Per-generator-type tree glyphs, matching the Create menu (not the gear). */

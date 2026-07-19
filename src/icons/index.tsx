@@ -24,7 +24,7 @@ import {
   LayerMask01Icon,
   Layers02Icon,
   LayerSendBackwardIcon,
-  LineIcon,
+  LinerIcon,
   Magnet02Icon,
   MaterialAndTextureIcon,
   MatrixIcon,
@@ -108,7 +108,7 @@ export const IconSphere = makeIcon(SphereIcon);
 export const IconSpline = makeIcon(ChartSplineIcon);
 export const IconTorus = makeIcon(TorusIcon);
 /** Straight line SPLINE. */
-export const IconLine = makeIcon(LineIcon);
+export const IconLine = makeIcon(LinerIcon);
 /** Circle SPLINE — an outline, vs the filled {@link IconDisc} primitive. */
 export const IconCircle = makeIcon(CircleIcon);
 export const IconNSide = makeIcon(HexagonIcon);
