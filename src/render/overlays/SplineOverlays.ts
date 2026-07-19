@@ -61,7 +61,7 @@ export class SplineOverlays {
     this.handleLines.frustumCulled = false;
     this.localRoot.add(this.handleLines);
 
-    this.anchorsSel = this.makePoints(viewportTheme.primary, 64);
+    this.anchorsSel = this.makePoints(viewportTheme.selectedPointColor, 64);
     this.anchorsUnsel = this.makePoints(viewportTheme.pointColor, 64);
     this.knobs = this.makePoints(viewportTheme.accent, 128);
   }

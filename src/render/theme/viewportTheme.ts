@@ -65,7 +65,9 @@ const customSpecs = {
   /** Wireframe-mode selected edges */
   selectedWireframeColor: semantic.primary,
   /** Component-mode vertex points. */
-  pointColor: new Color(0xd8dce8),
+  pointColor: semantic.info,
+  /** Component-mode selected vertex points. */
+  selectedPointColor: semantic.primary.convertSRGBToLinear(),
   /** Gizmo view-plane center handle. */
   gizmoCenterColor: new Color(0xdddddd),
   /** Gizmo view-plane X axis handle. */

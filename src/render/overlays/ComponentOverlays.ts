@@ -52,7 +52,7 @@ export class ComponentOverlays {
   readonly group = new Group();
   private readonly doc: Document;
   private readonly sync: SceneSynchronizer;
-  private readonly selectedColor = viewportTheme.primary;
+  private readonly selectedColor = viewportTheme.selectedPointColor;
   private readonly warningColor = viewportTheme.warning;
   private readonly infoColor = viewportTheme.info;
   private readonly localRoot = new Group(); // mirrors the mesh node's matrixWorld
