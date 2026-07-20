@@ -83,7 +83,7 @@ export function ToolRail({ registry }: { registry: CommandRegistry }) {
   const enterMode = (mode: EditMode) => registry.run(`mode.${mode}`);
 
   return (
-    <ul className="menu menu-xs w-13 flex-none gap-0.5 border-r border-base-100 bg-base-300 p-1">
+    <ul className="menu menu-xs flex-none gap-0.5 border-r border-base-100 bg-base-300 p-1">
       {MODES.map((m) => {
         // Texture mode is enabled only while a projection edit is armed.
         const enabled = m.mode === "texture" ? !!projectionTarget : m.enabled;
