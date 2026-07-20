@@ -121,21 +121,27 @@ Owner reported two bugs and asked for two additions; all done + committed.
   168 verts / cylinder 564 verts, subdivisions visible, smoothly lit (welded, correct winding); inspector
   shows Segments W/H/D, Rot. Segments, Height Segments.
 - **Bug — viewport "doesn't clear / frames stack" at high instance count** (`bf1cc8d`, **needs owner
-  verification**): reported at ~1000+ instances (25fps) during value edits AND pure orbit. Reframed via the
-  advisor: orbit never calls the instancer sync/grow/retire path, and a real missing-clear would show at
-  every count — load-dependence ⇒ a **timing race, not a missing clear**. Found it: the scene passes are
-  `await renderer.renderAsync(...)` but the composite was the synchronous `post.render()`, so `renderFrame`
-  returned (and the render-loop `rendering` guard dropped) while that frame's composite GPU work was still
-  draining → the next frame's scene render could begin before it presented → overlap/stacking once the GPU
-  falls behind. Fix: `DitherOutput.renderAsync()` (`post.renderAsync()`) awaited in `renderFrame`, so the
-  whole frame serializes on one chain. **Could not self-reproduce** — this automation browser throttles rAF
-  between inputs and froze at 20k instances; normal render + orbit confirmed no regression, but the actual
-  stacking needs confirming on the reporting hardware at the count that shows it.
+  verification**): reported at ~1000+ instances during value edits AND pure orbit — the grid/scene
+  "draws on itself" (stops clearing).
+  - **First diagnosis was WRONG** (`bf1cc8d`, since reverted in `cb500dd`): I hypothesised a timing race
+    and awaited the composite (`post.renderAsync()`). The owner then pasted the console: repeated
+    `THREE.WebGPURenderer: GPUValidationError: Buffer used in submit while destroyed`. That's a buffer-
+    lifetime bug, not a present-timing race. Lesson: get the console before theorising a render bug.
+  - **Real root cause** (`74234fe`, verified live in the owner's Chrome via a device `uncapturederror`
+    counter): editing an instancer's template geometry — or the async base geometry arriving on load —
+    reassigned `.geometry` on the LIVE InstancedMesh and let `RenderMesh.rebuild` dispose the old geometry
+    synchronously. three's WebGPU backend caches the draw's buffer bindings per object, so it kept
+    submitting the swapped/destroyed buffers → the validation error. An uncaptured validation error aborts
+    that frame's command submit, which drops the pane's **clear** → the viewport stops clearing → frames
+    stack (worst on heavy instancers/slow frames, hence "high count during orbit").
+  - **Fix**, mirroring the grow/retire pattern already in `ClonerSync`: a template-geometry change builds a
+    FRESH InstancedMesh (clean backend binding) and retires the old one instead of reassigning `.geometry`;
+    the base `RenderMesh` is retired on the same deferred timer instead of disposed in place.
+  - **Verified**: template edits, step-transform edits, and orbit now produce **0** validation errors
+    (was ~1/edit + ~2/frame) and the viewport clears cleanly. Reproduced + fixed in the reporting browser.
 
 ## Known issues
 
-- **The high-count stacking fix (`bf1cc8d`) is unverified against the live bug** — see above; confirm on the
-  reporting machine. If it persists, next suspect is per-pass presentation ordering in the SSR/overlay path.
 - Orthographic scene cameras not supported (see Decisions) — deliberate.
 - Camera texture projection still hidden from the UI (deferred; needs a source-camera picker).
 - **DOF, like GTAO/SSR, is single-layout only** (it reconstructs from one camera's depth) — a documented
