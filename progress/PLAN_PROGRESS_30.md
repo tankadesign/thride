@@ -111,8 +111,31 @@ Owner reported two bugs and asked for two additions; all done + committed.
   single-sample) reads a 4-sample depth attachment and the frame throws. Verified in exactly that config
   (DOF on, GTAO off, SSR off): real bokeh, clean on/off, zero console errors; DOF node disposed on rebuild.
 
+## Follow-up round 2 — high-count render race + primitive segments
+
+- **Primitive segments** (`4ca1475`, verified): cube gains `segmentsW/H/D` (a welded, editable segmented
+  box via a position-keyed vertex map; the plain 1/1/1 box keeps the exact 8-vertex fast path). Cylinder
+  gains `heightSegments` (extra profile rings through the shared `lathe`), and its radial `segments` is
+  relabelled **"Rot. Segments"**. All new params optional → old cubes/cylinders load unchanged; UI is
+  data-driven so fields appear from defaults + `paramMeta` with no panel edits. Verified in-browser: cube
+  168 verts / cylinder 564 verts, subdivisions visible, smoothly lit (welded, correct winding); inspector
+  shows Segments W/H/D, Rot. Segments, Height Segments.
+- **Bug — viewport "doesn't clear / frames stack" at high instance count** (`bf1cc8d`, **needs owner
+  verification**): reported at ~1000+ instances (25fps) during value edits AND pure orbit. Reframed via the
+  advisor: orbit never calls the instancer sync/grow/retire path, and a real missing-clear would show at
+  every count — load-dependence ⇒ a **timing race, not a missing clear**. Found it: the scene passes are
+  `await renderer.renderAsync(...)` but the composite was the synchronous `post.render()`, so `renderFrame`
+  returned (and the render-loop `rendering` guard dropped) while that frame's composite GPU work was still
+  draining → the next frame's scene render could begin before it presented → overlap/stacking once the GPU
+  falls behind. Fix: `DitherOutput.renderAsync()` (`post.renderAsync()`) awaited in `renderFrame`, so the
+  whole frame serializes on one chain. **Could not self-reproduce** — this automation browser throttles rAF
+  between inputs and froze at 20k instances; normal render + orbit confirmed no regression, but the actual
+  stacking needs confirming on the reporting hardware at the count that shows it.
+
 ## Known issues
 
+- **The high-count stacking fix (`bf1cc8d`) is unverified against the live bug** — see above; confirm on the
+  reporting machine. If it persists, next suspect is per-pass presentation ordering in the SSR/overlay path.
 - Orthographic scene cameras not supported (see Decisions) — deliberate.
 - Camera texture projection still hidden from the UI (deferred; needs a source-camera picker).
 - **DOF, like GTAO/SSR, is single-layout only** (it reconstructs from one camera's depth) — a documented
