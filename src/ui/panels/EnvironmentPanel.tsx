@@ -1,6 +1,7 @@
 import { useRef } from "react";
 import { uuidv7 } from "@/core";
 import type { EnvironmentDTO } from "@/types/core";
+import { SetEnvironmentCommand } from "@/core/history/commands/settings";
 import { textureAssets } from "@/io/storage/textureAssets";
 import { useDocument, useSliceVersion } from "@/ui/hooks/doc/document";
 import { NumberDrag } from "@/ui/widgets/NumberDrag";
@@ -18,15 +19,35 @@ export function EnvironmentPanel() {
   useSliceVersion("settings"); // re-render on environment:changed
   const env = doc.environment;
   const fileRef = useRef<HTMLInputElement>(null);
-  const setNum = (key: keyof EnvironmentDTO, v: number, committed: boolean) =>
-    doc.setEnvironment({ [key]: v }, !committed);
+  // NumberDrag scrub: previews apply live (no history); the commit records ONE
+  // undo step, capturing the pre-drag environment at the first preview.
+  const scrub = useRef<EnvironmentDTO | null>(null);
+  const setNum = (key: keyof EnvironmentDTO, v: number, committed: boolean) => {
+    scrub.current ??= { ...doc.environment };
+    if (!committed) {
+      doc.setEnvironment({ [key]: v }, true); // preview
+      return;
+    }
+    const before = scrub.current;
+    scrub.current = null;
+    doc.setEnvironment({ [key]: v });
+    doc.history.pushWithoutExecute(new SetEnvironmentCommand({ ...doc.environment }, before));
+  };
+  /** Discrete/immediate env edit as one undo step (mergeable = coalesce a rapid
+   *  run, e.g. dragging the color picker; false = a distinct step per change). */
+  const setEnv = (patch: Partial<EnvironmentDTO>, mergeable = false) => {
+    const before = { ...doc.environment };
+    doc.history.run(
+      new SetEnvironmentCommand({ ...before, ...patch }, before, "Edit Environment", mergeable),
+    );
+  };
 
   const loadHdr = async (file: File | null) => {
     if (!file) return;
     const bytes = new Uint8Array(await file.arrayBuffer());
     const asset = { id: uuidv7(), name: file.name, mime: file.type || "image/vnd.radiance", bytes };
     textureAssets.register(asset);
-    doc.setEnvironment({ source: "hdr", hdrAssetId: asset.id });
+    setEnv({ source: "hdr", hdrAssetId: asset.id });
   };
   const hdrAsset = env.hdrAssetId ? textureAssets.get(env.hdrAssetId) : undefined;
 
@@ -37,9 +58,7 @@ export function EnvironmentPanel() {
           <select
             className="select select-sm w-full"
             value={env.source}
-            onChange={(e) =>
-              doc.setEnvironment({ source: e.target.value as EnvironmentDTO["source"] })
-            }
+            onChange={(e) => setEnv({ source: e.target.value as EnvironmentDTO["source"] })}
           >
             <option value="studio">Default HDR</option>
             <option value="hdr">User HDR / EXR</option>
@@ -96,9 +115,7 @@ export function EnvironmentPanel() {
           <select
             className="select select-sm w-full"
             value={env.background}
-            onChange={(e) =>
-              doc.setEnvironment({ background: e.target.value as EnvironmentDTO["background"] })
-            }
+            onChange={(e) => setEnv({ background: e.target.value as EnvironmentDTO["background"] })}
           >
             <option value="color">Color</option>
             <option value="environment">Environment</option>
@@ -109,7 +126,7 @@ export function EnvironmentPanel() {
           <Field label="Color">
             <ColorPicker
               color={env.backgroundColor}
-              onChange={(e) => doc.setEnvironment({ backgroundColor: e.target.value })}
+              onChange={(e) => setEnv({ backgroundColor: e.target.value }, true)}
             />
           </Field>
         ) : null}
