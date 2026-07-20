@@ -37,6 +37,7 @@ import { meshRegistry } from "@/geometry/store/meshRegistry";
 import type { PrimitiveType } from "@/types/geometry/primitives";
 import { defaultPrimitive, primitiveLabels } from "@/types/geometry/primitives";
 import { defaultLightData, LIGHT_LABELS, type LightType } from "@/types/core/light";
+import { defaultCameraData } from "@/types/core/camera";
 import type { AppCommand } from "@/ui/commands/CommandRegistry";
 import { createProject } from "@/ui/hooks/doc/projects";
 import { openPalette } from "@/ui/hooks/editor/shell";
@@ -860,7 +861,15 @@ export function buildCommands(doc: Document, shell: ShellApi): AppCommand[] {
       icon: <IconCamera size={16} />,
       sep: true,
       run: () => {
-        const cmd = new CreateNodeCommand("camera", uniqueSiblingName(doc, null, "Camera"));
+        const cmd = new CreateNodeCommand(
+          "camera",
+          uniqueSiblingName(doc, null, "Camera"),
+          null,
+          undefined,
+          {
+            camera: defaultCameraData(),
+          },
+        );
         doc.history.run(cmd);
         doc.selection.selectObjects([cmd.nodeId]);
       },

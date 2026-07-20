@@ -29,7 +29,8 @@ import { edgeVerts, uniqueEdges } from "@/geometry/kernel/components";
 import { buildPrimitive } from "@/geometry/primitives";
 import { meshRegistry } from "@/geometry/store/meshRegistry";
 import { RenderMesh } from "@/geometry/sync/RenderMesh";
-import { buildCameraHelper } from "@/render/helpers/CameraHelper";
+import { buildCameraHelper, updateCameraHelper } from "@/render/helpers/CameraHelper";
+import { type CameraDataDTO, defaultCameraData } from "@/types/core/camera";
 import { buildPickProxy } from "@/render/helpers/pickProxy";
 import { HELPER_LAYER } from "@/render/layers";
 import { viewportTheme } from "@/render/theme/viewportTheme";
@@ -340,7 +341,7 @@ export class SceneSynchronizer {
         obj = this.isCloner(node) ? this.cloners.build(node, BASE_MAT) : this.buildMeshObject(node);
       else if (node.kind === "spline") obj = buildSplineObject(node);
       else if (node.kind === "light") obj = this.lights.build(node);
-      else if (node.kind === "camera") obj = this.buildCameraObject();
+      else if (node.kind === "camera") obj = this.buildCameraObject(node);
       else obj = new Group();
     } catch (err) {
       // Corrupt node payload (bad import, format drift, …) — render nothing
@@ -361,9 +362,10 @@ export class SceneSynchronizer {
     if (node.kind === "light") this.lights.onNodeAdded(id, node);
   }
 
-  private buildCameraObject(): Object3D {
+  private buildCameraObject(node: SceneNode): Object3D {
     const group = new Group();
-    const helper = buildCameraHelper();
+    const dto = (node.data?.camera as CameraDataDTO | undefined) ?? defaultCameraData();
+    const helper = buildCameraHelper(dto);
     // helper layer: the camera pyramid must not appear in SSR / planar-mirror
     // reflections; the viewport's overlay render draws it instead
     helper.traverse((o) => o.layers.set(HELPER_LAYER));
@@ -436,6 +438,13 @@ export class SceneSynchronizer {
       }
       if (node.kind === "spline" && obj.userData.spline) {
         syncSplineGeometry(node, obj as Parameters<typeof syncSplineGeometry>[1]);
+      }
+      if (node.kind === "camera") {
+        // a lens edit reshapes the frustum helper in place (transform already
+        // applied above; the pane's look-through picks up fov/near/far itself)
+        const dto = (node.data?.camera as CameraDataDTO | undefined) ?? defaultCameraData();
+        const helper = obj.children.find((c) => c.userData.cameraHelper);
+        if (helper) updateCameraHelper(helper, dto);
       }
     } catch (err) {
       // corrupt payload on a live edit — keep the stale visual, don't let the

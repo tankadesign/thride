@@ -8,6 +8,7 @@ import type {
 } from "@/types/core";
 import type { PrimitiveDescriptor } from "@/types/geometry/primitives";
 import type { LightDataDTO } from "@/types/core/light";
+import { type CameraDataDTO, defaultCameraData } from "@/types/core/camera";
 import type { GeneratorDescriptor } from "@/generators/graph";
 import type { SplineData, SplinePrimitive } from "@/types/geometry/spline";
 import {
@@ -28,6 +29,7 @@ import {
   SplineSection,
 } from "./attributes/geometry";
 import { LightParams, TargetSelector } from "./attributes/light";
+import { CameraParams } from "./attributes/camera";
 import { MaterialSelector, PlanarReflectionSection } from "./attributes/shading";
 
 const MODE_TITLE: Record<ComponentMode, string> = {
@@ -127,10 +129,11 @@ function NodeAttributes({ id }: { id: Uuid }) {
   const spline = node.data?.spline as SplineData | undefined;
   const meshRef = node.data?.mesh as { id: Uuid } | undefined;
   const light = node.data?.light as LightDataDTO | undefined;
+  const camera = node.data?.camera as CameraDataDTO | undefined;
   const generator = node.data?.generator as GeneratorDescriptor | undefined;
 
   return (
-    <div className="h-full overflow-auto bg-base-100 text-xs">
+    <div className="h-full overflow-auto bg-base-100 text-xs py-2">
       <Section title="Object">
         <Field label="Name">
           <input
@@ -205,6 +208,9 @@ function NodeAttributes({ id }: { id: Uuid }) {
         />
       ) : null}
       {light ? <LightParams id={id} light={light} /> : null}
+      {node.kind === "camera" ? (
+        <CameraParams id={id} camera={camera ?? defaultCameraData()} />
+      ) : null}
       {node.kind === "light" || node.kind === "camera" ? <TargetSelector id={id} /> : null}
     </div>
   );

@@ -6,6 +6,7 @@ import {
   DirectionalLight,
   Object3D,
   PCFShadowMap,
+  PerspectiveCamera,
   Raycaster,
   Scene,
   Vector2,
@@ -18,6 +19,7 @@ import { EnvironmentSync } from "@/render/environment/EnvironmentSync";
 import { HELPER_LAYER } from "@/render/layers";
 import type { Document } from "@/core";
 import type { Uuid } from "@/types/core";
+import { type CameraDataDTO, defaultCameraData } from "@/types/core/camera";
 import type { BuiltinCamera, EditorViewportState } from "@/types/editor";
 import { TransformGizmo } from "@/render/gizmo/TransformGizmo";
 import type { ProjectionTarget } from "@/render/gizmo/projectionDrag";
@@ -842,6 +844,18 @@ export class ViewportSystem {
       node.transform.rotation[1],
       node.transform.rotation[2],
     );
+    // apply the node's lens (fov/near/far) — the rig was seeded "persp" with a
+    // placeholder fov; the camera DTO is the source of truth while looking through
+    if (rig.camera instanceof PerspectiveCamera) {
+      const lens = (node.data?.camera as CameraDataDTO | undefined) ?? defaultCameraData();
+      const c = rig.camera;
+      if (c.fov !== lens.fov || c.near !== lens.near || c.far !== lens.far) {
+        c.fov = lens.fov;
+        c.near = lens.near;
+        c.far = lens.far;
+        c.updateProjectionMatrix();
+      }
+    }
     const targetId = node.data?.target as Uuid | undefined;
     if (targetId) {
       const targetObj = this.sync.object(targetId);
