@@ -128,6 +128,14 @@ export interface PaneDisplay {
   vignetteAmount: number;
   /** Where the vignette falloff starts (0 = center, 1 = corners only). */
   vignetteRadius: number;
+  /** Depth of field — camera-lens blur outside the focal plane. Only renders in
+   *  PBR + single layout while looking through a scene camera (focus distance is
+   *  the camera's). */
+  dof: boolean;
+  /** How far (world units) from the focal plane a point goes fully out of focus. */
+  dofFocalLength: number;
+  /** Maximum bokeh blur radius (higher = blurrier out-of-focus areas). */
+  dofBokeh: number;
   grid: boolean;
   /** The two world axis lines (X/Z) through the origin — separate from the grid. */
   mainAxis: boolean;
@@ -176,6 +184,9 @@ export const defaultPaneDisplay = (pane = 0): PaneDisplay => ({
   vignette: false,
   vignetteAmount: 0.4,
   vignetteRadius: 0.5,
+  dof: false,
+  dofFocalLength: 2,
+  dofBokeh: 4,
   grid: true,
   mainAxis: true,
   lines: false,

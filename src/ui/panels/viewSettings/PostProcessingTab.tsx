@@ -295,6 +295,33 @@ export function PostProcessingTab({
         </Row>
       </CollapsingSection>
 
+      <CollapsingSection title="Depth of Field">
+        <Toggle
+          label="Enabled"
+          checked={disp.dof}
+          disabled={!isPbr}
+          onChange={(v) => set({ dof: v })}
+        />
+        <Row label="Focal Range">
+          <NumberDrag
+            value={disp.dofFocalLength}
+            step={0.05}
+            min={0.01}
+            max={50}
+            onChange={(v) => set({ dofFocalLength: v })}
+          />
+        </Row>
+        <Row label="Bokeh">
+          <NumberDrag
+            value={disp.dofBokeh}
+            step={0.1}
+            min={0}
+            max={20}
+            onChange={(v) => set({ dofBokeh: v })}
+          />
+        </Row>
+      </CollapsingSection>
+
       <CollapsingSection title="Chromatic Aberration">
         <Toggle
           label="Enabled"

@@ -59,6 +59,9 @@ export { max, min, step } from "three/tsl";
 export { acos, atan, length, pow, screenUV } from "three/tsl";
 // noise-map normal channel: derivative bump (three's perturbNormalArb inputs)
 export { faceDirection, positionView } from "three/tsl";
+// depth-of-field: raw depth buffer → view-space Z (needs explicit near/far —
+// the global cameraNear/Far resolve to the fullscreen quad camera in a post pass)
+export { perspectiveDepthToViewZ } from "three/tsl";
 // infinite adaptive grid: world position + screen-space derivatives + LOD math
 export { clamp, exp, floor, fwidth, log, positionWorld } from "three/tsl";
 // projected image maps: material property accessors the samples modulate

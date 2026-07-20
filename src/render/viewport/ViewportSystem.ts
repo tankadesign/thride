@@ -13,7 +13,7 @@ import {
   Vector3,
 } from "three";
 import { WebGPURenderer } from "three/webgpu";
-import { DitherOutput, type OutputToneMapping } from "./ditherOutput";
+import { DitherOutput, type DofParams, type OutputToneMapping } from "./ditherOutput";
 import { ssrEnvironmentTexture } from "@/render/environment/defaultHdr";
 import { EnvironmentSync } from "@/render/environment/EnvironmentSync";
 import { HELPER_LAYER } from "@/render/layers";
@@ -609,7 +609,17 @@ export class ViewportSystem {
     // force single-sample. aoWillRun mirrors the aoOn gate used below.
     const aoWillRun =
       activeDisp.ssao && activeDisp.shading !== "wireframe" && this.editor.layout === "single";
-    output.setSceneMSAA(!ssrActive && !aoWillRun);
+    // DOF also samples hdr's depth as a plain 2D texture (perspectiveDepthToViewZ)
+    // — same MSAA constraint as GTAO. Gate mirrors the setDof() gate below so the
+    // pre-render sample flip and the graph agree. (Without this, DOF alone — no
+    // GTAO/SSR to force single-sample — reads a 4-sample depth attachment and the
+    // frame throws; GTAO would mask the bug, so verify DOF with GTAO OFF.)
+    const dofWillRun =
+      activeDisp.dof &&
+      activeDisp.shading === "pbr" &&
+      this.editor.layout === "single" &&
+      this.sceneCameraNode(this.editor.activePane) !== null;
+    output.setSceneMSAA(!ssrActive && !aoWillRun && !dofWillRun);
     if (!ssrActive) {
       renderer.setRenderTarget(output.hdr);
       renderer.setScissorTest(true);
@@ -810,6 +820,11 @@ export class ViewportSystem {
         : null,
       ssrEnv,
     );
+    // Depth of field — set BEFORE post-FX (composeOutput applies DOF first, then
+    // bloom/tonemap/vignette). Same single-pane + PBR gate as GTAO, plus it needs
+    // a scene camera to look through (focus distance is that camera's). Matches
+    // dofWillRun above so the MSAA flip and the graph stay in step.
+    output.setDof(dofWillRun ? this.dofParamsFor(this.editor.activePane, activeCamera) : null);
     // Post-FX last: it wraps whatever graph the setters above just settled on
     // (composeOutput is shared by both modes), and its continuous params are
     // live uniforms, so a steady frame costs a value compare and nothing else.
@@ -888,6 +903,34 @@ export class ViewportSystem {
       if (targetObj) rig.camera.lookAt(targetObj.getWorldPosition(new Vector3()));
     }
     rig.camera.updateMatrixWorld();
+  }
+
+  /**
+   * DOF params for a look-through pane: focus distance is the scene camera's —
+   * the distance to its focus object if one is set (falling back to the manual
+   * `focus` if that object was deleted), else the manual `focus`. near/far come
+   * from the camera lens; the blur controls are the pane's display settings.
+   */
+  private dofParamsFor(pane: number, activeCamera: Camera): DofParams {
+    const disp = this.editor.paneDisplay(pane);
+    const id = this.sceneCameraNode(pane);
+    const lens = {
+      ...defaultCameraData(),
+      ...(id ? (this.doc.scene.get(id)?.data?.camera as Partial<CameraDataDTO>) : undefined),
+    };
+    let focusDistance = lens.focus;
+    if (lens.focusTarget) {
+      const obj = this.sync.object(lens.focusTarget);
+      if (obj)
+        focusDistance = activeCamera.position.distanceTo(obj.getWorldPosition(new Vector3()));
+    }
+    return {
+      focusDistance,
+      focalLength: disp.dofFocalLength,
+      bokehScale: disp.dofBokeh,
+      near: lens.near,
+      far: lens.far,
+    };
   }
 
   private tickStats(): void {

@@ -13,6 +13,7 @@ import {
 } from "three";
 import { PostProcessing, RenderTarget, type WebGPURenderer } from "three/webgpu";
 import { ao } from "three/examples/jsm/tsl/display/GTAONode.js";
+import { dof } from "three/examples/jsm/tsl/display/DepthOfFieldNode.js";
 import { recurrentDenoise } from "three/examples/jsm/tsl/display/RecurrentDenoiseNode.js";
 import { ssr } from "three/examples/jsm/tsl/display/SSRNode.js";
 import { temporalReproject } from "three/examples/jsm/tsl/display/TemporalReprojectNode.js";
@@ -41,6 +42,7 @@ import {
   output,
   packNormalToRGB,
   pass,
+  perspectiveDepthToViewZ,
   renderOutput,
   roughness,
   sample,
@@ -69,6 +71,17 @@ export interface AmbientShadowParams {
   distanceExp: number; // sample-distribution exponent
   scale: number; // AO contrast (ao = pow(ao, scale))
   resolution: number; // AO render resolution scale (0–1, perf)
+}
+
+/** Depth-of-field settings — focus distance comes from the scene camera; the
+ *  rest are display params. near/far are the active scene camera's, needed to
+ *  reconstruct view-space Z from the raw depth buffer. */
+export interface DofParams {
+  focusDistance: number; // world units to the focal plane (from the camera)
+  focalLength: number; // out-of-focus falloff range, world units
+  bokehScale: number; // max blur radius
+  near: number; // scene camera near — for perspectiveDepthToViewZ
+  far: number; // scene camera far
 }
 
 /** Screen-space reflection settings. */
@@ -152,6 +165,21 @@ export class DitherOutput {
   /** C6 post-FX stack (bloom / chromatic aberration / vignette). */
   private fxParams: PostFxParams = defaultPostFxParams();
   private fx: PostFxState | null = null;
+  /** Depth of field. On/off is structural (rebuild); params are live uniforms,
+   *  bound into the graph in composeOutput. The node self-sizes each frame. */
+  private dofParams: DofParams | null = null;
+  // biome-ignore lint/suspicious/noExplicitAny: DepthOfFieldNode type not exported
+  private dofNode: any = null;
+  // biome-ignore lint/suspicious/noExplicitAny: TSL uniform nodes (live params)
+  private dofFocus: any = null;
+  // biome-ignore lint/suspicious/noExplicitAny: TSL uniform node
+  private dofFocal: any = null;
+  // biome-ignore lint/suspicious/noExplicitAny: TSL uniform node
+  private dofBokeh: any = null;
+  // biome-ignore lint/suspicious/noExplicitAny: TSL uniform node
+  private dofNear: any = null;
+  // biome-ignore lint/suspicious/noExplicitAny: TSL uniform node
+  private dofFar: any = null;
   private width = 1;
   private height = 1;
 
@@ -277,6 +305,33 @@ export class DitherOutput {
   }
 
   /**
+   * Enable/disable depth of field. A null `params` turns it off. On/off flips
+   * the graph (rebuild); all params (focus distance, focal length, bokeh, and
+   * the camera near/far that feed viewZ) are live uniforms poked with no rebuild
+   * — mirrors setAmbientShadows. Gating (PBR + single pane + looking through a
+   * scene camera + non-MSAA depth) is the caller's job.
+   */
+  setDof(params: DofParams | null): void {
+    const on = params !== null;
+    const was = this.dofParams !== null;
+    this.dofParams = params;
+    if (on !== was) {
+      this.rebuild();
+      return;
+    }
+    if (on && this.dofFocus) this.applyDofParams(params);
+  }
+
+  private applyDofParams(p: DofParams): void {
+    if (!this.dofFocus) return;
+    this.dofFocus.value = Math.max(0, p.focusDistance);
+    this.dofFocal.value = Math.max(0.001, p.focalLength);
+    this.dofBokeh.value = Math.max(0, p.bokehScale);
+    this.dofNear.value = p.near;
+    this.dofFar.value = p.far;
+  }
+
+  /**
    * Enable/disable Ambient Shadows (GTAO). `camera` is the active pane's; a
    * null camera or params turns AO off. Rebuilds the graph only on real change.
    */
@@ -394,6 +449,8 @@ export class DitherOutput {
     this.denoise = null;
     this.scenePass?.dispose?.();
     this.scenePass = null;
+    this.dofNode?.dispose?.(); // owns ~6 internal RenderTargets — free them
+    this.dofNode = null;
 
     const ssrOn = this.ssrScene !== null && this.ssrCamera !== null && this.ssrParams !== null;
 
@@ -491,7 +548,7 @@ export class DitherOutput {
       const helpers = texture(this.hdr.texture);
       composite = mix(composite.rgb, helpers.rgb, helpers.a);
     }
-    this.composeOutput(composite);
+    this.composeOutput(composite, depthNode);
   }
 
   /**
@@ -510,11 +567,32 @@ export class DitherOutput {
    *   and is meaningless anywhere else in the chain.
    */
   // biome-ignore lint/suspicious/noExplicitAny: TSL node graph — loose by design
-  private composeOutput(color: any): void {
+  private composeOutput(color: any, depth: any): void {
+    // Depth of field first, in linear HDR: the lens blur mixes neighbours, so
+    // it belongs in linear light (bright bokeh), and running it before bloom
+    // lets highlights bloom AFTER they've been spread into bokeh discs. viewZ is
+    // rebuilt from the raw depth with the scene camera's OWN near/far (the
+    // global cameraNear/Far would resolve to the fullscreen quad here).
+    // biome-ignore lint/suspicious/noExplicitAny: TSL node graph — loose by design
+    let base: any = color;
+    if (this.dofParams && depth) {
+      const p = this.dofParams;
+      this.dofFocus = uniform(Math.max(0, p.focusDistance));
+      this.dofFocal = uniform(Math.max(0.001, p.focalLength));
+      this.dofBokeh = uniform(Math.max(0, p.bokehScale));
+      this.dofNear = uniform(p.near);
+      this.dofFar = uniform(p.far);
+      const viewZ = perspectiveDepthToViewZ(depth, this.dofNear, this.dofFar);
+      const dofNode = dof(color, viewZ, this.dofFocus, this.dofFocal, this.dofBokeh);
+      this.dofNode = dofNode;
+      base = dofNode;
+    } else {
+      this.dofFocus = null;
+    }
     // rebuilt with the graph: bloom binds to THIS color node, so it can't
     // outlive the rebuild that produced it
-    this.fx = buildPostFx(this.fxParams, color);
-    const graded = applyHdrEffects(color, this.fx);
+    this.fx = buildPostFx(this.fxParams, base);
+    const graded = applyHdrEffects(base, this.fx);
     const display = renderOutput(graded, THREE_TONE_MAPPING[this.mode]);
     const shaped = applyDisplayEffects(display, this.fx);
     // interleaved-gradient-noise dither, ±1 LSB, added in display space
@@ -685,7 +763,7 @@ export class DitherOutput {
     const helpers = texture(this.hdr.texture);
     const withHelpers = mix(litColor, helpers.rgb, helpers.a);
     // biome-ignore-end lint/suspicious/noExplicitAny: TSL node graph — loose by design
-    this.composeOutput(withHelpers);
+    this.composeOutput(withHelpers, depth);
   }
 
   /** Blit the HDR buffer (or render the SSR pass graph) to the canvas. */
@@ -700,6 +778,7 @@ export class DitherOutput {
     this.tempReproject?.dispose?.();
     this.denoise?.dispose?.();
     this.scenePass?.dispose?.();
+    this.dofNode?.dispose?.();
     this.post.dispose();
   }
 }
