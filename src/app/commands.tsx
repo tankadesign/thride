@@ -119,6 +119,7 @@ export type ShellPanelId =
   | "objects"
   | "attributes"
   | "materials"
+  | "nodeEditor"
   | "environment"
   | "keybindings"
   | "gallery"
@@ -997,6 +998,12 @@ export function buildCommands(doc: Document, shell: ShellApi): AppCommand[] {
       title: "Material Manager",
       menu: "View",
       run: () => shell.openPanel("materials"),
+    },
+    {
+      id: "view.nodeEditor",
+      title: "Node Editor",
+      menu: "View",
+      run: () => shell.openPanel("nodeEditor"),
     },
     {
       id: "view.environment",

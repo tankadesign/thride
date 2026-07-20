@@ -46,13 +46,18 @@ export type {
   CoordSpace,
   GraphConnection,
   GraphNode,
+  GraphNodeDef,
   GraphNodeKind,
+  GraphParamDef,
+  GraphSelectDef,
+  GraphSocketDef,
   GraphSocketType,
   MaterialGraphDTO,
   MathOp,
 } from "./graph";
 export {
   COORD_SPACES,
+  GRAPH_NODE_DEFS,
   MATH_OPS,
   OUTPUT_CHANNELS,
   defaultGraphNode,

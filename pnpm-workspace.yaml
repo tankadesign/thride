@@ -1,4 +1,5 @@
 allowBuilds:
+  rete: set this to true or false
   sharp: false
 catalog:
   vite: npm:@voidzero-dev/vite-plus-core@0.2.4

@@ -17,6 +17,7 @@ import { AttributesPanel } from "@/ui/panels/AttributesPanel";
 import { GalleryPanel } from "@/ui/panels/GalleryPanel";
 import { NoiseGalleryPanel } from "@/ui/panels/NoiseGalleryPanel";
 import { MaterialManagerPanel } from "@/ui/panels/MaterialManagerPanel";
+import { NodeGraphPanel } from "@/ui/nodegraph/NodeGraphPanel";
 import { EnvironmentPanel } from "@/ui/panels/EnvironmentPanel";
 import { KeyBindingsPanel } from "@/ui/panels/keymap/KeyBindingsPanel";
 import { ObjectManagerPanel } from "@/ui/panels/ObjectManagerPanel";
@@ -39,6 +40,7 @@ const MAX_PANEL_WIDTH = 600; // px, for objects/attributes/materials
 const RIGHT_PANEL_TITLES: Record<ShellPanelId, string> = {
   attributes: "Attributes",
   materials: "Materials",
+  nodeEditor: "Node Editor",
   environment: "Environment",
   keybindings: "Keyboard shortcuts",
   gallery: "UI Gallery",
@@ -159,6 +161,7 @@ export function Shell({ doc }: { doc: Document }) {
       // panel api lets the inspector retitle its tab per edit mode
       attributes: (p: IDockviewPanelProps) => <AttributesPanel panelApi={p.api} />,
       materials: (_p: IDockviewPanelProps) => <MaterialManagerPanel />,
+      nodeEditor: (_p: IDockviewPanelProps) => <NodeGraphPanel />,
       environment: (_p: IDockviewPanelProps) => <EnvironmentPanel />,
       keybindings: (_p: IDockviewPanelProps) => <KeyBindingsPanel />,
       gallery: (_p: IDockviewPanelProps) => <GalleryPanel />,

@@ -70,6 +70,153 @@ export type MathOp = (typeof MATH_OPS)[number];
 export const COORD_SPACES = ["object", "world", "uv"] as const;
 export type CoordSpace = (typeof COORD_SPACES)[number];
 
+/** The Output node's input sockets — one per procedural channel, same order. */
+export const OUTPUT_CHANNELS: ProceduralChannel[] = [
+  "color",
+  "roughness",
+  "metalness",
+  "emissive",
+  "normal",
+];
+
+/** One input/output socket on a node kind. */
+export interface GraphSocketDef {
+  key: string;
+  label: string;
+  type: GraphSocketType;
+}
+/** A shape-selecting dropdown (`node.select[key]`) — editing it recompiles. */
+export interface GraphSelectDef {
+  key: string;
+  label: string;
+  options: { value: string; label: string }[];
+}
+/** A numeric param widget (`node.params[key]`) — a live uniform. */
+export interface GraphParamDef {
+  key: string;
+  label: string;
+  min: number;
+  max: number;
+  step: number;
+}
+
+/**
+ * Presentation metadata per node kind — sockets, dropdowns, param/colour widgets.
+ * The authoring UI (node panel, add-node menu, Stage-5 editing) reads this; it's
+ * pure data so it lives with the schema. The `noise` node's numeric params are
+ * intentionally empty here — they're dynamic (per selected noise) and pulled from
+ * the noise registry in the materials layer.
+ */
+export interface GraphNodeDef {
+  kind: GraphNodeKind;
+  label: string;
+  inputs: GraphSocketDef[];
+  /** Output socket type, or null for the sink (`output`). */
+  output: GraphSocketType | null;
+  selects: GraphSelectDef[];
+  params: GraphParamDef[];
+  colors: { key: string; label: string }[];
+  /** Carries a gradient ramp editor (the `ramp` kind). */
+  hasRamp?: boolean;
+}
+
+const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+const vecIn = (key: string, label: string): GraphSocketDef => ({ key, label, type: "vec3" });
+const fltIn = (key: string, label: string): GraphSocketDef => ({ key, label, type: "float" });
+const opts = (values: readonly string[]) => values.map((v) => ({ value: v, label: cap(v) }));
+
+export const GRAPH_NODE_DEFS: Record<GraphNodeKind, GraphNodeDef> = {
+  output: {
+    kind: "output",
+    label: "Output",
+    inputs: OUTPUT_CHANNELS.map((ch) => vecIn(ch, cap(ch))),
+    output: null,
+    selects: [],
+    params: [],
+    colors: [],
+  },
+  coord: {
+    kind: "coord",
+    label: "Coordinate",
+    inputs: [],
+    output: "vec3",
+    selects: [{ key: "space", label: "Space", options: opts(COORD_SPACES) }],
+    params: [],
+    colors: [],
+  },
+  noise: {
+    kind: "noise",
+    label: "Noise",
+    inputs: [vecIn("coord", "Coord")],
+    output: "vec3",
+    // noise ids come from the registry (materials layer); the panel fills labels
+    selects: [{ key: "noise", label: "Type", options: [] }],
+    params: [],
+    colors: [],
+  },
+  float: {
+    kind: "float",
+    label: "Value",
+    inputs: [],
+    output: "float",
+    selects: [],
+    params: [{ key: "value", label: "Value", min: -10, max: 10, step: 0.01 }],
+    colors: [],
+  },
+  color: {
+    kind: "color",
+    label: "Color",
+    inputs: [],
+    output: "vec3",
+    selects: [],
+    params: [],
+    colors: [{ key: "value", label: "Color" }],
+  },
+  math: {
+    kind: "math",
+    label: "Math",
+    inputs: [fltIn("a", "A"), fltIn("b", "B")],
+    output: "float",
+    selects: [{ key: "op", label: "Op", options: opts(MATH_OPS) }],
+    params: [
+      { key: "a", label: "A", min: -10, max: 10, step: 0.01 },
+      { key: "b", label: "B", min: -10, max: 10, step: 0.01 },
+    ],
+    colors: [],
+  },
+  mix: {
+    kind: "mix",
+    label: "Mix",
+    inputs: [vecIn("a", "A"), vecIn("b", "B")],
+    output: "vec3",
+    selects: [{ key: "blend", label: "Blend", options: [] }], // filled from BLEND_MODES
+    params: [{ key: "factor", label: "Factor", min: 0, max: 1, step: 0.01 }],
+    colors: [
+      { key: "a", label: "A" },
+      { key: "b", label: "B" },
+    ],
+  },
+  ramp: {
+    kind: "ramp",
+    label: "Ramp",
+    inputs: [fltIn("t", "Fac")],
+    output: "vec3",
+    selects: [],
+    params: [],
+    colors: [],
+    hasRamp: true,
+  },
+  bump: {
+    kind: "bump",
+    label: "Bump",
+    inputs: [fltIn("height", "Height")],
+    output: "vec3",
+    selects: [],
+    params: [{ key: "strength", label: "Strength", min: 0, max: 5, step: 0.01 }],
+    colors: [],
+  },
+};
+
 /**
  * A graph node. `id` is a stable UUID — uniform paths key on `id/param`, so an
  * array-index identity would break `update()` on reorder/delete.
@@ -111,15 +258,6 @@ export interface MaterialGraphDTO {
   /** Id of the single `output` node. */
   output: Uuid;
 }
-
-/** The Output node's input sockets — one per procedural channel, same order. */
-export const OUTPUT_CHANNELS: ProceduralChannel[] = [
-  "color",
-  "roughness",
-  "metalness",
-  "emissive",
-  "normal",
-];
 
 /** A new, empty graph: just an Output node with nothing wired in. */
 export function defaultMaterialGraph(outputId: Uuid): MaterialGraphDTO {
