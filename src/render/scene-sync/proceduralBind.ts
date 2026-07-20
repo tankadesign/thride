@@ -1,14 +1,19 @@
 import type { Texture } from "three";
 import type { NodeMaterial } from "three/webgpu";
 import type { MaterialDTO, ProceduralChannel, Projection, ProjectionTransform } from "@/types/core";
-import { PROCEDURAL_CHANNELS } from "@/types/core";
+import {
+  graphStructureKey,
+  OUTPUT_CHANNELS,
+  PROCEDURAL_CHANNELS,
+  structureKey,
+} from "@/types/core";
 import {
   compile,
   pokeImageTransform,
   projectedImageNode,
-  type CompiledStacks,
   type ImageTransformUniforms,
 } from "@/materials/procedural";
+import { compileGraph } from "@/materials/graph";
 import type { Float, Vec3 } from "@/materials/tsl";
 
 /**
@@ -67,9 +72,81 @@ export function hasStacks(dto: MaterialDTO): boolean {
   return !!ch && PROCEDURAL_CHANNELS.some(({ channel }) => ch[channel]?.layers.length);
 }
 
-/** Compile `dto`'s stacks, or undefined when it has none. */
-export function compileStacks(dto: MaterialDTO): CompiledStacks | undefined {
-  return hasStacks(dto) ? compile(dto.procedural!) : undefined;
+/** True when `dto`'s node graph actually drives at least one Output channel. */
+export function hasGraph(dto: MaterialDTO): boolean {
+  const g = dto.graph;
+  if (!g) return false;
+  return OUTPUT_CHANNELS.some((ch) =>
+    g.connections.some((c) => c.to.node === g.output && c.to.socket === ch),
+  );
+}
+
+/** True when `dto` has a procedural front-end at all (graph or layer stack). */
+export function hasLook(dto: MaterialDTO): boolean {
+  return hasGraph(dto) || hasStacks(dto);
+}
+
+/**
+ * A front-end-tagged structural fingerprint. The `g:`/`s:` prefix is what makes a
+ * switch between the two authoring models (graph ⇄ stack) register as a
+ * structural change even if the raw keys happened to collide — so the compiled
+ * look is rebuilt, never wrongly reused. Empty when the material has no look.
+ */
+export function lookKey(dto: MaterialDTO | undefined): string {
+  if (!dto) return "";
+  if (hasGraph(dto)) return `g:${graphStructureKey(dto.graph)}`;
+  if (hasStacks(dto)) return `s:${structureKey(dto.procedural)}`;
+  return "";
+}
+
+/**
+ * A compiled procedural look — the front-end-agnostic view the render/bake/
+ * thumbnail layers consume. The node graph (E7) and the layer stack (E3) are
+ * alternative authoring models over one compile target; this normalizes both to
+ * the same `nodes` map + a `applies`/`update`/`dispose` recompile gate keyed on
+ * the whole {@link MaterialDTO}, so callers never branch on which produced it.
+ * The graph wins when present (it's the go-forward model).
+ */
+export interface CompiledLook {
+  /** Channel → composited TSL node (vec3; scalar channels are `.r`'d at bind). */
+  readonly nodes: Partial<Record<ProceduralChannel, Vec3>>;
+  /** Front-end-tagged structural fingerprint (see {@link lookKey}). */
+  readonly key: string;
+  /** True if `dto` is a uniform-only edit away (same front-end + structure). */
+  applies(dto: MaterialDTO): boolean;
+  /** Poke live uniforms / re-bake ramps from `dto`. Caller must have checked `applies`. */
+  update(dto: MaterialDTO): void;
+  dispose(): void;
+}
+
+/** Compile `dto`'s procedural look (graph first, else layer stack), or undefined. */
+export function compileLook(dto: MaterialDTO): CompiledLook | undefined {
+  const key = lookKey(dto);
+  if (hasGraph(dto)) {
+    const g = compileGraph(dto.graph!);
+    return {
+      nodes: g.nodes,
+      key,
+      applies: (d) => lookKey(d) === key,
+      update: (d) => {
+        if (d.graph) g.update(d.graph);
+      },
+      dispose: () => g.dispose(),
+    };
+  }
+  if (hasStacks(dto)) {
+    const s = compile(dto.procedural!);
+    return {
+      nodes: s.nodes,
+      key,
+      applies: (d) => lookKey(d) === key,
+      update: (d) => {
+        if (d.procedural) s.update(d.procedural);
+      },
+      dispose: () => s.dispose(),
+    };
+  }
+  return undefined;
 }
 
 /** The cached-or-fresh projected-image node for a channel (identity-stable). */
@@ -109,7 +186,7 @@ function imageNode(
  */
 export function assignChannelNodes(
   mat: NodeMaterial,
-  compiled: CompiledStacks | undefined,
+  compiled: Pick<CompiledLook, "nodes"> | undefined,
   images: Partial<Record<ProceduralChannel, ImageSpec>>,
   cache: ImageNodeCache,
   keepColor = false,

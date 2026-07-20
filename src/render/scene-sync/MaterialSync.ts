@@ -7,14 +7,15 @@ import type {
   ProceduralChannel,
   Uuid,
 } from "@/types/core";
-import { structureKey, TEXTURE_CHANNELS, TEXTURE_TO_PROCEDURAL } from "@/types/core";
+import { TEXTURE_CHANNELS, TEXTURE_TO_PROCEDURAL } from "@/types/core";
 import type { Document } from "@/core";
 import { applyMaterialParams, buildMaterial } from "@/materials/build";
-import type { CompiledStacks } from "@/materials/procedural";
 import {
   assignChannelNodes,
-  compileStacks,
-  hasStacks,
+  compileLook,
+  hasLook,
+  lookKey,
+  type CompiledLook,
   type ImageNodeCache,
   type ImageSpec,
 } from "./proceduralBind";
@@ -63,7 +64,7 @@ interface PlanarEntry {
   strength: any;
   axis: PlanarReflectionDTO["axis"];
   /** This variant's own compiled stacks (its material is separate from the cache's). */
-  proc?: CompiledStacks;
+  proc?: CompiledLook;
   imgCache: ImageNodeCache;
   /** Color-channel image fingerprint — the mirror mix bakes the base color node. */
   imgColorKey: string;
@@ -73,7 +74,7 @@ interface Entry {
   mat: NodeMaterial;
   type: MaterialType;
   /** Compiled procedural stacks (E3), when the DTO has any. */
-  proc?: CompiledStacks;
+  proc?: CompiledLook;
   /** Identity-stable projected-image nodes (see {@link ImageNodeCache}). */
   imgCache: ImageNodeCache;
 }
@@ -147,7 +148,7 @@ export class MaterialSync {
     // changes neither of those, so without it this variant would go stale. The
     // color-image key does the same for a projected color map — the mirror mix
     // bakes the base color node, so a new image/projection needs a rebuild.
-    const procKey = structureKey(dto?.procedural);
+    const procKey = dto ? lookKey(dto) : "";
     // decode state is part of the key: a projected color image that finishes
     // decoding after this variant built must still trigger the rebuild
     const mapReady = dto?.textures?.map ? !!this.textures.get(dto.textures.map, "srgb") : false;
@@ -167,7 +168,7 @@ export class MaterialSync {
       // a procedural stack (or projected image) drives this material's other
       // channels, and its color output becomes the BASE the mirror composites
       // over — they must compose, since both want `colorNode`
-      const proc = dto ? compileStacks(dto) : undefined;
+      const proc = dto ? compileLook(dto) : undefined;
       const imgCache: ImageNodeCache = new Map();
       if (dto) this.bindChannels(mat, dto, proc, imgCache);
       const base = proc?.nodes.color ?? imgCache.get("color")?.node ?? materialColor;
@@ -231,8 +232,7 @@ export class MaterialSync {
           this.bindChannels(e.mat, dto, e.proc, e.imgCache, true);
           // param-only procedural edits poke this variant's uniforms too; a
           // structural one is left to the key compares in resolvePlanar
-          const proc = dto.procedural;
-          if (e.proc && proc && e.proc.applies(proc)) e.proc.update(proc);
+          if (e.proc && e.proc.applies(dto)) e.proc.update(dto);
         }
       }
     }
@@ -245,16 +245,15 @@ export class MaterialSync {
     }
     applyMaterialParams(entry.mat, dto);
 
-    // Procedural stacks are the third branch (E3): a param-only edit pokes live
-    // uniforms on the SAME graph and must not recompile; only a structural edit
-    // rebuilds, and that goes through the warm-then-swap path below.
-    const proc = dto.procedural;
-    if (entry.proc && proc && entry.proc.applies(proc)) {
-      entry.proc.update(proc);
+    // The procedural look (E3 stack or E7 graph) is the third branch: a
+    // param-only edit pokes live uniforms on the SAME graph and must not
+    // recompile; only a structural edit rebuilds, via the warm-then-swap below.
+    if (entry.proc && entry.proc.applies(dto)) {
+      entry.proc.update(dto);
       this.bindChannels(entry.mat, dto, entry.proc, entry.imgCache);
       return;
     }
-    if (hasStacks(dto) && entry.proc && this.warm) {
+    if (hasLook(dto) && entry.proc && this.warm) {
       void this.swapProcedural(id, dto);
       return;
     }
@@ -268,7 +267,7 @@ export class MaterialSync {
    */
   private compileProcedural(entry: Entry, dto: MaterialDTO): void {
     entry.proc?.dispose();
-    entry.proc = compileStacks(dto);
+    entry.proc = compileLook(dto);
     this.bindChannels(entry.mat, dto, entry.proc, entry.imgCache);
   }
 
@@ -286,7 +285,7 @@ export class MaterialSync {
     this.swapToken.set(id, token);
 
     const next: Entry = { mat: buildMaterial(dto), type: dto.type, imgCache: new Map() };
-    next.proc = compileStacks(dto);
+    next.proc = compileLook(dto);
     this.bindChannels(next.mat, dto, next.proc, next.imgCache);
 
     try {
@@ -333,7 +332,7 @@ export class MaterialSync {
   private bindChannels(
     mat: NodeMaterial,
     dto: MaterialDTO,
-    proc: CompiledStacks | undefined,
+    proc: CompiledLook | undefined,
     imgCache: ImageNodeCache,
     keepColor = false,
   ): void {

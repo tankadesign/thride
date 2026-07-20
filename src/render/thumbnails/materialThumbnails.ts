@@ -15,7 +15,7 @@ import { buildMaterial } from "@/materials/build";
 import { buildStudioEnvironment } from "@/render/environment/studioEnvironment";
 import {
   assignChannelNodes,
-  compileStacks,
+  compileLook,
   type ImageSpec,
 } from "@/render/scene-sync/proceduralBind";
 import { decodeChannelTexture } from "@/render/scene-sync/textureCache";
@@ -70,10 +70,10 @@ export class MaterialThumbnails {
     await this.ready;
     if (this.disposed) return "";
     const mat = buildMaterial(dto);
-    // procedural stacks + projected images are compiled HERE too, not shared
-    // from the viewport: a node material's pipeline is per-device, so a
-    // thumbnail that skipped this would silently disagree with the viewport
-    const proc = compileStacks(dto);
+    // the procedural look (stack or graph) + projected images are compiled HERE
+    // too, not shared from the viewport: a node material's pipeline is per-device,
+    // so a thumbnail that skipped this would silently disagree with the viewport
+    const proc = compileLook(dto);
     const specs = await this.applyTextures(mat, dto);
     assignChannelNodes(mat, proc, specs, new Map());
     const prev = this.sphere.material;
