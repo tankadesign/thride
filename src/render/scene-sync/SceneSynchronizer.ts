@@ -364,7 +364,10 @@ export class SceneSynchronizer {
 
   private buildCameraObject(node: SceneNode): Object3D {
     const group = new Group();
-    const dto = (node.data?.camera as CameraDataDTO | undefined) ?? defaultCameraData();
+    // spread over defaults (not `?? default`) so a camera missing new lens fields
+    // — e.g. a pre-focal-length one with only `fov` — still gets a valid
+    // focalLength; otherwise the frustum helper computes NaN positions
+    const dto = { ...defaultCameraData(), ...(node.data?.camera as Partial<CameraDataDTO>) };
     const helper = buildCameraHelper(dto);
     // helper layer: the camera pyramid must not appear in SSR / planar-mirror
     // reflections; the viewport's overlay render draws it instead
@@ -441,8 +444,9 @@ export class SceneSynchronizer {
       }
       if (node.kind === "camera") {
         // a lens edit reshapes the frustum helper in place (transform already
-        // applied above; the pane's look-through picks up fov/near/far itself)
-        const dto = (node.data?.camera as CameraDataDTO | undefined) ?? defaultCameraData();
+        // applied above; the pane's look-through picks up the lens itself).
+        // Spread over defaults so a legacy camera without focalLength is valid.
+        const dto = { ...defaultCameraData(), ...(node.data?.camera as Partial<CameraDataDTO>) };
         const helper = obj.children.find((c) => c.userData.cameraHelper);
         if (helper) updateCameraHelper(helper, dto);
       }
