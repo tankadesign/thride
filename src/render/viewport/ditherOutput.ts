@@ -771,19 +771,6 @@ export class DitherOutput {
     this.post.render();
   }
 
-  /**
-   * Await-able composite. The scene passes upstream are `renderAsync`, so the
-   * composite must be too — a synchronous `render()` lets renderFrame return
-   * (and the render-loop guard drop) while this frame's composite GPU work is
-   * still draining, so the next frame's scene render can start before this one
-   * has presented. At 60fps that's invisible; when the GPU falls behind (a very
-   * high instance count, ~25fps) the frames overlap and appear to stack. Making
-   * the whole frame serialize on one awaited chain fixes that.
-   */
-  async renderAsync(): Promise<void> {
-    await this.post.renderAsync();
-  }
-
   dispose(): void {
     this.hdr.dispose();
     this.aoNode?.dispose?.();
