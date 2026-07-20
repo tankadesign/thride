@@ -1,9 +1,15 @@
-import { useState } from "react";
-import { useAtomValue } from "jotai";
+import { useLayoutEffect, useRef, useState } from "react";
+import { useAtom, useAtomValue } from "jotai";
 import { IconClose } from "@/icons";
 import type { PaneDisplay } from "@/types/editor";
 import { defaultPaneDisplay } from "@/types/editor";
-import { editorState, paneDisplaysAtom } from "@/ui/hooks/editor/viewport";
+import { appStore } from "@/ui/hooks/doc/document";
+import {
+  editorState,
+  paneDisplaysAtom,
+  viewSettingsScrollAtom,
+  viewSettingsUiAtom,
+} from "@/ui/hooks/editor/viewport";
 import type { ViewportSystem } from "@/render/viewport/ViewportSystem";
 import { PostProcessingTab } from "./viewSettings/PostProcessingTab";
 import { ViewTab } from "./viewSettings/ViewTab";
@@ -39,7 +45,24 @@ export function ViewSettingsModal({
 }) {
   const disp = useAtomValue(paneDisplaysAtom)[pane] ?? defaultPaneDisplay(pane);
   const set = (patch: Partial<PaneDisplay>) => editorState.setPaneDisplay(pane, patch);
-  const [tab, setTab] = useState<Tab>("view");
+  // last tab + open sections persist across close/reopen (in-memory UI atom).
+  const [ui, setUi] = useAtom(viewSettingsUiAtom);
+  const tab = ui.tab;
+  const setTab = (t: Tab) => setUi((s) => ({ ...s, tab: t }));
+
+  // Scroll offset per tab, persisted through the (non-reactive) scroll atom so
+  // per-scroll writes don't re-render the modal. `onScroll` keeps it current;
+  // the layout effect restores it on mount and on every tab switch.
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = appStore.get(viewSettingsScrollAtom)[tab];
+  }, [tab]);
+  const onScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    appStore.set(viewSettingsScrollAtom, {
+      ...appStore.get(viewSettingsScrollAtom),
+      [tab]: e.currentTarget.scrollTop,
+    });
+  };
 
   const [pos, setPos] = useState(initialPos);
   const onHeaderDown = (e: React.PointerEvent) => {
@@ -88,7 +111,11 @@ export function ViewSettingsModal({
         ))}
       </div>
 
-      <div className="max-h-[min(60vh,32rem)] overflow-auto border-t border-base-content/10">
+      <div
+        ref={scrollRef}
+        onScroll={onScroll}
+        className="max-h-[min(60vh,32rem)] overflow-auto border-t border-base-content/10"
+      >
         {tab === "view" ? (
           <ViewTab pane={pane} vs={vs} disp={disp} set={set} />
         ) : (

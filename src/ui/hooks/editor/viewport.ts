@@ -63,6 +63,21 @@ export const paneDisplaysAtom = atom<PaneDisplay[]>([
   defaultPaneDisplay(3),
 ]);
 
+/**
+ * View Settings modal UI state — remembered across close/reopen so the panel
+ * doesn't reset to the first tab with everything collapsed. Deliberately
+ * in-memory app state (NOT captured into ViewportSettingsDTO / localStorage):
+ * it's transient chrome, not document/project data. `openSections` is keyed by
+ * section title (unique across both tabs). Scroll lives in its own atom so the
+ * per-scroll writes don't re-render the modal + its sections.
+ */
+export interface ViewSettingsUi {
+  tab: "view" | "post";
+  openSections: Record<string, boolean>;
+}
+export const viewSettingsUiAtom = atom<ViewSettingsUi>({ tab: "view", openSections: {} });
+export const viewSettingsScrollAtom = atom<{ view: number; post: number }>({ view: 0, post: 0 });
+
 /** Snapshot the persistable viewport settings (layout, cameras, per-pane display). */
 export function captureViewportSettings(): ViewportSettingsDTO {
   return {

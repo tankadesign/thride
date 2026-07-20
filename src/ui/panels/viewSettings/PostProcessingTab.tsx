@@ -1,7 +1,7 @@
 import type { PaneDisplay } from "@/types/editor";
 import { NumberDrag } from "@/ui/widgets/NumberDrag";
 import { Row, Select, Toggle } from "./controls";
-import { CollapsingSection } from "@/ui/panels/CollapsingSection";
+import { ViewSettingsSection } from "./ViewSettingsSection";
 
 /**
  * The Post Processing tab of the View Settings modal (chunk C6).
@@ -46,7 +46,7 @@ export function PostProcessingTab({
 
   return (
     <>
-      <CollapsingSection title="Ambient Shadows" defaultOpen>
+      <ViewSettingsSection title="Ambient Shadows" defaultOpen>
         <Toggle
           label="Enabled"
           checked={disp.ssao}
@@ -126,9 +126,9 @@ export function PostProcessingTab({
             onChange={(v) => set({ aoTint: aoTint(v) })}
           />
         </Row>
-      </CollapsingSection>
+      </ViewSettingsSection>
 
-      <CollapsingSection title="Reflections">
+      <ViewSettingsSection title="Reflections">
         <Toggle
           label="Enabled"
           checked={disp.ssr}
@@ -257,9 +257,9 @@ export function PostProcessingTab({
             </Row>
           </>
         )}
-      </CollapsingSection>
+      </ViewSettingsSection>
 
-      <CollapsingSection title="Bloom">
+      <ViewSettingsSection title="Bloom">
         <Toggle
           label="Enabled"
           checked={disp.bloom}
@@ -293,9 +293,9 @@ export function PostProcessingTab({
             onChange={(v) => set({ bloomRadius: v })}
           />
         </Row>
-      </CollapsingSection>
+      </ViewSettingsSection>
 
-      <CollapsingSection title="Depth of Field">
+      <ViewSettingsSection title="Depth of Field">
         <Toggle
           label="Enabled"
           checked={disp.dof}
@@ -320,9 +320,9 @@ export function PostProcessingTab({
             onChange={(v) => set({ dofBokeh: v })}
           />
         </Row>
-      </CollapsingSection>
+      </ViewSettingsSection>
 
-      <CollapsingSection title="Chromatic Aberration">
+      <ViewSettingsSection title="Chromatic Aberration">
         <Toggle
           label="Enabled"
           checked={disp.chromatic}
@@ -338,9 +338,9 @@ export function PostProcessingTab({
             onChange={(v) => set({ chromaticAmount: v })}
           />
         </Row>
-      </CollapsingSection>
+      </ViewSettingsSection>
 
-      <CollapsingSection title="Vignette">
+      <ViewSettingsSection title="Vignette">
         <Toggle
           label="Enabled"
           checked={disp.vignette}
@@ -365,7 +365,7 @@ export function PostProcessingTab({
             onChange={(v) => set({ vignetteRadius: v })}
           />
         </Row>
-      </CollapsingSection>
+      </ViewSettingsSection>
     </>
   );
 }
