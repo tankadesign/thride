@@ -68,7 +68,7 @@ export const defaultClonerParams = (): ClonerParams => ({
   count: 10,
   orientation: "normal",
   upVector: "y+",
-  hideTarget: false,
+  hideTarget: true,
   instancePosition: [0, 0, 0],
   instanceRotation: [0, 0, 0],
   instanceScale: [1, 1, 1],
