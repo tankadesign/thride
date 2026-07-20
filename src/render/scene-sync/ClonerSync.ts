@@ -67,6 +67,9 @@ export class ClonerSync {
   private readonly records = new Map<Uuid, ClonerRecord>();
   /** Retired InstancedMeshes awaiting deferred disposal (see {@link retire}). */
   private readonly retiring = new Set<InstancedMesh>();
+  /** Retired RenderMeshes (base geometry) awaiting deferred disposal — same GPU
+   *  lifetime rule as {@link retire}, see {@link retireMesh}. */
+  private readonly retiringMeshes = new Set<RenderMesh>();
 
   constructor(doc: Document) {
     this.doc = doc;
@@ -81,6 +84,24 @@ export class ClonerSync {
     this.retiring.add(inst);
     setTimeout(() => {
       if (this.retiring.delete(inst)) inst.dispose();
+    }, RETIRE_MS);
+  }
+
+  /**
+   * Dispose a base-geometry RenderMesh only well past any submit that used it.
+   * `RenderMesh.rebuild` disposes the old BufferGeometry's GPU buffers, but
+   * three's WebGPU backend can still reference them in an in-flight / cached
+   * submit for THIS cloner's InstancedMesh — a synchronous dispose throws
+   * "buffer used while destroyed", which aborts the frame's command submit. The
+   * dropped submit takes the pane's CLEAR with it, so the viewport stops clearing
+   * and frames visibly stack (worst on a heavy instancer, where slow frames widen
+   * the window). Retiring the whole RenderMesh — instead of letting rebuild()
+   * dispose in place — defers that disposal exactly like the InstancedMesh's.
+   */
+  private retireMesh(rm: RenderMesh): void {
+    this.retiringMeshes.add(rm);
+    setTimeout(() => {
+      if (this.retiringMeshes.delete(rm)) rm.dispose();
     }, RETIRE_MS);
   }
 
@@ -108,25 +129,37 @@ export class ClonerSync {
       return current;
     }
     const count = result.matrices.length / 16;
-    // rebuild the base geometry only when the template actually changed — a
+    // Rebuild the base geometry only when the template actually changed — a
     // count/effector edit reuses the same GPU buffer (re-syncing it every frame
-    // churns a buffer that may still be in a submitted command)
-    if (rec.base !== result.base) {
-      rec.rm.sync(result.base);
+    // churns a buffer that may still be in a submitted command). A real template
+    // change gets a FRESH RenderMesh with the old one RETIRED (deferred dispose):
+    // syncing in place would dispose the old geometry's GPU buffers synchronously
+    // while the backend may still submit them for this InstancedMesh — see
+    // {@link retireMesh}.
+    const templateChanged = rec.base !== result.base;
+    if (templateChanged) {
+      const nrm = new RenderMesh();
+      nrm.sync(result.base);
+      this.retireMesh(rec.rm);
+      rec.rm = nrm;
       rec.base = result.base;
     }
     const geom = rec.rm.geometry;
 
     let inst = current;
-    if (count > rec.capacity) {
-      // grow: a new InstancedMesh with headroom (resizing needs a new object);
-      // the outgoing one is retired on a timer, never disposed synchronously
-      const capacity = Math.max(1, Math.ceil(count * HEADROOM));
+    // A NEW InstancedMesh is needed both to grow the buffer AND whenever the base
+    // geometry changed: three's WebGPU backend caches the draw's vertex-buffer
+    // binding per object, and reassigning `.geometry` on a live InstancedMesh
+    // leaves it submitting the OLD (now-swapped) buffers — the "used while
+    // destroyed" abort that stops the viewport clearing. A fresh object binds the
+    // new geometry cleanly; the outgoing one is retired (deferred), never disposed
+    // synchronously.
+    if (count > rec.capacity || templateChanged) {
+      const capacity =
+        count > rec.capacity ? Math.max(1, Math.ceil(count * HEADROOM)) : rec.capacity;
       inst = makeInstanced(geom, asMaterial(current.material), capacity);
       this.retire(current);
       rec.capacity = capacity;
-    } else {
-      inst.geometry = geom; // template may have been edited
     }
     // copy the flat column-major matrices straight into the instance buffer
     inst.instanceMatrix.array.set(result.matrices);
@@ -144,7 +177,7 @@ export class ClonerSync {
     const rec = this.records.get(id);
     if (!rec) return;
     this.retire(rec.inst); // deferred — a removed cloner may still be mid-frame
-    rec.rm.dispose();
+    this.retireMesh(rec.rm); // deferred for the same reason (its buffers may still submit)
     this.records.delete(id);
   }
 
@@ -156,5 +189,7 @@ export class ClonerSync {
     this.records.clear();
     for (const inst of this.retiring) inst.dispose();
     this.retiring.clear();
+    for (const rm of this.retiringMeshes) rm.dispose();
+    this.retiringMeshes.clear();
   }
 }
