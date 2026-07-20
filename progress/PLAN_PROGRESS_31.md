@@ -22,11 +22,31 @@
 - **Done-when met:** user verified **200k instances run smooth** (well past the 100k @60fps
   budget); any camera binds to any pane via per-pane look-through; area lights don't crash.
 
+### M4 — Node material editor (E7) — Stage 1 shipped (headless)
+
+- **`MaterialGraphDTO`** ([src/types/core/graph.ts](src/types/core/graph.ts)) — nodes/connections/
+  output, stable UUID ids, `float`/`vec3` socket coercion, the load-bearing param split
+  (`select` = structural/recompile; `params`/`colors`/`ramp`/`position` = live/UI-only),
+  `defaultMaterialGraph`/`defaultGraphNode`, `graphStructureKey`. `graph?` added to `MaterialDTO`.
+- **Graph compiler** ([src/materials/graph/](src/materials/graph)) — `CompiledGraph` matches the
+  layer-stack compiler's consumer contract (`nodes`/`applies`/`update`/`dispose`), documented via a
+  new `CompiledMaterial<TDoc>` interface so Stage 3 can widen the binder without a rewrite. Memoized
+  DFS with a **cycle guard** (fail-safe mid-gray), per-kind emitters (output/noise/coord/float/
+  color/math/mix), reuses `noiseDef().sample` + `blendLayer` + `UniformTable`. Scalar channels bind
+  `.r`; the normal channel binds directly (the bump node owns height→normal — Stage 2).
+- **13 tests** hit the done-when clauses: compiles, zero-recompile scrubs (`getGraphCompileCount`),
+  structural invalidation, vec3→scalar coercion, cycle safety, JSON round-trip. Gates green (tsc
+  clean, lint 0 errors, `vp test` 283 passing, +13). Committed `83483bd`.
+
 ## Left mid-flight
 
-- **M4 / E7 not started** — this session only closes M3 and records the M4 plan. E7 is a
-  6-stage build (schema+compiler → emitters → live integration → read-only panel → full editing
-  → thumbnails). Next session starts Stage 1.
+- **E7 Stages 2–6 remain.** Next: **Stage 2** (ramp + bump node emitters — completes compiler
+  support for both done-when graphs: `noise→ramp→color`, `fractal→bump→normal`), then **Stage 3**
+  (widen `proceduralBind`/`MaterialSync` to accept `CompiledGraph`; decide graph-vs-stack
+  precedence — graph wins when present; live viewport with recompile-count tests), **Stage 4**
+  (add Rete.js dep + read-only themed panel in `ui/nodegraph/`), **Stage 5** (full editing:
+  connect/disconnect/delete/param widgets, one-undo-step edits), **Stage 6** (per-node thumbnails
+  - error badges + optional compileAsync warm-swap).
 
 ## Decisions made (and why)
 
