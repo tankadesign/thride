@@ -66,7 +66,6 @@ describe("normClonerParams", () => {
     expect(p.distribution).toBe("points");
     expect(p.orientation).toBe("normal");
     expect(p.upVector).toBe("y+");
-    expect(p.hideTarget).toBe(false);
     expect(p.count).toBe(12); // a shared field is preserved
   });
 });

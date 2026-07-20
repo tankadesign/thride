@@ -2,7 +2,7 @@ import { useRef } from "react";
 import type { Uuid } from "@/types/core";
 import { type ClonerParams, defaultClonerParams, normClonerParams } from "@/generators/cloner";
 import type { GeneratorDescriptor } from "@/generators/graph";
-import { SetNodeDataCommand } from "@/core/history/commands/scene";
+import { SetFlagsCommand, SetNodeDataCommand } from "@/core/history/commands/scene";
 import { useDocument } from "@/ui/hooks/doc/document";
 import { NumberDrag } from "@/ui/widgets/NumberDrag";
 import { Field, Section, VecField } from "@/ui/widgets/inspector";
@@ -148,12 +148,16 @@ export function GeneratorParams({ id, gen }: { id: Uuid; gen: GeneratorDescripto
                   </select>
                 </Field>
               ) : null}
+              {/* a proxy for the target NODE's visibility — the same flag the
+                  object manager's eye toggles, so the two always stay in sync */}
               <Field label="Hide Target">
                 <input
                   type="checkbox"
                   className="toggle toggle-sm"
-                  checked={cp.hideTarget}
-                  onChange={(e) => setParam("hideTarget", e.target.checked, true)}
+                  checked={!(targetNode?.visible ?? true)}
+                  onChange={(e) =>
+                    doc.history.run(new SetFlagsCommand(kids[0]!, { visible: !e.target.checked }))
+                  }
                 />
               </Field>
             </>

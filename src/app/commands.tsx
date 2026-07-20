@@ -4,6 +4,7 @@ import {
   CreateNodeCommand,
   RemoveNodeCommand,
   ReparentNodeCommand,
+  SetFlagsCommand,
   SetNodeDataCommand,
   SetTransformCommand,
 } from "@/core/history/commands/scene";
@@ -833,6 +834,9 @@ export function buildCommands(doc: Document, shell: ShellApi): AppCommand[] {
           doc.history.run(cmd);
           genId = cmd.nodeId;
           for (const id of kids) doc.history.run(new ReparentNodeCommand(id, genId));
+          // hide the target by default — the clones stand in for it (the panel's
+          // Hide Target toggle IS the node's visibility, so this stays in sync)
+          if (kids[0]) doc.history.run(new SetFlagsCommand(kids[0], { visible: false }));
         });
         if (genId) doc.selection.selectObjects([genId]);
       },

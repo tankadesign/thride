@@ -34,8 +34,6 @@ export interface ClonerParams {
   orientation: ClonerOrientation;
   /** Fixed world axis for `direction` orientation. */
   upVector: UpVector;
-  /** Keep the target surface/curve rendered (default) or hide it like the template. */
-  hideTarget: boolean;
   // ---- instance transform (applied identically to EVERY clone, in the clone's
   //      local frame, before the step transform) ----
   /** Position offset applied to every clone along its local axes. */
@@ -68,7 +66,6 @@ export const defaultClonerParams = (): ClonerParams => ({
   count: 10,
   orientation: "normal",
   upVector: "y+",
-  hideTarget: true,
   instancePosition: [0, 0, 0],
   instanceRotation: [0, 0, 0],
   instanceScale: [1, 1, 1],
@@ -101,7 +98,6 @@ export function normClonerParams(p: ClonerParams): ClonerParams {
     count: p.count ?? d.count,
     orientation: p.orientation ?? d.orientation,
     upVector: p.upVector ?? d.upVector,
-    hideTarget: p.hideTarget ?? d.hideTarget,
     instancePosition: p.instancePosition ?? d.instancePosition,
     instanceRotation: p.instanceRotation ?? d.instanceRotation,
     instanceScale: p.instanceScale ?? d.instanceScale,

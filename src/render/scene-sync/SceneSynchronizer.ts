@@ -22,8 +22,6 @@ import {
 import { computeBoundsTree, disposeBoundsTree, acceleratedRaycast } from "three-mesh-bvh";
 import type { PlanarReflectionDTO, Uuid } from "@/types/core";
 import { type LightDataDTO, SHADOW_CAPABLE } from "@/types/core/light";
-import type { SplineData } from "@/types/geometry/spline";
-import { sampleSpline } from "@/geometry/splines/eval";
 import type { Document, SceneNode } from "@/core";
 import type { PrimitiveDescriptor } from "@/types/geometry/primitives";
 import type { HEMesh } from "@/geometry/kernel/HEMesh";
@@ -80,6 +78,18 @@ const SELECTED_WIRE_MAT = new LineBasicMaterial({
   color: viewportTheme.selectedWireframeColor,
   depthTest: false,
 });
+// Instancer clones in wireframe mode. An InstancedMesh has no kernel-edge
+// LineSegments (edge wires can't instance), so the hidden-surface override
+// would make every clone vanish — draw their triangle edges via the material's
+// own wireframe rendering instead.
+const CLONER_WIRE_MAT = new MeshBasicMaterial({
+  color: viewportTheme.wireframeColor,
+  wireframe: true,
+});
+const SELECTED_CLONER_WIRE_MAT = new MeshBasicMaterial({
+  color: viewportTheme.selectedWireframeColor,
+  wireframe: true,
+});
 
 /**
  * Sorted attribute names of a geometry — the material-pipeline-relevant part of
@@ -97,6 +107,8 @@ export function applyMeshMaterialsTheme(): void {
   LINES_EDGE_MAT.color.copy(viewportTheme.lineColor);
   WIRE_EDGE_MAT.color.copy(viewportTheme.wireframeColor);
   SELECTED_WIRE_MAT.color.copy(viewportTheme.selectedWireframeColor);
+  CLONER_WIRE_MAT.color.copy(viewportTheme.wireframeColor);
+  SELECTED_CLONER_WIRE_MAT.color.copy(viewportTheme.selectedWireframeColor);
 }
 /**
  * Projects the Document into a Three scene graph. The Document is the
@@ -225,8 +237,9 @@ export class SceneSynchronizer {
    * render nothing and never pick (clicks fall through to the generated result),
    * matching C4D. A **boolean** consumes all its operands. An **Instancer**
    * consumes only its TEMPLATE (child[1]) — the target it scatters onto (child[0])
-   * stays visible unless the Instancer's `hideTarget` is set. Extrude/sweep keep
-   * their spline children visible as guides, so those are never consumed here.
+   * keeps its own visibility flag (the panel's Hide Target toggle drives that
+   * flag directly). Extrude/sweep keep their spline children visible as guides,
+   * so those are never consumed here.
    */
   private isConsumed(id: Uuid): boolean {
     let child = id;
@@ -235,15 +248,12 @@ export class SceneSynchronizer {
       const node = this.doc.scene.get(parentId);
       if (!node) return false;
       if (node.kind === "generator") {
-        const gen = node.data?.generator as
-          | { type?: string; params?: { hideTarget?: boolean } }
-          | undefined;
+        const gen = node.data?.generator as { type?: string } | undefined;
         if (gen?.type === "boolean") return true;
         if (gen?.type === "cloner") {
           // `child` is the direct Instancer child on this path: [0]=target, [1]=template
           const idx = this.doc.scene.childrenOf(parentId).indexOf(child);
-          if (idx === 0) return gen.params?.hideTarget ?? false;
-          return true; // template (and any stray extra input) is always consumed
+          return idx !== 0; // template (and any stray extra input) is always consumed
         }
       }
       child = parentId;
@@ -258,29 +268,6 @@ export class SceneSynchronizer {
       node.kind === "generator" &&
       (node.data?.generator as { type?: string } | undefined)?.type === "cloner"
     );
-  }
-
-  /**
-   * Re-apply the visibility of an Instancer's target (child[0]) — hidden when the
-   * Instancer's `hideTarget` is set (via {@link isConsumed}), else shown. Needed
-   * because toggling `hideTarget` doesn't touch the target node, so its own sync
-   * never re-runs. Recomputes a spline target's drawable state so un-hiding
-   * doesn't leave it stuck hidden.
-   */
-  private refreshClonerTargetVisibility(clonerId: Uuid): void {
-    const targetId = this.doc.scene.childrenOf(clonerId)[0];
-    if (!targetId) return;
-    const child = this.doc.scene.get(targetId);
-    const obj = this.objects.get(targetId);
-    if (!child || !obj) return;
-    const shown = child.visible && !this.isConsumed(targetId);
-    if (obj.userData.spline) {
-      const data = child.data?.spline as SplineData | undefined;
-      const drawable = !!data && sampleSpline(data).length >= 6;
-      obj.visible = shown && drawable;
-    } else {
-      obj.visible = shown;
-    }
   }
 
   /** The material assigned to an Instancer's template (child[1], the instanced object). */
@@ -440,10 +427,6 @@ export class SceneSynchronizer {
         // outgrew the buffer returns a fresh InstancedMesh to swap into the graph
         const next = this.cloners.sync(node, obj);
         if (next !== obj) this.swapObject(id, obj, next);
-        // the target's visibility depends on the Instancer's `hideTarget`, but
-        // dirty propagation only runs UPWARD — refresh child[0] here so the
-        // toggle takes effect (and un-hiding restores its drawable state)
-        this.refreshClonerTargetVisibility(id);
       } else if (
         (node.kind === "mesh" || node.kind === "generator") &&
         obj instanceof Mesh &&
@@ -611,11 +594,23 @@ export class SceneSynchronizer {
     // (still raycastable for picking) + edges.
     const override = mode === "flat" ? FLAT_MAT : mode === "wireframe" ? HIDDEN_MAT : null;
     if (override) override.side = side;
+    const wireMode = mode === "wireframe";
+    // wireframe selection reads via wire COLOR (object mode): the silhouette
+    // hull is hidden below — with the surface invisible, nothing paints over
+    // the hull's interior and it would show as a solid fill on the selection
+    const wireSelect = wireMode && this.doc.selection.editMode === "object";
     for (const [id, obj] of this.objects) {
       // Line2 splines extend Mesh — never clobber their wide-line material
       if (!(obj instanceof Mesh) || obj.userData.outline || obj.userData.spline) continue;
       if (override) {
-        obj.material = override;
+        // clones have no kernel-edge wires, so the hidden-surface wireframe
+        // treatment would erase them — use a triangle-edge wireframe material
+        obj.material =
+          wireMode && obj instanceof InstancedMesh
+            ? wireSelect && this.doc.selection.has(id)
+              ? SELECTED_CLONER_WIRE_MAT
+              : CLONER_WIRE_MAT
+            : override;
       } else {
         const node = this.doc.scene.get(id);
         const data = node?.data;
@@ -632,14 +627,9 @@ export class SceneSynchronizer {
         obj.material = m;
       }
     }
-    const wireMode = mode === "wireframe";
     // depthTest off makes edges behind the surface show through. For the Lines
     // overlay that's opt-in (Hidden Lines); wireframe mode always shows all edges.
     LINES_EDGE_MAT.depthTest = !hiddenLines;
-    // wireframe selection reads via wire COLOR (object mode): the silhouette
-    // hull is hidden below — with the surface invisible, nothing paints over
-    // the hull's interior and it would show as a solid fill on the selection
-    const wireSelect = wireMode && this.doc.selection.editMode === "object";
     for (const [id, wire] of this.edgeWires) {
       wire.visible = wireMode || lines;
       wire.material = wireMode
