@@ -122,10 +122,21 @@ export function buildSphere(params: SphereParams): PolygonMeshData {
 
 export function buildCylinder(params: CylinderParams): PolygonMeshData {
   const { radiusTop, radiusBottom, height, segments, capped } = params;
+  const hs = Math.max(1, Math.round(params.heightSegments ?? 1));
   const h = height / 2;
   const profile: ProfilePoint[] = [];
-  if (radiusTop > 0) profile.push({ r: radiusTop, y: h, v: 1 });
-  if (radiusBottom > 0) profile.push({ r: radiusBottom, y: -h, v: 0 });
+  // rings top→bottom, linearly interpolated across `hs` height bands. A
+  // zero-radius end is the pole (added by lathe), so it's skipped as a ring.
+  const first = radiusTop > 0 ? 0 : 1;
+  const last = radiusBottom > 0 ? hs : hs - 1;
+  for (let i = first; i <= last; i++) {
+    const t = i / hs; // 0 top → 1 bottom
+    profile.push({
+      r: radiusTop + (radiusBottom - radiusTop) * t,
+      y: h - height * t,
+      v: 1 - t,
+    });
+  }
   if (profile.length === 0) throw new Error("cylinder: both radii are zero");
   return lathe(profile, {
     segments,

@@ -12,47 +12,103 @@ import type {
  * so top-facing caps reverse the ring order and bottom caps keep it.
  */
 
-export function buildCube({ width: w, height: h, depth: d }: CubeParams): PolygonMeshData {
+export function buildCube({
+  width: w,
+  height: h,
+  depth: d,
+  segmentsW,
+  segmentsH,
+  segmentsD,
+}: CubeParams): PolygonMeshData {
   const x = w / 2;
   const y = h / 2;
   const z = d / 2;
-  // biome-ignore format: vertex table
-  const positions = [
-    -x,
-    -y,
-    -z,
-    x,
-    -y,
-    -z,
-    x,
-    y,
-    -z,
-    -x,
-    y,
-    -z,
-    -x,
-    -y,
-    z,
-    x,
-    -y,
-    z,
-    x,
-    y,
-    z,
-    -x,
-    y,
-    z,
-  ];
-  const faces = [
-    [4, 5, 6, 7], // +z
-    [1, 0, 3, 2], // -z
-    [5, 1, 2, 6], // +x
-    [0, 4, 7, 3], // -x
-    [7, 6, 2, 3], // +y
-    [0, 1, 5, 4], // -y
-  ];
-  const quadUV = [0, 0, 1, 0, 1, 1, 0, 1];
-  return { positions, faces, faceUVs: faces.map(() => quadUV) };
+  const sw = Math.max(1, Math.round(segmentsW ?? 1));
+  const sh = Math.max(1, Math.round(segmentsH ?? 1));
+  const sd = Math.max(1, Math.round(segmentsD ?? 1));
+  // fast path: a plain box keeps the exact 8-vertex manifold (welded corners)
+  if (sw === 1 && sh === 1 && sd === 1) {
+    // biome-ignore format: vertex table
+    const positions = [
+      -x,
+      -y,
+      -z,
+      x,
+      -y,
+      -z,
+      x,
+      y,
+      -z,
+      -x,
+      y,
+      -z,
+      -x,
+      -y,
+      z,
+      x,
+      -y,
+      z,
+      x,
+      y,
+      z,
+      -x,
+      y,
+      z,
+    ];
+    const faces = [
+      [4, 5, 6, 7], // +z
+      [1, 0, 3, 2], // -z
+      [5, 1, 2, 6], // +x
+      [0, 4, 7, 3], // -x
+      [7, 6, 2, 3], // +y
+      [0, 1, 5, 4], // -y
+    ];
+    const quadUV = [0, 0, 1, 0, 1, 1, 0, 1];
+    return { positions, faces, faceUVs: faces.map(() => quadUV) };
+  }
+  // segmented: each face is a grid; vertices are welded by position so shared
+  // edges/corners are one vertex (a clean manifold, editable). Each face's
+  // (du × dv) points outward, so the quad order below is CCW from outside.
+  const positions: number[] = [];
+  const index = new Map<string, number>();
+  const vert = (a: number, b: number, c: number): number => {
+    const k = `${Math.round(a * 1e5)}_${Math.round(b * 1e5)}_${Math.round(c * 1e5)}`;
+    let i = index.get(k);
+    if (i === undefined) {
+      i = positions.length / 3;
+      positions.push(a, b, c);
+      index.set(k, i);
+    }
+    return i;
+  };
+  const faces: number[][] = [];
+  const faceUVs: number[][] = [];
+  type V3 = [number, number, number];
+  const face = (o: V3, du: V3, dv: V3, su: number, sv: number): void => {
+    const at = (i: number, j: number): number =>
+      vert(
+        o[0] + (i / su) * du[0] + (j / sv) * dv[0],
+        o[1] + (i / su) * du[1] + (j / sv) * dv[1],
+        o[2] + (i / su) * du[2] + (j / sv) * dv[2],
+      );
+    for (let j = 0; j < sv; j++) {
+      for (let i = 0; i < su; i++) {
+        faces.push([at(i, j), at(i + 1, j), at(i + 1, j + 1), at(i, j + 1)]);
+        const u0 = i / su;
+        const u1 = (i + 1) / su;
+        const w0 = j / sv;
+        const w1 = (j + 1) / sv;
+        faceUVs.push([u0, w0, u1, w0, u1, w1, u0, w1]);
+      }
+    }
+  };
+  face([-x, -y, z], [w, 0, 0], [0, h, 0], sw, sh); // +z
+  face([x, -y, -z], [-w, 0, 0], [0, h, 0], sw, sh); // -z
+  face([x, -y, z], [0, 0, -d], [0, h, 0], sd, sh); // +x
+  face([-x, -y, -z], [0, 0, d], [0, h, 0], sd, sh); // -x
+  face([-x, y, z], [w, 0, 0], [0, 0, -d], sw, sd); // +y
+  face([-x, -y, -z], [w, 0, 0], [0, 0, d], sw, sd); // -y
+  return { positions, faces, faceUVs };
 }
 
 export function buildPlane({ width, depth, segmentsX, segmentsZ }: PlaneParams): PolygonMeshData {

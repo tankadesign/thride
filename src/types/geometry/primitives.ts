@@ -8,6 +8,11 @@ export interface CubeParams {
   width: number;
   height: number;
   depth: number;
+  /** Subdivisions along each axis. Optional: cubes saved before these existed
+   * load as 1 segment (a plain box). */
+  segmentsW?: number;
+  segmentsH?: number;
+  segmentsD?: number;
 }
 export interface PlaneParams {
   width: number;
@@ -43,7 +48,10 @@ export interface CylinderParams {
   radiusTop: number;
   radiusBottom: number;
   height: number;
-  segments: number;
+  segments: number; // radial ("Rot. Segments")
+  /** Subdivisions along the height. Optional: cylinders saved before it existed
+   * load as 1 segment. */
+  heightSegments?: number;
   capped: boolean;
 }
 export interface ConeParams {
@@ -87,7 +95,7 @@ export type PrimitiveType = PrimitiveDescriptor["type"];
 export const primitiveDefaults: {
   [K in PrimitiveType]: Extract<PrimitiveDescriptor, { type: K }>["params"];
 } = {
-  cube: { width: 2, height: 2, depth: 2 },
+  cube: { width: 2, height: 2, depth: 2, segmentsW: 1, segmentsH: 1, segmentsD: 1 },
   plane: { width: 4, depth: 4, segmentsX: 4, segmentsZ: 4 },
   disc: { radius: 1, segments: 32, rings: 1 },
   sphere: {
@@ -100,7 +108,14 @@ export const primitiveDefaults: {
     filled: false,
   },
   icosphere: { radius: 1, subdivisions: 2 },
-  cylinder: { radiusTop: 1, radiusBottom: 1, height: 2, segments: 32, capped: true },
+  cylinder: {
+    radiusTop: 1,
+    radiusBottom: 1,
+    height: 2,
+    segments: 32,
+    heightSegments: 1,
+    capped: true,
+  },
   cone: { radius: 1, height: 2, segments: 32, capped: true },
   capsule: { radius: 0.5, height: 1, segments: 24, capRings: 6 },
   torus: { radius: 1, tube: 0.35, segments: 32, tubeSegments: 16 },
@@ -139,6 +154,10 @@ export const primitiveParamMeta: Record<string, ParamMeta> = {
   rings: { int: true, min: 3, max: 1000 },
   segmentsX: { int: true, min: 1, max: 1000 },
   segmentsZ: { int: true, min: 1, max: 1000 },
+  segmentsW: { int: true, min: 1, max: 1000, label: "Segments W" },
+  segmentsH: { int: true, min: 1, max: 1000, label: "Segments H" },
+  segmentsD: { int: true, min: 1, max: 1000, label: "Segments D" },
+  heightSegments: { int: true, min: 1, max: 1000, label: "Height Segments" },
   subdivisions: { int: true, min: 0, max: 5 },
   capRings: { int: true, min: 2, max: 128 },
 };
@@ -146,6 +165,9 @@ export const primitiveParamMeta: Record<string, ParamMeta> = {
 /** Same param name, different rules per primitive (disc rings start at 1). */
 const perTypeParamMeta: Partial<Record<PrimitiveType, Record<string, ParamMeta>>> = {
   disc: { rings: { int: true, min: 1, max: 500 } },
+  // cylinder's radial "segments" is around the axis — label it so it reads
+  // distinctly from the new height subdivisions
+  cylinder: { segments: { int: true, min: 3, max: 1000, label: "Rot. Segments" } },
   sphere: {
     segments: { int: true, min: 3, max: 1000, label: "Horizontal Segments" },
     rings: { int: true, min: 3, max: 1000, label: "Vertical Segments" },
