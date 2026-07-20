@@ -114,13 +114,19 @@ const LIGHT_ICONS: Record<LightType, React.ReactNode> = {
 
 const LIGHT_TYPES: LightType[] = ["spot", "point", "directional", "ambient", "hemisphere", "area"];
 
+/** Dockable side panels the shell can (re)open on demand. */
+export type ShellPanelId =
+  | "objects"
+  | "attributes"
+  | "materials"
+  | "environment"
+  | "keybindings"
+  | "gallery"
+  | "noiseGallery";
+
 export interface ShellApi {
   getViewport: () => ViewportSystem | null;
-  openGallery: () => void;
-  openNoiseGallery: () => void;
-  openMaterials: () => void;
-  openEnvironment: () => void;
-  openKeyboardShortcuts: () => void;
+  openPanel: (id: ShellPanelId) => void;
   resetLayout: () => void;
 }
 
@@ -972,31 +978,43 @@ export function buildCommands(doc: Document, shell: ShellApi): AppCommand[] {
       title: "Keyboard shortcuts",
       menu: "View",
       icon: <IconSettings size={16} />,
-      run: () => shell.openKeyboardShortcuts(),
+      run: () => shell.openPanel("keybindings"),
+    },
+    {
+      id: "view.objects",
+      title: "Object Manager",
+      menu: "View",
+      run: () => shell.openPanel("objects"),
+    },
+    {
+      id: "view.attributes",
+      title: "Attributes",
+      menu: "View",
+      run: () => shell.openPanel("attributes"),
     },
     {
       id: "view.materials",
       title: "Material Manager",
       menu: "View",
-      run: () => shell.openMaterials(),
+      run: () => shell.openPanel("materials"),
     },
     {
       id: "view.environment",
       title: "Environment",
       menu: "View",
-      run: () => shell.openEnvironment(),
+      run: () => shell.openPanel("environment"),
     },
     {
       id: "view.gallery",
       title: "UI Gallery",
       menu: "View",
-      run: () => shell.openGallery(),
+      run: () => shell.openPanel("gallery"),
     },
     {
       id: "view.noiseGallery",
       title: "Noise Gallery",
       menu: "View",
-      run: () => shell.openNoiseGallery(),
+      run: () => shell.openPanel("noiseGallery"),
     },
     {
       id: "view.resetLayout",

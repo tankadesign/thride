@@ -7,7 +7,7 @@ import {
 } from "dockview-react";
 import { useEffect, useMemo, useRef } from "react";
 import type { Document } from "@/core";
-import { buildCommands, type ShellApi } from "@/app/commands";
+import { buildCommands, type ShellApi, type ShellPanelId } from "@/app/commands";
 import { CommandRegistry } from "@/ui/commands/CommandRegistry";
 import { setRegistry, usePalette } from "@/ui/hooks/editor/shell";
 import { dispatchKeyEvent, keyCaptureActiveAtom } from "@/ui/hooks/editor/keymap";
@@ -29,9 +29,72 @@ import { ProjectTabs } from "./ProjectTabs";
 import { ToolRail } from "./ToolRail";
 
 const LAYOUT_KEY = "thride.layout.v1";
+const MIN_PANEL_WIDTH = 340; // px, for objects/attributes/materials
+const MAX_PANEL_WIDTH = 600; // px, for objects/attributes/materials
+
+/** All dockable side panels live in the right-hand column; any of them can
+ * serve as the anchor when reopening another, so closing "attributes" (the
+ * old hard-coded anchor) can never strand the rest. Order = anchor priority:
+ * tabbed inspectors first, "objects" last since it sits in its own group. */
+const RIGHT_PANEL_TITLES: Record<ShellPanelId, string> = {
+  attributes: "Attributes",
+  materials: "Materials",
+  environment: "Environment",
+  keybindings: "Keyboard shortcuts",
+  gallery: "UI Gallery",
+  noiseGallery: "Noise Gallery",
+  objects: "Objects",
+};
+
+function openRightPanel(api: DockviewApi, id: ShellPanelId) {
+  const existing = api.getPanel(id);
+  if (existing) {
+    existing.focus();
+    return;
+  }
+  const anchor = (Object.keys(RIGHT_PANEL_TITLES) as ShellPanelId[])
+    .filter((p) => p !== id)
+    .map((p) => api.getPanel(p))
+    .find(Boolean);
+  const common = {
+    id,
+    component: id,
+    title: RIGHT_PANEL_TITLES[id],
+    minimumWidth: MIN_PANEL_WIDTH,
+  };
+  if (!anchor) {
+    // right column is gone entirely — recreate it
+    api.addPanel({
+      ...common,
+      position: { direction: "right" },
+      initialWidth: MIN_PANEL_WIDTH,
+      ...(id === "objects" ? { maximumWidth: MAX_PANEL_WIDTH } : {}),
+    });
+    return;
+  }
+  if (id === "objects") {
+    // objects always takes the top of the right column, pushing the rest down
+    api.addPanel({
+      ...common,
+      position: { referencePanel: anchor.id, direction: "above" },
+      maximumWidth: MAX_PANEL_WIDTH,
+    });
+    return;
+  }
+  // everything else joins the inspector tab group (or opens below objects
+  // when that group is the only thing left in the column)
+  api.addPanel({
+    ...common,
+    position: {
+      referencePanel: anchor.id,
+      direction: anchor.id === "objects" ? "below" : "within",
+    },
+  });
+}
 
 export function Shell({ doc }: { doc: Document }) {
   const apiRef = useRef<DockviewApi | null>(null);
+  const hostRef = useRef<HTMLDivElement | null>(null);
   const viewportRef = useRef<ViewportSystem | null>(null);
   const palette = usePalette();
   useSelectObjectMaterial(); // selecting an object selects its material in the manager
@@ -39,70 +102,14 @@ export function Shell({ doc }: { doc: Document }) {
   const registry = useMemo(() => {
     const shellApi: ShellApi = {
       getViewport: () => viewportRef.current,
-      openGallery: () => {
+      openPanel: (id) => {
         const api = apiRef.current;
-        if (!api) return;
-        if (api.getPanel("gallery")) api.getPanel("gallery")!.focus();
-        else
-          api.addPanel({
-            id: "gallery",
-            component: "gallery",
-            title: "UI Gallery",
-            position: { direction: "right" },
-          });
-      },
-      openNoiseGallery: () => {
-        const api = apiRef.current;
-        if (!api) return;
-        if (api.getPanel("noiseGallery")) api.getPanel("noiseGallery")!.focus();
-        else
-          api.addPanel({
-            id: "noiseGallery",
-            component: "noiseGallery",
-            title: "Noise Gallery",
-            position: { direction: "right" },
-          });
-      },
-      openMaterials: () => {
-        const api = apiRef.current;
-        if (!api) return;
-        if (api.getPanel("materials")) api.getPanel("materials")!.focus();
-        else
-          api.addPanel({
-            id: "materials",
-            component: "materials",
-            title: "Materials",
-            position: { referencePanel: "attributes", direction: "within" },
-          });
-      },
-      openEnvironment: () => {
-        const api = apiRef.current;
-        if (!api) return;
-        if (api.getPanel("environment")) api.getPanel("environment")!.focus();
-        else
-          api.addPanel({
-            id: "environment",
-            component: "environment",
-            title: "Environment",
-            position: { referencePanel: "attributes", direction: "within" },
-          });
-      },
-      openKeyboardShortcuts: () => {
-        const api = apiRef.current;
-        if (!api) return;
-        if (api.getPanel("keybindings")) api.getPanel("keybindings")!.focus();
-        else
-          api.addPanel({
-            id: "keybindings",
-            component: "keybindings",
-            title: "Keyboard shortcuts",
-            position: { referencePanel: "attributes", direction: "within" },
-          });
+        if (api) openRightPanel(api, id);
       },
       resetLayout: () => {
         localStorage.removeItem(LAYOUT_KEY);
         const api = apiRef.current;
-        if (api) buildDefaultLayout(api);
+        if (api) buildDefaultLayout(api, hostRef.current);
       },
     };
     const reg = new CommandRegistry();
@@ -176,7 +183,7 @@ export function Shell({ doc }: { doc: Document }) {
         restored = false;
       }
     }
-    if (!restored) buildDefaultLayout(e.api);
+    if (!restored) buildDefaultLayout(e.api, hostRef.current);
     e.api.onDidLayoutChange(() => {
       localStorage.setItem(LAYOUT_KEY, JSON.stringify(e.api.toJSON()));
     });
@@ -188,7 +195,7 @@ export function Shell({ doc }: { doc: Document }) {
       <ProjectTabs />
       <div className="flex min-h-0 flex-1">
         <ToolRail registry={registry} />
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1" ref={hostRef}>
           <DockviewReact
             className="dockview-theme-dark dockview-theme-thride"
             components={components}
@@ -202,7 +209,7 @@ export function Shell({ doc }: { doc: Document }) {
   );
 }
 
-function buildDefaultLayout(api: DockviewApi) {
+function buildDefaultLayout(api: DockviewApi, host: HTMLElement | null) {
   api.clear();
   api.addPanel({ id: "viewport", component: "viewport", title: "Viewport" });
   const objects = api.addPanel({
@@ -210,19 +217,39 @@ function buildDefaultLayout(api: DockviewApi) {
     component: "objects",
     title: "Objects",
     position: { direction: "right" },
-    initialWidth: 340,
+    initialWidth: MIN_PANEL_WIDTH,
+    minimumWidth: MIN_PANEL_WIDTH,
+    maximumWidth: MAX_PANEL_WIDTH,
   });
   api.addPanel({
     id: "attributes",
     component: "attributes",
     title: "Attributes",
     position: { referencePanel: "objects", direction: "below" },
+    minimumWidth: MIN_PANEL_WIDTH,
   });
   api.addPanel({
     id: "materials",
     component: "materials",
     title: "Materials",
     position: { referencePanel: "attributes", direction: "within" },
+    minimumWidth: MIN_PANEL_WIDTH,
   });
-  requestAnimationFrame(() => objects.api.setSize({ width: 340 }));
+  api.addPanel({
+    id: "environment",
+    component: "environment",
+    title: "Environment",
+    position: { referencePanel: "attributes", direction: "within" },
+    minimumWidth: MIN_PANEL_WIDTH,
+  });
+  api.getPanel("attributes")?.focus();
+
+  requestAnimationFrame(() => {
+    // clear() + addPanel sizes the grid to the panels' intrinsic widths and
+    // fires no resize, so on a live reset the grid stays narrower than its
+    // container (empty gutter, squished viewport). Force a fill to the real
+    // host size, THEN pin objects — the fill hands objects its max width.
+    if (host) api.layout(host.clientWidth, host.clientHeight, true);
+    objects.api.setSize({ width: MIN_PANEL_WIDTH });
+  });
 }
