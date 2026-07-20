@@ -1,23 +1,32 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import type { Uuid } from "@/types/core";
-import { type CameraDataDTO, defaultCameraData } from "@/types/core/camera";
+import {
+  type CameraDataDTO,
+  defaultCameraData,
+  focalLengthFromHFov,
+  hFovFromFocalLength,
+} from "@/types/core/camera";
 import { SetNodeDataCommand } from "@/core/history/commands/scene";
 import { useDocument } from "@/ui/hooks/doc/document";
 import { NumberDrag } from "@/ui/widgets/NumberDrag";
 import { Field, Section } from "@/ui/widgets/inspector";
 
 /**
- * Camera lens editor: field of view, clip range, film back (gauge/offset),
- * zoom, and focus. Perspective only for now (see CameraDataDTO). A pane "looks
- * through" this node, applying these values to its rig; editing fov also
- * reshapes the viewport frustum helper. Focus feeds depth of field: a focus
- * target object (its distance) supersedes the manual focus distance.
+ * Camera lens editor (C4D/Blender-style): a focal length against a fixed
+ * full-frame sensor, plus X/Y film offset, clip range, zoom, and focus. A pane
+ * "looks through" this node, applying the lens to its rig (three's
+ * PerspectiveCamera does the focal-length↔fov math); editing it reshapes the
+ * viewport frustum helper. Focus feeds depth of field — a focus target object
+ * (its distance) supersedes the manual focus distance.
  */
 export function CameraParams({ id, camera }: { id: Uuid; camera: CameraDataDTO }) {
   const doc = useDocument();
   const scrub = useRef<{ before: Record<string, unknown> } | null>(null);
-  // legacy cameras stored only fov/near/far — fill the rest from defaults
+  // fields added after a camera was created fall back to defaults
   const c = { ...defaultCameraData(), ...camera };
+  // the lens field shows Focal Length by default; clicking its label toggles to
+  // FOV (horizontal, aspect-independent for the fixed sensor). Same DTO either way.
+  const [lensMode, setLensMode] = useState<"focal" | "fov">("focal");
 
   const setCamera = (patch: Partial<CameraDataDTO>, committed: boolean) => {
     const node = doc.scene.mustGet(id);
@@ -36,7 +45,7 @@ export function CameraParams({ id, camera }: { id: Uuid; camera: CameraDataDTO }
 
   const num = (
     label: string,
-    key: "fov" | "near" | "far" | "filmGauge" | "filmOffset" | "zoom" | "focus",
+    key: "near" | "far" | "zoom" | "focus" | "filmOffsetX" | "filmOffsetY",
     step: number,
     min?: number,
     max?: number,
@@ -60,12 +69,48 @@ export function CameraParams({ id, camera }: { id: Uuid; camera: CameraDataDTO }
 
   return (
     <Section title="Camera">
-      {num("FOV", "fov", 0.2, 1, 179, "deg")}
+      {/* Lens: Focal Length ↔ FOV. The label is a plain button (same look) that
+          toggles which representation you edit; both write back focalLength. */}
+      <div className="grid min-h-8 grid-cols-[96px_1fr] items-center gap-1">
+        <button
+          type="button"
+          onClick={() => setLensMode((m) => (m === "focal" ? "fov" : "focal"))}
+          className="cursor-pointer truncate text-left opacity-60"
+          title={
+            lensMode === "focal"
+              ? "Focal length — click for FOV"
+              : "Field of view — click for focal length"
+          }
+        >
+          {lensMode === "focal" ? "Focal Length" : "FOV"}
+        </button>
+        {lensMode === "focal" ? (
+          <NumberDrag
+            value={c.focalLength}
+            step={0.5}
+            min={1}
+            max={800}
+            postfix="mm"
+            onChange={(v, committed) => setCamera({ focalLength: v }, committed)}
+          />
+        ) : (
+          <NumberDrag
+            value={hFovFromFocalLength(c.focalLength)}
+            step={0.2}
+            min={1}
+            max={179}
+            postfix="deg"
+            onChange={(v, committed) =>
+              setCamera({ focalLength: focalLengthFromHFov(v) }, committed)
+            }
+          />
+        )}
+      </div>
+      {num("Film Offset X", "filmOffsetX", 0.5, undefined, undefined, "%")}
+      {num("Film Offset Y", "filmOffsetY", 0.5, undefined, undefined, "%")}
+      {num("Zoom", "zoom", 0.01, 0.01)}
       {num("Near", "near", 0.01, 0.001)}
       {num("Far", "far", 1, c.near + 0.001)}
-      {num("Film Gauge", "filmGauge", 0.5, 1)}
-      {num("Film Offset", "filmOffset", 0.1)}
-      {num("Zoom", "zoom", 0.01, 0.01)}
       <Field label="Focus Obj">
         <select
           className="select select-sm w-full"

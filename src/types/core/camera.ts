@@ -6,21 +6,32 @@
  * applying this lens (see ViewportSystem.syncSceneCamera). Perspective only for
  * now — a free-oriented orthographic scene camera needs a distinct rig mode the
  * axis-aligned ortho builtins can't provide (deferred).
+ *
+ * The artist model is Cinema4D/Blender-style: a **focal length** (mm) against a
+ * fixed full-frame sensor. three's PerspectiveCamera does the focal-length↔fov
+ * math natively (`setFocalLength` + `filmGauge`) and `setViewOffset` gives the
+ * X/Y lens shift, so we keep the stock camera (DOF works unchanged).
  */
+
+/** Sensor width in mm — fixed full-frame. The height derives from the viewport
+ *  aspect, so this single dimension is all a responsive app needs. */
+export const SENSOR_WIDTH = 36;
+
 export interface CameraDataDTO {
-  /** Vertical field of view, in degrees (three's PerspectiveCamera convention). */
-  fov: number;
+  /** Lens focal length in mm — the primary control. Higher = more telephoto
+   *  (narrower view); the opposite sense to FOV. */
+  focalLength: number;
+  /** Horizontal lens shift as a % of the frame (0 = centred). 100% shifts the
+   *  frame by half its width — the vanishing point reaches the edge (C4D). */
+  filmOffsetX: number;
+  /** Vertical lens shift, % of the frame. */
+  filmOffsetY: number;
+  /** Post-projection zoom multiplier — three's `camera.zoom`; 1 = none. */
+  zoom: number;
   /** Near clip plane, world units. */
   near: number;
   /** Far clip plane, world units. */
   far: number;
-  /** Film (sensor) width in mm — three's `filmGauge`. Skews the frustum only
-   *  together with a non-zero filmOffset; default 35mm (full-frame). */
-  filmGauge: number;
-  /** Lateral lens shift in mm — three's `filmOffset` (tilt-shift / off-axis). */
-  filmOffset: number;
-  /** Post-projection zoom multiplier — three's `camera.zoom`; 1 = none. */
-  zoom: number;
   /** Focus distance (world units) for depth of field. Overridden by focusTarget
    *  when set — the distance from the camera to that object is used instead. */
   focus: number;
@@ -30,8 +41,45 @@ export interface CameraDataDTO {
 }
 
 export function defaultCameraData(): CameraDataDTO {
-  // fov 50 matches the editor's default perspective rig, so looking through a
-  // fresh camera doesn't jar; Blender-style 0.1–1000 clip range. filmGauge 35mm
-  // full-frame; zoom 1; focus 10 (a sane default DOF plane).
-  return { fov: 50, near: 0.1, far: 1000, filmGauge: 35, filmOffset: 0, zoom: 1, focus: 10 };
+  // 50mm is the classic "normal" lens; centred; Blender-style 0.1–1000 clip
+  // range; zoom 1; focus 10 (a sane default DOF plane).
+  return {
+    focalLength: 50,
+    filmOffsetX: 0,
+    filmOffsetY: 0,
+    zoom: 1,
+    near: 0.1,
+    far: 1000,
+    focus: 10,
+  };
+}
+
+const RAD2DEG = 180 / Math.PI;
+const DEG2RAD = Math.PI / 180;
+
+/**
+ * Horizontal field of view (degrees) for a focal length against the fixed
+ * sensor width. HORIZONTAL fov is aspect-independent (the sensor width is the
+ * frame's wider dimension in landscape), so the inspector's focal-length↔fov
+ * toggle needs no viewport aspect. `hfov = 2·atan((sensorW/2) / focalLength)`.
+ */
+export function hFovFromFocalLength(focalLength: number): number {
+  return 2 * Math.atan(SENSOR_WIDTH / 2 / focalLength) * RAD2DEG;
+}
+
+/** Inverse of {@link hFovFromFocalLength}: focal length (mm) for a horizontal fov. */
+export function focalLengthFromHFov(hfov: number): number {
+  return SENSOR_WIDTH / 2 / Math.tan((hfov * DEG2RAD) / 2);
+}
+
+/**
+ * VERTICAL fov (degrees) for a focal length at a given aspect — three's own
+ * projection convention (`filmHeight = sensorW / max(aspect, 1)`,
+ * `vfov = 2·atan(0.5·filmHeight / focalLength)`). Used to shape the frustum
+ * helper at a representative aspect (the render rig derives its own vfov per
+ * pane via `PerspectiveCamera.setFocalLength`).
+ */
+export function fovFromFocalLength(focalLength: number, aspect: number): number {
+  const filmHeight = SENSOR_WIDTH / Math.max(aspect, 1);
+  return 2 * Math.atan((0.5 * filmHeight) / focalLength) * RAD2DEG;
 }

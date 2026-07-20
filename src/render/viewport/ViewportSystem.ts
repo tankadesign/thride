@@ -19,7 +19,7 @@ import { EnvironmentSync } from "@/render/environment/EnvironmentSync";
 import { HELPER_LAYER } from "@/render/layers";
 import type { Document } from "@/core";
 import type { Uuid } from "@/types/core";
-import { type CameraDataDTO, defaultCameraData } from "@/types/core/camera";
+import { type CameraDataDTO, defaultCameraData, SENSOR_WIDTH } from "@/types/core/camera";
 import type { BuiltinCamera, EditorViewportState } from "@/types/editor";
 import { TransformGizmo } from "@/render/gizmo/TransformGizmo";
 import type { ProjectionTarget } from "@/render/gizmo/projectionDrag";
@@ -895,28 +895,25 @@ export class ViewportSystem {
       node.transform.rotation[2],
     );
     // apply the node's lens — the rig was seeded "persp" with placeholder values;
-    // the camera DTO is the source of truth while looking through. Missing fields
-    // (cameras saved before these were added) fall back to the defaults.
+    // the camera DTO is the source of truth while looking through. `setAspect`
+    // already ran for this pane, so `setFocalLength` derives the correct vertical
+    // fov for the current (responsive) aspect — re-derive every frame (cheap).
     if (rig.camera instanceof PerspectiveCamera) {
-      const d = defaultCameraData();
-      const lens = { ...d, ...(node.data?.camera as Partial<CameraDataDTO> | undefined) };
+      const lens = { ...defaultCameraData(), ...(node.data?.camera as Partial<CameraDataDTO>) };
       const c = rig.camera;
-      if (
-        c.fov !== lens.fov ||
-        c.near !== lens.near ||
-        c.far !== lens.far ||
-        c.filmGauge !== lens.filmGauge ||
-        c.filmOffset !== lens.filmOffset ||
-        c.zoom !== lens.zoom
-      ) {
-        c.fov = lens.fov;
-        c.near = lens.near;
-        c.far = lens.far;
-        c.filmGauge = lens.filmGauge;
-        c.filmOffset = lens.filmOffset;
-        c.zoom = lens.zoom;
-        c.updateProjectionMatrix();
-      }
+      c.filmGauge = SENSOR_WIDTH;
+      c.filmOffset = 0; // X/Y shift is applied via setViewOffset below, not filmOffset
+      c.near = lens.near;
+      c.far = lens.far;
+      c.zoom = lens.zoom;
+      c.setFocalLength(lens.focalLength); // sets vfov from focal length + gauge + aspect
+      // Film offset X/Y as an off-axis lens shift (three's filmOffset is X-only;
+      // setViewOffset shifts both). 100% ⇒ half the frame. It re-sets aspect to
+      // fullW/fullH, so pass the current aspect to keep it unchanged.
+      const fx = lens.filmOffsetX / 200;
+      const fy = lens.filmOffsetY / 200;
+      if (fx !== 0 || fy !== 0) c.setViewOffset(c.aspect, 1, fx * c.aspect, fy, c.aspect, 1);
+      else if (c.view?.enabled) c.clearViewOffset();
     }
     const targetId = node.data?.target as Uuid | undefined;
     if (targetId) {

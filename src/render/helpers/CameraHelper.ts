@@ -6,7 +6,7 @@ import {
   MathUtils,
   type Object3D,
 } from "three";
-import { type CameraDataDTO, defaultCameraData } from "@/types/core/camera";
+import { type CameraDataDTO, defaultCameraData, fovFromFocalLength } from "@/types/core/camera";
 import { viewportTheme } from "@/render/theme/viewportTheme";
 
 /**
@@ -15,11 +15,11 @@ import { viewportTheme } from "@/render/theme/viewportTheme";
  * forward) pointing where the camera looks — so it follows node rotation for
  * free as a child of the camera's Object3D.
  *
- * The base rectangle is shaped by the camera's `fov` at a fixed focus distance
- * (NOT the far plane — a default far of 1000 would draw a helper the size of the
- * scene) using a representative 16:9 sensor, so editing the lens visibly
- * reshapes the pyramid. A short "up" tick above the top edge marks which way is
- * up, matching Blender's camera gizmo.
+ * The base rectangle is shaped by the camera's focal length (converted to a
+ * vertical fov at a representative 16:9 aspect) at a fixed focus distance (NOT
+ * the far plane — a default far of 1000 would draw a helper the size of the
+ * scene), so editing the lens visibly reshapes the pyramid. A short "up" tick
+ * above the top edge marks which way is up, matching Blender's camera gizmo.
  */
 const HELPER_MAT = new LineBasicMaterial({ color: viewportTheme.secondary });
 
@@ -70,9 +70,13 @@ function frustumSegments(fov: number): Float32Array {
   return new Float32Array(segments.flat());
 }
 
+/** The helper's representative vertical fov from the lens focal length. */
+const helperFov = (dto: CameraDataDTO): number =>
+  fovFromFocalLength(dto.focalLength, HELPER_ASPECT);
+
 export function buildCameraHelper(dto: CameraDataDTO = defaultCameraData()): Object3D {
   const geo = new BufferGeometry();
-  geo.setAttribute("position", new BufferAttribute(frustumSegments(dto.fov), 3));
+  geo.setAttribute("position", new BufferAttribute(frustumSegments(helperFov(dto)), 3));
   const helper = new LineSegments(geo, HELPER_MAT);
   helper.raycast = () => {}; // never pickable
   // three's WebGPU backend mis-culls Line-type objects against a lazily
@@ -87,6 +91,6 @@ export function buildCameraHelper(dto: CameraDataDTO = defaultCameraData()): Obj
 export function updateCameraHelper(helper: Object3D, dto: CameraDataDTO): void {
   if (!(helper instanceof LineSegments)) return;
   const attr = helper.geometry.getAttribute("position") as BufferAttribute;
-  (attr.array as Float32Array).set(frustumSegments(dto.fov));
+  (attr.array as Float32Array).set(frustumSegments(helperFov(dto)));
   attr.needsUpdate = true;
 }
