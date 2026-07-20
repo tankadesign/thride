@@ -182,6 +182,66 @@ describe("graph compiler", () => {
     }
   });
 
+  it("compiles the done-when noise→ramp→color graph", () => {
+    const g = graph(
+      [
+        node("out", "output"),
+        node("n", "noise", { select: { noise: "perlin" } }),
+        node("r", "ramp"), // factory seeds a black→white ramp
+      ],
+      [wire("n", "out", "r", "t"), wire("r", "out", "out", "color")],
+    );
+    const c = compileGraph(g);
+    expect(c.nodes.color).toBeTruthy();
+  });
+
+  it("compiles the done-when fractal→bump→normal graph", () => {
+    const g = graph(
+      [
+        node("out", "output"),
+        node("n", "noise", { select: { noise: "fractal" } }),
+        node("b", "bump", { params: { strength: 1 } }),
+      ],
+      [wire("n", "out", "b", "height"), wire("b", "out", "out", "normal")],
+    );
+    const c = compileGraph(g);
+    expect(c.nodes.normal).toBeTruthy();
+    expect(typeof c.nodes.normal!.xyz).toBe("object"); // a vec3 normal, not a scalar
+  });
+
+  it("a ramp stop edit re-bakes the texture — never a recompile", () => {
+    const g = graph(
+      [node("out", "output"), node("n", "noise"), node("r", "ramp")],
+      [wire("n", "out", "r", "t"), wire("r", "out", "out", "color")],
+    );
+    const c = compileGraph(g);
+    expect(getGraphCompileCount()).toBe(1);
+
+    const edited = clone(g);
+    edited.nodes.find((n) => n.id === "r")!.ramp!.stops = [
+      { t: 0, color: "#ff0000" },
+      { t: 1, color: "#0000ff" },
+    ];
+    expect(c.applies(edited)).toBe(true); // stop values are texture data, not shape
+    c.update(edited);
+    expect(getGraphCompileCount()).toBe(1);
+  });
+
+  it("bump strength scrubs without recompiling", () => {
+    const g = graph(
+      [node("out", "output"), node("n", "noise"), node("b", "bump", { params: { strength: 1 } })],
+      [wire("n", "out", "b", "height"), wire("b", "out", "out", "normal")],
+    );
+    const c = compileGraph(g);
+    expect(c.uniforms.getFloat("b/strength")).toBe(1);
+    const edited = clone(g);
+    edited.nodes.find((n) => n.id === "b")!.params!.strength = 3;
+    expect(c.applies(edited)).toBe(true);
+    c.update(edited);
+    expect(getGraphCompileCount()).toBe(1);
+    expect(c.uniforms.getFloat("b/strength")).toBe(3);
+  });
+
   it("an unknown noise id still compiles (forward-compat docs)", () => {
     const g = graph(
       [node("out", "output"), node("n", "noise", { select: { noise: "noise-from-the-future" } })],

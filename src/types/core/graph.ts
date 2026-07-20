@@ -1,5 +1,5 @@
 import type { Uuid } from "./ids";
-import type { GradientRamp, ProceduralChannel } from "./procedural";
+import { defaultRamp, type GradientRamp, type ProceduralChannel } from "./procedural";
 
 /**
  * Node-based material graph (chunk E7) — the "Substance-lite" go-forward
@@ -164,8 +164,12 @@ export function defaultGraphNode(
     case "bump":
       node.params = { strength: 1 };
       break;
-    case "output":
     case "ramp":
+      // a ramp node always carries stops (its presence is structural; the stop
+      // values are live texture data) — seed the default black→white gradient.
+      node.ramp = defaultRamp();
+      break;
+    case "output":
       break;
   }
   return node;

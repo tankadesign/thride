@@ -7,19 +7,24 @@ import type {
   MathOp,
   Uuid,
 } from "@/types/core";
+import { defaultRamp } from "@/types/core";
 import {
   max,
   min,
   positionLocal,
   positionWorld,
   pow,
+  texture,
   uv,
+  vec2,
   vec3,
   type Float,
   type Vec3,
 } from "@/materials/tsl";
 import { noiseDef } from "@/materials/noises";
 import { blendLayer } from "@/materials/procedural/blend";
+import { bumpNormal } from "@/materials/procedural/bump";
+import { RampTexture } from "@/materials/procedural/ramp";
 import type { UniformTable } from "@/materials/procedural/uniforms";
 
 /**
@@ -58,6 +63,7 @@ const P = {
   value: (id: Uuid) => `${id}/value`,
   color: (id: Uuid) => `${id}/color`,
   factor: (id: Uuid) => `${id}/factor`,
+  strength: (id: Uuid) => `${id}/strength`,
   /** inline float fallback for an unconnected input socket. */
   in: (id: Uuid, s: string) => `${id}/in.${s}`,
   /** inline color fallback for an unconnected input socket. */
@@ -83,6 +89,9 @@ export class GraphEmit {
   private readonly byId = new Map<Uuid, GraphNode>();
   private readonly memo = new Map<Uuid, Emitted>();
   private readonly visiting = new Set<Uuid>();
+  /** Ramp DataTextures built this pass, keyed by node id — the compiler re-bakes
+   *  them on a stop edit (no recompile) and disposes them with the graph. */
+  readonly ramps = new Map<Uuid, RampTexture>();
 
   constructor(
     private readonly graph: MaterialGraphDTO,
@@ -170,8 +179,28 @@ export class GraphEmit {
         const blend = (node.select?.blend ?? "normal") as BlendMode;
         return { value: blendLayer(blend, vec3(a), vec3(b), factor), type: "vec3" };
       }
-      // output is a sink (walked by the compiler, never a source); ramp/bump are
-      // Stage 2. All fail safe to mid-gray until then.
+      case "ramp": {
+        // 256×1 lookup of the input value: `t` carries the value, v is arbitrary.
+        // `.clamp` mirrors the layer stack — a value outside [0,1] would sample
+        // the edge texel. The texture is owned by `ramps` (re-baked, not rebuilt).
+        const t = this.input(node, "t", "float", () =>
+          u.float(P.in(node.id, "t"), node.params?.t ?? 0),
+        ) as Float;
+        const rt = new RampTexture(node.ramp ?? defaultRamp());
+        this.ramps.set(node.id, rt);
+        return { value: texture(rt.texture, vec2(t.clamp(0, 1), 0.5)).rgb, type: "vec3" };
+      }
+      case "bump": {
+        // height field → view-space normal (three's perturbNormalArb, shared with
+        // the stack's normal channel). Binds straight to Output.normal — no
+        // central height→normal step, the bump node owns the conversion.
+        const height = this.input(node, "height", "float", () =>
+          u.float(P.in(node.id, "height"), node.params?.height ?? 0),
+        ) as Float;
+        const strength = u.float(P.strength(node.id), node.params?.strength ?? 1);
+        return { value: bumpNormal(height, strength), type: "vec3" };
+      }
+      // output is a sink — walked by the compiler, never emitted as a source.
       default:
         return FALLBACK;
     }
@@ -217,7 +246,11 @@ export function updateGraphUniforms(uniforms: UniformTable, graph: MaterialGraph
         uniforms.setColor(P.inc(node.id, "a"), node.colors?.a ?? "#000000");
         uniforms.setColor(P.inc(node.id, "b"), node.colors?.b ?? "#ffffff");
         break;
-      // coord/output carry no uniforms; ramp/bump are Stage 2
+      case "bump":
+        uniforms.setFloat(P.strength(node.id), node.params?.strength ?? 1);
+        break;
+      // ramp stops re-bake into the DataTexture (owned by the compiler, not the
+      // uniform table); coord/output carry no uniforms.
     }
   }
 }

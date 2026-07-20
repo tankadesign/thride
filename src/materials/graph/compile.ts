@@ -1,6 +1,7 @@
-import type { MaterialGraphDTO, ProceduralChannel } from "@/types/core";
+import type { MaterialGraphDTO, ProceduralChannel, Uuid } from "@/types/core";
 import { graphStructureKey, OUTPUT_CHANNELS, PROCEDURAL_CHANNELS } from "@/types/core";
 import { vec3, type Vec3 } from "@/materials/tsl";
+import type { RampTexture } from "@/materials/procedural/ramp";
 import { UniformTable } from "@/materials/procedural/uniforms";
 import { GraphEmit, toVec3, updateGraphUniforms } from "./emit";
 
@@ -43,22 +44,26 @@ export class CompiledGraph implements CompiledMaterial<MaterialGraphDTO> {
   readonly nodes: Partial<Record<ProceduralChannel, Vec3>> = {};
   readonly uniforms = new UniformTable();
   readonly key: string;
+  /** Ramp textures owned by this compile — re-baked on `update`, freed on `dispose`. */
+  private readonly ramps: ReadonlyMap<Uuid, RampTexture>;
 
   constructor(graph: MaterialGraphDTO) {
     this.key = graphStructureKey(graph);
     const out = graph.nodes.find((n) => n.id === graph.output && n.kind === "output");
-    if (!out) return;
     const emit = new GraphEmit(graph, this.uniforms);
-    for (const channel of OUTPUT_CHANNELS) {
-      const conn = graph.connections.find((c) => c.to.node === out.id && c.to.socket === channel);
-      if (!conn) continue; // undriven channel → falls back to the material scalar
-      const value = toVec3(emit.emit(conn.from.node));
-      // store vec3 for every channel and re-`.r` scalars at bind (identical to
-      // CompiledStacks), so the binder treats graph and stack nodes the same way.
-      // The normal channel binds directly — the bump node (Stage 2) already emits
-      // a view-space normal, so there is NO central height→normal step here.
-      this.nodes[channel] = SCALAR.has(channel) ? vec3(value.r) : value;
+    if (out) {
+      for (const channel of OUTPUT_CHANNELS) {
+        const conn = graph.connections.find((c) => c.to.node === out.id && c.to.socket === channel);
+        if (!conn) continue; // undriven channel → falls back to the material scalar
+        const value = toVec3(emit.emit(conn.from.node));
+        // store vec3 for every channel and re-`.r` scalars at bind (identical to
+        // CompiledStacks), so the binder treats graph and stack nodes the same way.
+        // The normal channel binds directly — the bump node already emits a
+        // view-space normal, so there is NO central height→normal step here.
+        this.nodes[channel] = SCALAR.has(channel) ? vec3(value.r) : value;
+      }
     }
+    this.ramps = emit.ramps;
   }
 
   applies(graph: MaterialGraphDTO): boolean {
@@ -68,10 +73,14 @@ export class CompiledGraph implements CompiledMaterial<MaterialGraphDTO> {
   update(graph: MaterialGraphDTO): void {
     // emit.ts owns the path scheme so create/poke can never drift
     updateGraphUniforms(this.uniforms, graph);
+    // ramp stops re-bake into the same DataTexture — never a graph change
+    for (const node of graph.nodes) {
+      if (node.kind === "ramp" && node.ramp) this.ramps.get(node.id)?.update(node.ramp);
+    }
   }
 
   dispose(): void {
-    // Stage 2 adds ramp DataTextures to dispose; nothing owns GPU resources yet.
+    for (const rt of this.ramps.values()) rt.dispose();
   }
 }
 
