@@ -38,7 +38,7 @@ function NavSection() {
     <section className="flex flex-col gap-1.5">
       <h3 className="font-semibold">Navigation</h3>
       <select
-        className="select select-md w-full"
+        className="select select-sm w-full"
         value={navId}
         onChange={(e) => setNavId(e.target.value)}
       >
@@ -106,7 +106,7 @@ function KeysSection() {
           />
         ) : (
           <select
-            className="select select-md flex-1"
+            className="select select-sm flex-1"
             value={keyId}
             onChange={(e) => setKeyId(e.target.value)}
           >

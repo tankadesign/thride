@@ -43,9 +43,9 @@ import { buildSplineObject, syncSplineGeometry } from "./SplineSync";
 // three-mesh-bvh accelerated raycast, wired once for the whole app
 Mesh.prototype.raycast = acceleratedRaycast;
 // biome-ignore lint/suspicious/noExplicitAny: prototype augmentation
-(Object.getPrototypeOf(new Mesh().geometry) as any).computeBoundsTree = computeBoundsTree;
+Object.getPrototypeOf(new Mesh().geometry).computeBoundsTree = computeBoundsTree;
 // biome-ignore lint/suspicious/noExplicitAny: prototype augmentation
-(Object.getPrototypeOf(new Mesh().geometry) as any).disposeBoundsTree = disposeBoundsTree;
+Object.getPrototypeOf(new Mesh().geometry).disposeBoundsTree = disposeBoundsTree;
 
 // default PBR material — double-sided (open meshes visible from behind),
 // cast/receive shadows enabled on every mesh object

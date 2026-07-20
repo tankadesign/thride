@@ -181,7 +181,7 @@ export function ViewportPanel({ onSystem }: Props) {
     ...doc.scene
       .toDTO()
       .filter((n) => n.kind === "camera")
-      .map((n) => ({ value: n.id as string, label: `🎥 ${n.name}` })),
+      .map((n) => ({ value: n.id, label: `🎥 ${n.name}` })),
   ];
 
   // logical pane per visible slot: single layout shows the maximized pane
@@ -226,7 +226,7 @@ export function ViewportPanel({ onSystem }: Props) {
       {slots.map((pane, slot) => (
         <div key={pane} className="absolute flex items-center gap-1" style={slotStyle(slot)}>
           <select
-            className="select select-md w-32 border-base-300 bg-base-100/80 backdrop-blur"
+            className="select select-sm w-32 border-base-300 bg-base-100/80 backdrop-blur"
             value={paneCameras[pane] as string}
             onChange={(e) => setPaneCamera(pane, e.target.value as PaneCamera)}
           >
@@ -270,7 +270,7 @@ export function ViewportPanel({ onSystem }: Props) {
       {slots.map((pane, slot) =>
         axes[slot] ? (
           <div key={`axes-${pane}`} className="absolute" style={axesStyle(slot)}>
-            <AxisIndicator axes={axes[slot]!} />
+            <AxisIndicator axes={axes[slot]} />
           </div>
         ) : null,
       )}

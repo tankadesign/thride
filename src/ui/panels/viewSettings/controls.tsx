@@ -51,7 +51,7 @@ export function Select({
 }) {
   return (
     <select
-      className="select select-md w-full"
+      className="select select-sm w-full"
       value={value}
       disabled={disabled}
       onChange={(e) => onChange(e.target.value)}
