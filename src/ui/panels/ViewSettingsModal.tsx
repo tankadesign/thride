@@ -73,7 +73,7 @@ export function ViewSettingsModal({
 
       <div
         role="tablist"
-        className="tabs tabs-box tabs-sm m-1 mb-3 ring ring-base-content/10 ring-inset"
+        className="tabs tabs-box tabs-xs m-1 mb-3 ring ring-base-content/10 ring-inset"
       >
         {TABS.map((t) => (
           <button

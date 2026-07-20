@@ -30,14 +30,14 @@ export function ProjectTabs() {
     <div className="flex flex-none items-center gap-1 border-b border-base-100 bg-base-300 pr-1">
       <div
         role="tablist"
-        className="tabs tabs-lift tabs-sm min-w-0 flex-1 flex-nowrap overflow-x-auto pt-1 pl-1 whitespace-nowrap [scrollbar-width:thin]"
+        className="tabs tabs-box tabs-xs min-w-0 flex-1 flex-nowrap overflow-x-auto pt-1 pl-1 whitespace-nowrap scrollbar-thin"
       >
         {projects.map((p) => (
           <button
             key={p.id}
             type="button"
             role="tab"
-            className={`tab flex-none gap-1.5 ${p.id === activeId ? "tab-active" : ""}`}
+            className={`tab flex-none gap-1.5 ${p.id === activeId ? "tab-active [--tab-bg:var(--color-neutral)]" : ""}`}
             onClick={() => switchProject(p.id)}
             onDoubleClick={() => setEditing({ id: p.id, value: p.name })}
           >

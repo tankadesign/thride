@@ -12,16 +12,13 @@ body,
   overflow: hidden;
 }
 
-:root {
-  font-size: 13px; /* compact editor density */
-}
-
 /* dockview → daisyUI theme glue: map dockview vars onto semantic colors */
 .dv-view .dockview-theme-thride {
+  --base-lighter: color-mix(in oklab, var(--color-base-content) 15%, transparent);
   --dv-background-color: var(--color-base-200);
   --dv-paneview-active-outline-color: var(--color-primary);
   --dv-tabs-and-actions-container-background-color: var(--color-base-300);
-  --dv-activegroup-visiblepanel-tab-background-color: var(--color-base-100);
+  --dv-activegroup-visiblepanel-tab-background-color: var(--base-lighter);
   --dv-activegroup-hiddenpanel-tab-background-color: var(--color-base-300);
   --dv-inactivegroup-visiblepanel-tab-background-color: var(--color-base-200);
   --dv-inactivegroup-hiddenpanel-tab-background-color: var(--color-base-300);
@@ -47,7 +44,7 @@ body,
   --dv-group-view-background-color: var(--color-base-100);
   /* match the project-tab strip's compact density (~11.5px / 26px) */
   --dv-tabs-and-actions-container-height: 26px;
-  --dv-tabs-and-actions-container-font-size: 11.5px;
+  --dv-tabs-and-actions-container-font-size: 12px;
   --dv-drag-over-background-color: color-mix(in oklab, var(--color-primary) 25%, transparent);
   --dv-drag-over-border-color: var(--color-primary);
   --dv-tabs-container-scrollbar-color: var(--color-base-content);
@@ -58,9 +55,6 @@ body,
   /* dockview panel tabs: the container font-size var doesn't reach the tab
        label (it inherits the 13px root), so pin it — and shrink the close glyph —
        to match the project-tab strip's density. */
-  .dv-default-tab-content {
-    font-size: 11.5px;
-  }
   .dv-default-tab-action {
     padding: 0 2px;
   }

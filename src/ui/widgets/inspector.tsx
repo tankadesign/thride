@@ -81,7 +81,7 @@ export function Section({
 }) {
   return (
     <fieldset className={`fieldset px-2 pt-2 pb-4 ${bordered ? "border-b border-base-200" : ""}`}>
-      <legend className="fieldset-legend flex w-full items-center justify-between py-0 text-[10px] uppercase opacity-60">
+      <legend className="fieldset-legend flex w-full items-center justify-between py-0 text-[10px] uppercase opacity-60 min-h-6">
         {title}
         {onReset ? (
           <button
