@@ -38,15 +38,33 @@
   structural invalidation, vec3→scalar coercion, cycle safety, JSON round-trip. Gates green (tsc
   clean, lint 0 errors, `vp test` 283 passing, +13). Committed `83483bd`.
 
+### M4 — E7 Stages 2–4 shipped
+
+- **Stage 2** (`ea4e4e8`) — ramp + bump node emitters. Ramp node → `RampTexture` lookup (reuses
+  `procedural/ramp.ts`); `CompiledGraph` owns the textures (update re-bakes stops, dispose frees).
+  Bump node → view-space normal via `procedural/bump.ts`, bound straight to `Output.normal`. Both
+  done-when graph shapes now compile.
+- **Stage 3** (`87ca4a5`) — live viewport integration. `proceduralBind` gains `CompiledLook`
+  (normalizes E7 graph + E3 stack to one `nodes`/`applies`/`update`/`dispose` contract; **graph
+  wins** when present). `lookKey` tags the front-end (`g:`/`s:`) so a graph⇄stack switch is
+  structural. `MaterialSync` + `materialThumbnails` compile via `compileLook` — a graph material
+  renders live in viewport + thumbnails on the same recompile gate. +7 tests.
+- **Stage 4** (`475d2fd`) — Rete v2 node editor panel (read-only render + pan/zoom/select). Added
+  `rete` + area/connection/react plugins + `styled-components`. `GRAPH_NODE_DEFS` catalog
+  (sockets/params/selects per kind) added to the schema. `ui/nodegraph/`: `starterGraph`
+  (coord→fractal→ramp→color), `mountNodeEditor` (DTO→Rete), `NodeGraphPanel` (selected-material
+  aware; empty state seeds the starter via `UpdateMaterialCommand`). Registered `nodeEditor` dock
+  panel + View → Node Editor. **Verified live in Chrome:** create graph → nodes render with
+  sockets/wires/params → the material thumbnail shows the fractal pattern (full E7 loop end-to-end).
+
 ## Left mid-flight
 
-- **E7 Stages 2–6 remain.** Next: **Stage 2** (ramp + bump node emitters — completes compiler
-  support for both done-when graphs: `noise→ramp→color`, `fractal→bump→normal`), then **Stage 3**
-  (widen `proceduralBind`/`MaterialSync` to accept `CompiledGraph`; decide graph-vs-stack
-  precedence — graph wins when present; live viewport with recompile-count tests), **Stage 4**
-  (add Rete.js dep + read-only themed panel in `ui/nodegraph/`), **Stage 5** (full editing:
-  connect/disconnect/delete/param widgets, one-undo-step edits), **Stage 6** (per-node thumbnails
-  - error badges + optional compileAsync warm-swap).
+- **E7 Stages 5–6 remain.** **Stage 5** — full in-panel editing (add-node menu, connect/disconnect/
+  delete, param widgets writing back through `UpdateMaterialCommand`, each structural action = one
+  undo step). **Stage 6** — per-node offscreen thumbnails, error badges, optional `compileAsync`
+  warm-swap. Polish carried forward: theme the Rete nodes to daisyUI `sunset` (currently default
+  Rete blue); improve the initial `zoomAt` framing (nodes cluster at the panel bottom).
+- Gates green through Stage 4: tsc clean, lint 0 errors, `vp test` **294 passing**.
 
 ## Decisions made (and why)
 
