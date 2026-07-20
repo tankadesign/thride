@@ -83,10 +83,43 @@ and the frustum helper was a fixed-size pyramid. F4 adds the lens:
   while look-through fills the _pane's_ aspect, so the wireframe is a representative shape, not the exact
   captured framing — acceptable v1.
 
+## Follow-up round — camera bugs + polish (same session, after initial F4)
+
+Owner reported two bugs and asked for two additions; all done + committed.
+
+- **Bug — gizmo/handle size scaled with camera fov** (`da2d5f0`). `applyScreenScale`/handle sizing used
+  distance only; a look-through camera's fov then rescaled the on-screen gizmo. Normalized by
+  `tan(fov/2)/tan(25°)` (25° = half the editor's default 50° fov) so only distance drives screen size.
+  Verified: at fov 50 vs 120 the gizmo's projected screen size is identical (ratio 1.0), world scale
+  compensates. Fixed the same class in `PrimitiveHandles`.
+- **Bug — orbit dead while looking through the selected camera** (`da2d5f0`). Root-caused by reproduction:
+  a selected scene camera's transform gizmo sits at the camera position = the eye, so it filled the near
+  view and `tryInteractivePress` consumed every LMB press (pan/zoom bypass the gizmo pick → still worked).
+  Fix: `gizmoBlockedInPane` hides + skips-pick the gizmo in a pane that looks through the selected node
+  (render gate in the pane loop; explicit pick gate in `pointerPick`, since the raycaster ignores
+  `.visible`). Verified: camera selected + looked-through, orbit now moves the camera.
+- **Add — camera params** (`f32dba6`): `filmGauge`, `filmOffset`, `zoom` (three props, applied in
+  `syncSceneCamera`), and `focus` for DOF — a focus-object selector (its distance drives focus) or a manual
+  focus distance when no object is set. `CameraDataDTO` + `CameraParams` extended; legacy cameras backfill
+  from defaults. Verified: fields render; zoom visibly reframes.
+- **Add — Depth of Field** (`765ef21`): three's `dof()` node in `DitherOutput.composeOutput` (applied first,
+  in linear HDR), focus distance from the scene camera, focal range + bokeh in the pane's Post Processing
+  settings. Off by default; gated to **PBR + single layout + looking through a scene camera** (like GTAO/SSR).
+  viewZ is rebuilt via `perspectiveDepthToViewZ(depth, near, far)` with the scene camera's OWN near/far
+  (added `perspectiveDepthToViewZ` to the tsl barrel). **Critical:** DOF samples hdr depth as a plain 2D
+  texture, so it joins the `setSceneMSAA` single-sample gate — else DOF-alone (no GTAO/SSR forcing
+  single-sample) reads a 4-sample depth attachment and the frame throws. Verified in exactly that config
+  (DOF on, GTAO off, SSR off): real bokeh, clean on/off, zero console errors; DOF node disposed on rebuild.
+
 ## Known issues
 
 - Orthographic scene cameras not supported (see Decisions) — deliberate.
 - Camera texture projection still hidden from the UI (deferred; needs a source-camera picker).
+- **DOF, like GTAO/SSR, is single-layout only** (it reconstructs from one camera's depth) — a documented
+  scope limit to raise at M3 sign-off, not a silent gap. DOF also blurs the grid/outlines in the composite
+  (helpers bake into the depth-less color) — acceptable v1; the gizmo is hidden by the orbit fix.
+- `near`/`far`/`filmGauge`/`filmOffset` are applied in code but not each independently eyeballed; fov, zoom,
+  focus (via DOF), and the film back all exercised.
 
 ## Next steps (exact, resumable cold)
 
