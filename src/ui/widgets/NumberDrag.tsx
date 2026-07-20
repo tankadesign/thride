@@ -4,6 +4,7 @@ interface NumberDragProps {
   value: number;
   onChange: (v: number, committed: boolean) => void;
   label?: string;
+  postfix?: string;
   step?: number; // value change per pixel of drag
   min?: number;
   max?: number;
@@ -23,6 +24,7 @@ export function NumberDrag({
   value,
   onChange,
   label,
+  postfix,
   step = 0.01,
   min,
   max,
@@ -134,10 +136,12 @@ export function NumberDrag({
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
     >
-      {label ? <span className="label text-[10px] opacity-60">{label}</span> : null}
+      {label ? (
+        <span className="label m-0 p-0 text-[10px] text-base-content opacity-60">{label}</span>
+      ) : null}
       <input
         ref={inputRef}
-        className={`text-right transition-colors duration-300 ease-out focus:text-primary selection:bg-primary/30 ${dragging ? "text-primary cursor-ew-resize" : ""} ${editing ? "" : "pointer-events-none"}`}
+        className={`text-right transition-colors duration-300 ease-out focus:text-primary p-0 selection:bg-primary/30 ${dragging ? "text-primary cursor-ew-resize" : ""} ${editing ? "" : "pointer-events-none"}`}
         value={shown}
         readOnly={!editing}
         // keyboard focus (Tab) enters type-mode too, not just a pointer click.
@@ -191,6 +195,9 @@ export function NumberDrag({
           e.stopPropagation();
         }}
       />
+      {(postfix?.length ?? 0 > 0) ? (
+        <span className="label text-[10px] m-0 p-0 text-base-content opacity-60">{postfix}</span>
+      ) : null}
     </label>
   );
 }

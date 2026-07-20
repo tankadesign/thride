@@ -403,7 +403,7 @@ export function ObjectManagerPanel() {
             key={id}
             className={`flex items-center gap-1 pr-1 ${
               selected ? "bg-primary/25" : "hover:bg-base-200"
-            } ${isInsideTarget ? "outline outline-1 outline-dashed outline-primary" : ""} ${
+            } ${isInsideTarget ? "outline-1 outline-dashed outline-primary" : ""} ${
               altHeld && !dragActive ? "cursor-copy" : ""
             }`}
             style={{ paddingLeft: depth * INDENT + 2, height: ROW_H }}

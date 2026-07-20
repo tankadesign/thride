@@ -40,6 +40,7 @@ export function CameraParams({ id, camera }: { id: Uuid; camera: CameraDataDTO }
     step: number,
     min?: number,
     max?: number,
+    postfix?: string,
   ) => (
     <Field label={label} key={key}>
       <NumberDrag
@@ -47,6 +48,7 @@ export function CameraParams({ id, camera }: { id: Uuid; camera: CameraDataDTO }
         step={step}
         min={min}
         max={max}
+        postfix={postfix}
         onChange={(v, committed) => setCamera({ [key]: v }, committed)}
       />
     </Field>
@@ -58,7 +60,7 @@ export function CameraParams({ id, camera }: { id: Uuid; camera: CameraDataDTO }
 
   return (
     <Section title="Camera">
-      {num("FOV", "fov", 0.2, 1, 179)}
+      {num("FOV", "fov", 0.2, 1, 179, "deg")}
       {num("Near", "near", 0.01, 0.001)}
       {num("Far", "far", 1, c.near + 0.001)}
       {num("Film Gauge", "filmGauge", 0.5, 1)}
