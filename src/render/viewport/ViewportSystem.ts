@@ -550,6 +550,14 @@ export class ViewportSystem {
     return active !== null && this.sceneCameraNode(pane) === active;
   }
 
+  /** The frustum-helper child of a camera node's Object3D, or null. Hidden for
+   *  the pane that looks THROUGH that camera (its lines sit at the eye and poke
+   *  into the frame edges) — but kept visible in every other pane. */
+  private cameraHelperOf(id: Uuid): Object3D | null {
+    const obj = this.sync.object(id);
+    return obj?.children.find((c) => c.userData.cameraHelper) ?? null;
+  }
+
   private layoutPanes(): void {
     const w = this.canvas.clientWidth;
     const h = this.canvas.clientHeight;
@@ -705,9 +713,16 @@ export class ViewportSystem {
         const bg = this.scene.background;
         this.scene.background = null; // a background would force-clear the pane
         renderer.autoClear = false;
+        // looking THROUGH a scene camera: hide its own frustum helper for this
+        // pane only — it sits at the eye and its edges show at the frame border
+        const throughCam = this.sceneCameraNode(i);
+        const camHelper = throughCam ? this.cameraHelperOf(throughCam) : null;
+        const camHelperVisible = camHelper?.visible ?? false;
+        if (camHelper) camHelper.visible = false;
         rig.camera.layers.set(HELPER_LAYER);
         await renderer.renderAsync(this.scene, rig.camera);
         rig.camera.layers.set(0);
+        if (camHelper) camHelper.visible = camHelperVisible;
         this.scene.background = bg;
       }
     }
@@ -747,9 +762,15 @@ export class ViewportSystem {
       if (depthPrimed) renderer.copyTextureToTexture(passDepth, output.hdr.depthTexture!);
       renderer.autoClearDepth = !depthPrimed; // keep the copied depth
       renderer.setRenderTarget(output.hdr);
+      // hide the looked-through camera's own frustum helper (sits at the eye)
+      const throughCam = this.sceneCameraNode(this.editor.activePane);
+      const camHelper = throughCam ? this.cameraHelperOf(throughCam) : null;
+      const camHelperVisible = camHelper?.visible ?? false;
+      if (camHelper) camHelper.visible = false;
       activeCam.layers.set(HELPER_LAYER);
       await renderer.renderAsync(this.scene, activeCam);
       activeCam.layers.set(0);
+      if (camHelper) camHelper.visible = camHelperVisible;
       renderer.setRenderTarget(null);
       renderer.autoClearDepth = true;
       renderer.setClearAlpha(prevClearAlpha);
