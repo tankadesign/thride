@@ -5,6 +5,7 @@ import { textureAssets } from "@/io/storage/textureAssets";
 import { useDocument, useSliceVersion } from "@/ui/hooks/doc/document";
 import { NumberDrag } from "@/ui/widgets/NumberDrag";
 import { ColorPicker } from "@/ui/widgets/ColorPicker";
+import { Field, Section } from "../widgets/inspector";
 
 /**
  * Environment / dome-light panel: edits the document's EnvironmentDTO — IBL
@@ -30,12 +31,9 @@ export function EnvironmentPanel() {
   const hdrAsset = env.hdrAssetId ? textureAssets.get(env.hdrAssetId) : undefined;
 
   return (
-    <div className="h-full overflow-auto bg-base-100 text-xs">
-      <fieldset className="fieldset border-b border-base-200 px-2 py-1.5">
-        <legend className="fieldset-legend py-1 text-[10px] uppercase opacity-60">
-          Environment
-        </legend>
-        <Row label="Source">
+    <div className="h-full overflow-auto bg-base-100 text-xs py-2">
+      <Section title="HDR">
+        <Field label="Source">
           <select
             className="select select-sm w-full"
             value={env.source}
@@ -43,12 +41,12 @@ export function EnvironmentPanel() {
               doc.setEnvironment({ source: e.target.value as EnvironmentDTO["source"] })
             }
           >
-            <option value="studio">Studio</option>
-            <option value="hdr">HDR / EXR</option>
+            <option value="studio">Default HDR</option>
+            <option value="hdr">User HDR / EXR</option>
           </select>
-        </Row>
+        </Field>
         {env.source === "hdr" ? (
-          <Row label="File">
+          <Field label="File">
             <div className="flex min-w-0 items-center gap-1">
               <button
                 type="button"
@@ -71,9 +69,9 @@ export function EnvironmentPanel() {
                 }}
               />
             </div>
-          </Row>
+          </Field>
         ) : null}
-        <Row label="Intensity">
+        <Field label="Intensity">
           <NumberDrag
             value={env.intensity}
             step={0.02}
@@ -81,8 +79,8 @@ export function EnvironmentPanel() {
             max={5}
             onChange={(v, c) => setNum("intensity", v, c)}
           />
-        </Row>
-        <Row label="Rotation">
+        </Field>
+        <Field label="Rotation">
           <NumberDrag
             value={env.rotation}
             step={1}
@@ -90,14 +88,11 @@ export function EnvironmentPanel() {
             max={360}
             onChange={(v, c) => setNum("rotation", v, c)}
           />
-        </Row>
-      </fieldset>
+        </Field>
+      </Section>
 
-      <fieldset className="fieldset px-2 py-1.5">
-        <legend className="fieldset-legend py-1 text-[10px] uppercase opacity-60">
-          Background
-        </legend>
-        <Row label="Mode">
+      <Section title="Background">
+        <Field label="Mode">
           <select
             className="select select-sm w-full"
             value={env.background}
@@ -109,18 +104,18 @@ export function EnvironmentPanel() {
             <option value="environment">Environment</option>
             <option value="transparent">Transparent</option>
           </select>
-        </Row>
+        </Field>
         {env.background === "color" ? (
-          <Row label="Color">
+          <Field label="Color">
             <ColorPicker
               color={env.backgroundColor}
               onChange={(e) => doc.setEnvironment({ backgroundColor: e.target.value })}
             />
-          </Row>
+          </Field>
         ) : null}
         {env.background === "environment" ? (
           <>
-            <Row label="Blur">
+            <Field label="Blur">
               <NumberDrag
                 value={env.backgroundBlur}
                 step={0.02}
@@ -128,8 +123,8 @@ export function EnvironmentPanel() {
                 max={1}
                 onChange={(v, c) => setNum("backgroundBlur", v, c)}
               />
-            </Row>
-            <Row label="Brightness">
+            </Field>
+            <Field label="Brightness">
               <NumberDrag
                 value={env.backgroundIntensity}
                 step={0.02}
@@ -137,19 +132,10 @@ export function EnvironmentPanel() {
                 max={5}
                 onChange={(v, c) => setNum("backgroundIntensity", v, c)}
               />
-            </Row>
+            </Field>
           </>
         ) : null}
-      </fieldset>
-    </div>
-  );
-}
-
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="grid grid-cols-[72px_1fr] items-center gap-1">
-      <span className="opacity-60">{label}</span>
-      {children}
+      </Section>
     </div>
   );
 }
