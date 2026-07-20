@@ -841,7 +841,10 @@ export class ViewportSystem {
       vignetteAmount: activeDisp.vignetteAmount,
       vignetteRadius: activeDisp.vignetteRadius,
     });
-    output.render();
+    // await the composite (not the sync render()) so the whole frame serializes
+    // on one chain — else at very low fps (huge instance counts) the next frame's
+    // scene render starts before this composite presents and frames visibly stack
+    await output.renderAsync();
     this.onAxes?.(axesPerSlot);
     this.frames++;
     // Temporal SSR converges over a burst of frames after each change, then
