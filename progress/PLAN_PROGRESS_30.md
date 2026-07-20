@@ -72,8 +72,16 @@ and the frustum helper was a fixed-size pyramid. F4 adds the lens:
   rendered view (proves the lens flows to the rig). Target = Instancer aimed it at the cluster. Inspected the
   three scene: exactly **1** `cameraHelper` `LineSegments` (18 verts) on the helper layer, parented to the
   camera, `halfW = 2.119` = `tan(50°)·16/9` — i.e. the helper reshaped to fov 100 (default would be 0.829),
-  proving `updateCameraHelper` fires on lens edits. Undid all edits → scene restored to 5 objects. Zero
-  console/WebGPU errors.
+  proving `updateCameraHelper` fires on lens edits.
+- **Serialize round-trip (the F4 done-when word, verified cold):** set a camera to fov **90**, let autosave
+  fire, **reloaded the page**. After the cold load: the persisted DTO reads `{fov:90, near:0.1, far:1000}`,
+  and the rebuilt helper's `halfW = 1.778` = `tan(45°)·16/9` (not the 0.829 default) — proving both that
+  `data.camera` persisted _and_ that the cold `buildCameraObject → buildCameraHelper(dto)` path consumed it.
+  Cleaned up the test camera afterward → scene back to 5 objects. Zero console/WebGPU errors throughout.
+- **Not visually confirmed (applied in code, honest note):** `near`/`far` are set on the rig in
+  `syncSceneCamera` but weren't observed in isolation (hard to see). The helper uses a **fixed 16:9** frustum
+  while look-through fills the _pane's_ aspect, so the wireframe is a representative shape, not the exact
+  captured framing — acceptable v1.
 
 ## Known issues
 
