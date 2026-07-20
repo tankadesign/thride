@@ -5,6 +5,7 @@ import type {
   Projection,
   ProjectionTransform,
 } from "./procedural";
+import type { MaterialGraphDTO } from "./graph";
 
 /**
  * Built-in three.js material families the manager can create. Each maps to a
@@ -177,6 +178,14 @@ export interface MaterialDTO {
    * above it (a `color` stack drives `colorNode`, not `color`).
    */
   procedural?: ProceduralMaterialDoc;
+
+  /**
+   * Node material graph (E7) — the go-forward authoring model that supersedes
+   * the `procedural` layer stack. Compiles to the same per-channel node slots,
+   * so when present it drives the material's channels; the two are alternative
+   * front-ends over one compile target. Absent = no graph.
+   */
+  graph?: MaterialGraphDTO;
 }
 
 /** Defaults for the optional physical fields — shared by the editor + builder. */

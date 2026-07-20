@@ -42,5 +42,22 @@ export {
   structureKey,
   withChannelLayer,
 } from "./procedural";
+export type {
+  CoordSpace,
+  GraphConnection,
+  GraphNode,
+  GraphNodeKind,
+  GraphSocketType,
+  MaterialGraphDTO,
+  MathOp,
+} from "./graph";
+export {
+  COORD_SPACES,
+  MATH_OPS,
+  OUTPUT_CHANNELS,
+  defaultGraphNode,
+  defaultMaterialGraph,
+  graphStructureKey,
+} from "./graph";
 export type { SliceId, DocEventMap } from "./events";
 export type { EditMode, ComponentMode } from "./selection";
