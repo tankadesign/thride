@@ -14,10 +14,24 @@ export interface CameraDataDTO {
   near: number;
   /** Far clip plane, world units. */
   far: number;
+  /** Film (sensor) width in mm — three's `filmGauge`. Skews the frustum only
+   *  together with a non-zero filmOffset; default 35mm (full-frame). */
+  filmGauge: number;
+  /** Lateral lens shift in mm — three's `filmOffset` (tilt-shift / off-axis). */
+  filmOffset: number;
+  /** Post-projection zoom multiplier — three's `camera.zoom`; 1 = none. */
+  zoom: number;
+  /** Focus distance (world units) for depth of field. Overridden by focusTarget
+   *  when set — the distance from the camera to that object is used instead. */
+  focus: number;
+  /** Optional object the camera focuses on: its distance drives DOF focus,
+   *  superseding the manual `focus` number. Aim (`data.target`) is separate. */
+  focusTarget?: string;
 }
 
 export function defaultCameraData(): CameraDataDTO {
   // fov 50 matches the editor's default perspective rig, so looking through a
-  // fresh camera doesn't jar; Blender-style 0.1–1000 clip range.
-  return { fov: 50, near: 0.1, far: 1000 };
+  // fresh camera doesn't jar; Blender-style 0.1–1000 clip range. filmGauge 35mm
+  // full-frame; zoom 1; focus 10 (a sane default DOF plane).
+  return { fov: 50, near: 0.1, far: 1000, filmGauge: 35, filmOffset: 0, zoom: 1, focus: 10 };
 }

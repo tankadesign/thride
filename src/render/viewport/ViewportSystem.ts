@@ -858,15 +858,27 @@ export class ViewportSystem {
       node.transform.rotation[1],
       node.transform.rotation[2],
     );
-    // apply the node's lens (fov/near/far) — the rig was seeded "persp" with a
-    // placeholder fov; the camera DTO is the source of truth while looking through
+    // apply the node's lens — the rig was seeded "persp" with placeholder values;
+    // the camera DTO is the source of truth while looking through. Missing fields
+    // (cameras saved before these were added) fall back to the defaults.
     if (rig.camera instanceof PerspectiveCamera) {
-      const lens = (node.data?.camera as CameraDataDTO | undefined) ?? defaultCameraData();
+      const d = defaultCameraData();
+      const lens = { ...d, ...(node.data?.camera as Partial<CameraDataDTO> | undefined) };
       const c = rig.camera;
-      if (c.fov !== lens.fov || c.near !== lens.near || c.far !== lens.far) {
+      if (
+        c.fov !== lens.fov ||
+        c.near !== lens.near ||
+        c.far !== lens.far ||
+        c.filmGauge !== lens.filmGauge ||
+        c.filmOffset !== lens.filmOffset ||
+        c.zoom !== lens.zoom
+      ) {
         c.fov = lens.fov;
         c.near = lens.near;
         c.far = lens.far;
+        c.filmGauge = lens.filmGauge;
+        c.filmOffset = lens.filmOffset;
+        c.zoom = lens.zoom;
         c.updateProjectionMatrix();
       }
     }
