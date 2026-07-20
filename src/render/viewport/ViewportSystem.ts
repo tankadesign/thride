@@ -538,6 +538,18 @@ export class ViewportSystem {
     return this.doc.scene.get(cam as Uuid) ? (cam as Uuid) : null;
   }
 
+  /**
+   * True when this pane looks through the very node the gizmo is anchored on —
+   * a selected camera you're viewing through. Its gizmo sits at the camera's
+   * position, i.e. at the eye, filling the near view and swallowing every LMB
+   * press (blocking orbit). The gizmo is hidden AND skipped for picking in that
+   * pane so navigation works; you edit the camera from another view.
+   */
+  gizmoBlockedInPane(pane: number): boolean {
+    const active = this.doc.selection.active;
+    return active !== null && this.sceneCameraNode(pane) === active;
+  }
+
   private layoutPanes(): void {
     const w = this.canvas.clientWidth;
     const h = this.canvas.clientHeight;
@@ -658,8 +670,10 @@ export class ViewportSystem {
       }
       const activeObj = this.activeObject();
       // the extrude/inset modal and the live bevel drive their own drag — hide
-      // the gizmo so it doesn't fight them
-      if (this.modalTool || this.bevelTool.isActive) this.gizmo.group.visible = false;
+      // the gizmo so it doesn't fight them; likewise a pane looking through the
+      // selected camera (its gizmo would sit at the eye and block orbit)
+      if (this.modalTool || this.bevelTool.isActive || this.gizmoBlockedInPane(i))
+        this.gizmo.group.visible = false;
       else this.gizmo.update(rig.camera, activeObj, this.editor.gizmoSpace);
       this.handles.update(rig.camera, activeObj);
       this.overlays.update(rig.camera, p.h);

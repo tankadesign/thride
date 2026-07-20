@@ -47,7 +47,10 @@ export function tryInteractivePress(vs: ViewportSystem, e: PointerEvent, pane: n
     vs.invalidate();
     return true;
   }
-  if (vs.gizmo.pointerDown(vs.raycaster)) {
+  // skip the gizmo when this pane looks through the selected camera — its gizmo
+  // sits at the eye and would swallow the press (the raycaster ignores .visible,
+  // so hiding it in render isn't enough; gate the pick explicitly)
+  if (!vs.gizmoBlockedInPane(pane) && vs.gizmo.pointerDown(vs.raycaster)) {
     vs.invalidate();
     return true;
   }

@@ -9,11 +9,13 @@ import {
   Euler,
   Group,
   type Intersection,
+  MathUtils,
   Matrix4,
   Mesh,
   MeshBasicMaterial,
   Object3D,
   OrthographicCamera,
+  PerspectiveCamera,
   Plane,
   PlaneGeometry,
   Quaternion,
@@ -265,9 +267,19 @@ export class TransformGizmo {
   /** Screen-constant size: perspective scales by distance, ortho by frustum height. */
   private applyScreenScale(camera: Camera): void {
     const ortho = camera as OrthographicCamera;
-    const scale = ortho.isOrthographicCamera
-      ? Math.max(0.0001, (ortho.top - ortho.bottom) * 0.092)
-      : Math.max(0.0001, camera.position.distanceTo(this.group.position) * 0.0805);
+    let scale: number;
+    if (ortho.isOrthographicCamera) {
+      scale = Math.max(0.0001, (ortho.top - ortho.bottom) * 0.092);
+    } else {
+      // 0.0805 keeps a constant on-screen size at the editor's default 50° fov;
+      // a look-through scene camera can carry any fov, and screen size scales
+      // with tan(fov/2) — normalize it out so the gizmo doesn't grow/shrink
+      // when the camera's fov changes (only distance should drive its size).
+      const dist = camera.position.distanceTo(this.group.position);
+      const fov = (camera as PerspectiveCamera).fov ?? 50;
+      const fovK = Math.tan(MathUtils.degToRad(fov / 2)) / Math.tan(MathUtils.degToRad(25));
+      scale = Math.max(0.0001, dist * 0.0805 * fovK);
+    }
     this.group.scale.setScalar(scale);
   }
 

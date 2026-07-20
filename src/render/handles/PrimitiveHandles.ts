@@ -2,10 +2,12 @@ import {
   Camera,
   DoubleSide,
   Group,
+  MathUtils,
   Mesh,
   MeshBasicMaterial,
   Object3D,
   OrthographicCamera,
+  PerspectiveCamera,
   Plane,
   PlaneGeometry,
   Raycaster,
@@ -111,9 +113,16 @@ export class PrimitiveHandles {
       // billboard + screen-constant size (~10px at gizmo scale convention)
       mesh.quaternion.copy(camera.quaternion);
       const ortho = camera as OrthographicCamera;
-      const size = ortho.isOrthographicCamera
-        ? (ortho.top - ortho.bottom) * 0.016
-        : Math.max(0.0001, camPos.distanceTo(mesh.position) * 0.014);
+      let size: number;
+      if (ortho.isOrthographicCamera) {
+        size = (ortho.top - ortho.bottom) * 0.016;
+      } else {
+        // normalize by tan(fov/2) so a look-through camera's fov doesn't rescale
+        // the handles (0.014 is calibrated at the editor's default 50° fov)
+        const fov = (camera as PerspectiveCamera).fov ?? 50;
+        const fovK = Math.tan(MathUtils.degToRad(fov / 2)) / Math.tan(MathUtils.degToRad(25));
+        size = Math.max(0.0001, camPos.distanceTo(mesh.position) * 0.014 * fovK);
+      }
       mesh.scale.setScalar(size);
     }
   }
