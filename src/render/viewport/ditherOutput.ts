@@ -1,6 +1,7 @@
 import {
   ACESFilmicToneMapping,
   AgXToneMapping,
+  AlwaysDepth,
   type Camera,
   Color,
   DepthTexture,
@@ -11,7 +12,13 @@ import {
   type Scene,
   type ToneMapping,
 } from "three";
-import { PostProcessing, RenderTarget, type WebGPURenderer } from "three/webgpu";
+import {
+  NodeMaterial,
+  PostProcessing,
+  QuadMesh,
+  RenderTarget,
+  type WebGPURenderer,
+} from "three/webgpu";
 import { ao } from "three/examples/jsm/tsl/display/GTAONode.js";
 import { dof } from "three/examples/jsm/tsl/display/DepthOfFieldNode.js";
 import { recurrentDenoise } from "three/examples/jsm/tsl/display/RecurrentDenoiseNode.js";
@@ -138,6 +145,19 @@ export class DitherOutput {
   /** MSAA count of `hdr`. 4 normally; 0 while GTAO runs (it samples the depth
    *  as a plain 2D texture, impossible on a multisampled attachment). */
   private hdrSamples = 4;
+  /** Helper-overlay target (gizmo/handles/outlines) for the GTAO/DOF path,
+   *  where `hdr` holds the scene: helpers render here (transparent clear,
+   *  scene depth seeded in for occlusion) and composite AFTER the effect
+   *  stack so no effect ever touches them. Single-sample by construction —
+   *  the depth seed samples hdr's depth, and those effects already forced
+   *  `hdr` single-sample anyway. Lazy: only allocated once a separated mode
+   *  runs. */
+  private overlay: RenderTarget | null = null;
+  /** Fullscreen depth-seed quad for the overlay (see seedOverlayDepth). */
+  private overlayDepthQuad: QuadMesh | null = null;
+  private overlayDepthMat: NodeMaterial | null = null;
+  // biome-ignore lint/suspicious/noExplicitAny: DepthTexture identity marker
+  private overlayDepthSrc: any = null;
   private readonly post: PostProcessing;
   private mode: OutputToneMapping = "aces";
   private aoCamera: Camera | null = null;
@@ -222,6 +242,7 @@ export class DitherOutput {
     const old = this.hdr;
     this.hdr = this.makeHdr(this.width, this.height, samples);
     old.dispose();
+    this.discardOverlay(); // its depth attachment was the old hdr's
     return true;
   }
 
@@ -253,6 +274,65 @@ export class DitherOutput {
     return this.scenePass?.renderTarget?.depthTexture ?? null;
   }
 
+  /**
+   * The dedicated helper-overlay target (created on first use). The viewport
+   * renders HELPER_LAYER into it whenever GTAO or DOF is active without SSR;
+   * the graph blends it over the post-processed image.
+   *
+   * It ATTACHES `hdr`'s own depth texture rather than copying it: helpers
+   * depth-test (and write) against the real scene depth — identical occlusion
+   * to the old draw-into-hdr path — and no depth copy is needed. (A
+   * copyTextureToTexture from hdr's depth broke GTAO's sampling of that same
+   * texture; sharing the attachment sidesteps it.) Only valid while hdr is
+   * single-sample, which every separated mode already guarantees.
+   */
+  get overlayTarget(): RenderTarget {
+    if (!this.overlay) {
+      // own single-sample depth, seeded per-frame by the depth quad below.
+      // NOT hdr's DepthTexture object: RenderTarget.depthTexture SETTER steals
+      // the texture's renderTarget backref (one owner only), which leaves the
+      // hdr context submitting a destroyed depth after any resize.
+      this.overlay = this.makeHdr(this.width, this.height, 0);
+    }
+    return this.overlay;
+  }
+
+  /** Drop the overlay so the next use rebuilds it at the current size. */
+  private discardOverlay(): void {
+    this.overlay?.dispose();
+    this.overlay = null;
+  }
+
+  /**
+   * Seed the CURRENT render target's depth with the scene depth: a fullscreen
+   * quad that writes `hdr.depthTexture` as fragment depth, colors untouched.
+   * (`copyTextureToTexture` between depth attachments is a silent no-op on the
+   * WebGPU backend, so the overlay primes its occlusion this way instead.)
+   * Call with the overlay bound; the quad must be the pass that clears.
+   */
+  async seedOverlayDepth(renderer: WebGPURenderer): Promise<void> {
+    if (!this.overlayDepthQuad) {
+      const mat = new NodeMaterial();
+      mat.name = "OverlayDepthSeed";
+      mat.colorWrite = false;
+      mat.colorNode = vec4(0, 0, 0, 0);
+      mat.depthTest = true;
+      mat.depthFunc = AlwaysDepth; // unconditional write over the cleared depth
+      mat.depthWrite = true;
+      this.overlayDepthMat = mat;
+      this.overlayDepthQuad = new QuadMesh(mat);
+    }
+    // rebind when hdr was recreated (MSAA flip / resize swap the depth texture)
+    if (this.overlayDepthSrc !== this.hdr.depthTexture) {
+      this.overlayDepthSrc = this.hdr.depthTexture;
+      this.overlayDepthMat!.depthNode = texture(
+        this.hdr.depthTexture as NonNullable<typeof this.hdr.depthTexture>,
+      ).r;
+      this.overlayDepthMat!.needsUpdate = true;
+    }
+    await this.overlayDepthQuad.renderAsync(renderer);
+  }
+
   /** Size the HDR target to the renderer's drawing buffer (device pixels). */
   resize(width: number, height: number): void {
     this.width = Math.max(1, Math.floor(width));
@@ -268,8 +348,13 @@ export class DitherOutput {
       hdrDepth.image.width = this.width;
       hdrDepth.image.height = this.height;
     }
+    // helper overlay: recreate lazily at the new size (setSize would dispose
+    // the SHARED depth attachment — see discardOverlay). The recreate swaps
+    // the color texture OBJECT, so a graph that referenced it must rebuild.
+    const hadOverlay = this.overlay !== null;
+    this.discardOverlay();
     this.aoNode?.setSize(this.width, this.height);
-    if (this.denoise) {
+    if (this.denoise || hadOverlay) {
       // The temporal graph holds internal history buffers (previous-depth AND
       // previous-normal) that three's setSize can't resize (0.185.1 bug — see
       // buildTemporalSsr). Rebuild at the new size instead of chasing each one;
@@ -541,14 +626,21 @@ export class DitherOutput {
       composite = composite.add(safe.mul(fade));
     }
 
-    if (ssrOn) {
-      // In SSR mode the viewport renders the interaction helpers (gizmo etc.)
-      // into the otherwise-unused hdr buffer (transparent clear) — blend them
-      // over the composite so the SSR pass never sees them in reflections.
-      const helpers = texture(this.hdr.texture);
-      composite = mix(composite.rgb, helpers.rgb, helpers.a);
-    }
-    this.composeOutput(composite, depthNode);
+    // Interaction helpers (gizmo/handles/outlines) bypass the effect stack —
+    // composeOutput blends them over the FINISHED image, so DOF never blurs a
+    // gizmo and AO never halos one. Source: in SSR mode the viewport renders
+    // them into the otherwise-unused hdr buffer (also keeps them out of
+    // reflections); with GTAO/DOF (hdr holds the scene, single-sample) they're
+    // in the dedicated overlay target. Plain path: they're baked into hdr by
+    // the viewport (its MSAA depth can't copy out to a separate target), but
+    // no depth-reading effect can be active there.
+    const aoOn = this.aoCamera !== null && this.aoParams !== null;
+    const helpersTex = ssrOn
+      ? texture(this.hdr.texture)
+      : aoOn || this.dofParams !== null
+        ? texture(this.overlayTarget.texture)
+        : null;
+    this.composeOutput(composite, depthNode, helpersTex);
   }
 
   /**
@@ -563,11 +655,15 @@ export class DitherOutput {
    * - bloom runs in the HDR domain, BEFORE `renderOutput`, because it needs
    *   pre-tone-map luminance to bloom highlights correctly;
    * - vignette + chromatic aberration run in display space, AFTER it;
+   * - `helpers` (the interaction-helper overlay, when separated) blends in
+   *   after ALL of the above — editor UI is not part of the effect stack. It
+   *   still gets the same tone mapping (applied to the overlay on its own) so
+   *   gizmo colors match the plain path, where helpers are baked into hdr;
    * - the dither is ALWAYS last — it's a ±1-LSB correction for the 8-bit write
    *   and is meaningless anywhere else in the chain.
    */
   // biome-ignore lint/suspicious/noExplicitAny: TSL node graph — loose by design
-  private composeOutput(color: any, depth: any): void {
+  private composeOutput(color: any, depth: any, helpers: any = null): void {
     // Depth of field first, in linear HDR: the lens blur mixes neighbours, so
     // it belongs in linear light (bright bokeh), and running it before bloom
     // lets highlights bloom AFTER they've been spread into bokeh discs. viewZ is
@@ -594,7 +690,14 @@ export class DitherOutput {
     this.fx = buildPostFx(this.fxParams, base);
     const graded = applyHdrEffects(base, this.fx);
     const display = renderOutput(graded, THREE_TONE_MAPPING[this.mode]);
-    const shaped = applyDisplayEffects(display, this.fx);
+    // biome-ignore lint/suspicious/noExplicitAny: TSL node graph — loose by design
+    let shaped: any = applyDisplayEffects(display, this.fx);
+    if (helpers) {
+      // helper overlay over the finished image (see doc comment above) —
+      // tone-mapped on its own so a=0 texels stay black and contribute nothing
+      const helperDisplay = renderOutput(helpers, THREE_TONE_MAPPING[this.mode]);
+      shaped = mix(shaped.rgb, helperDisplay.rgb, helpers.a);
+    }
     // interleaved-gradient-noise dither, ±1 LSB, added in display space
     const p = screenCoordinate;
     const ign = fract(float(52.9829189).mul(fract(dot(p, vec2(0.06711056, 0.00583715)))));
@@ -758,12 +861,11 @@ export class DitherOutput {
     // the non-NaN operand, so max(0) turns poisoned texels into "no
     // reflection" (correct at silhouettes) instead of black smears.
     const litColor = beauty.rgb.add(dn.rgb.max(vec3(0, 0, 0)).min(vec3(1e4, 1e4, 1e4)));
-    // helpers rendered into the (unused) hdr buffer — blend over the composite
-    // so the SSR pass never sees them in reflections (see rebuild's ssrOn note)
-    const helpers = texture(this.hdr.texture);
-    const withHelpers = mix(litColor, helpers.rgb, helpers.a);
+    // helpers rendered into the (unused) hdr buffer — composeOutput blends
+    // them over the post-processed image, past DOF/bloom/vignette (and the
+    // SSR pass never sees them in reflections — see rebuild's note)
     // biome-ignore-end lint/suspicious/noExplicitAny: TSL node graph — loose by design
-    this.composeOutput(withHelpers, depth);
+    this.composeOutput(litColor, depth, texture(this.hdr.texture));
   }
 
   /** Blit the HDR buffer (or render the SSR pass graph) to the canvas. */
@@ -772,6 +874,9 @@ export class DitherOutput {
   }
 
   dispose(): void {
+    this.discardOverlay();
+    this.overlayDepthQuad?.dispose();
+    this.overlayDepthMat?.dispose();
     this.hdr.dispose();
     this.aoNode?.dispose?.();
     this.ssrNode?.dispose?.();
