@@ -142,12 +142,31 @@
   RefControl registration) is preserved, so hit-testing/positions/interactions are untouched.
   Inputs with inline fallbacks now show label AND widget. Verified live incl. rewire + undo.
 
+### M4 — E7 Stage 6 shipped → **all E7 stages complete** (`fab6947`)
+
+- **Per-node preview thumbnails** — `emitNodePreviews()` (one GraphEmit pass → per-node vec3s) +
+  `GraphNodeThumbnails` (own WebGPU device, aspect-correct quad, dataURL per node). The panel owns
+  one renderer across canvas rebuilds, re-renders debounced (120ms) on ANY graph change, and applies
+  srcs imperatively (`data-node-thumb`) — previews ride outside React since value edits never
+  re-render the canvas. Verified live: position gradient / Worley / ramp-mapped previews, refreshing
+  on a Type change.
+- **Error badges** — `graphProblems()` flags cycle members + unknown noise types (both structural →
+  build-time badges stay correct); `ThrideNodeData` payload carries `problem`, title row renders a
+  red dot with the reason tooltip. Diagnostics unit-tested (+2 tests).
+- **Initial framing** — retry `zoomAt` until the dock panel has real dimensions (the zero-size
+  container was what framed nodes into a corner). `compileAsync` warm-swap was already live via
+  Stage 3's `hasLook` routing.
+- Also this round (user-directed): option-drag node copy + copy cursor (`4f4f7fc`), connected
+  sockets filled `bg-primary` (`0be55f6`), canvas themed to daisyUI `sunset` (`10a5a0f`), detached
+  wires stay live for re-wiring (`cb9c359`), RampEditor 7px endpoint inset (`ac4f693`),
+  `erasableSyntaxOnly` + real-type-gate fixes (`4fff55d`, `4584ac4` — `pnpm check` now runs `tsc -b`).
+
 ## Left mid-flight
 
-- **M4 is a milestone hard stop — awaiting user sign-off.** Remaining is **polish, not done-when:**
-  **Stage 6** (per-node offscreen thumbnails, error badges, optional `compileAsync` warm-swap) and
-  better initial framing.
-- Gates green: tsc clean, lint 0 errors, `vp test` **298 passing**.
+- **Nothing — M4 (E7 stages 1–6 + all user-directed UX rounds) is complete.** Milestone hard stop:
+  awaiting user sign-off before M5 (Import & UV-ready geometry: N1 OBJ import, H3 GLTF import,
+  N3 untriangulate, N2 headless auto-unwrap).
+- Gates green: `pnpm check` (tsc -b) clean, lint 0 errors, `vp test` **300 passing**.
 
 ## Decisions made (and why)
 
