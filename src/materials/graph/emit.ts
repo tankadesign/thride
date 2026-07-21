@@ -51,11 +51,17 @@ export interface Emitted {
 /** Unknown/cyclic/unhandled node → mid-gray, so a graph always renders. */
 const FALLBACK: Emitted = { value: vec3(0.5), type: "vec3" };
 
-/** Coerce an emitted value to the socket type it feeds: float↔vec3 only. */
+// Coercion to the socket type an input feeds: float↔vec3 only. `Emitted.type`
+// is the runtime tag for `value`, so the casts below are checked by it —
+// float → vec3 splats the scalar; vec3 → float reads `.r` (the stack's rule).
+function coerceVec3(e: Emitted): Vec3 {
+  return e.type === "vec3" ? (e.value as Vec3) : vec3(e.value as Float);
+}
+function coerceFloat(e: Emitted): Float {
+  return e.type === "float" ? (e.value as Float) : (e.value as Vec3).r;
+}
 function coerce(e: Emitted, to: GraphSocketType): Vec3 | Float {
-  if (e.type === to) return e.value;
-  // float → vec3 splats the scalar; vec3 → float reads `.r` (the stack's rule).
-  return to === "vec3" ? vec3(e.value) : vec3(e.value).r;
+  return to === "vec3" ? coerceVec3(e) : coerceFloat(e);
 }
 
 /** Live-uniform path builders — shared by emission and {@link updateGraphUniforms}. */
@@ -111,10 +117,12 @@ export class GraphEmit {
    *  them on a stop edit (no recompile) and disposes them with the graph. */
   readonly ramps = new Map<Uuid, RampTexture>();
 
-  constructor(
-    private readonly graph: MaterialGraphDTO,
-    private readonly uniforms: UniformTable,
-  ) {
+  private readonly graph: MaterialGraphDTO;
+  private readonly uniforms: UniformTable;
+
+  constructor(graph: MaterialGraphDTO, uniforms: UniformTable) {
+    this.graph = graph;
+    this.uniforms = uniforms;
     for (const n of graph.nodes) this.byId.set(n.id, n);
   }
 
@@ -178,7 +186,7 @@ export class GraphEmit {
         const conn = this.incoming(node.id, "coord");
         let value: Vec3;
         if (conn) {
-          value = sampler(vec3(coerce(this.emit(conn.from.node), "vec3")));
+          value = sampler(coerceVec3(this.emit(conn.from.node)));
         } else {
           const space = node.select?.space ?? "object";
           if (space === "object") value = sampler(positionLocal);
@@ -249,7 +257,7 @@ export class GraphEmit {
 
 /** Coerce an emitted value to a channel's bound vec3 (public for the compiler). */
 export function toVec3(e: Emitted): Vec3 {
-  return vec3(coerce(e, "vec3"));
+  return coerceVec3(e);
 }
 
 /**

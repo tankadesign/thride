@@ -115,7 +115,9 @@ export function CameraParams({ id, camera }: { id: Uuid; camera: CameraDataDTO }
         <select
           className="select select-sm w-full"
           value={focusTarget}
-          onChange={(e) => setCamera({ focusTarget: e.target.value || undefined }, true)}
+          onChange={(e) =>
+            setCamera({ focusTarget: e.target.value ? (e.target.value as Uuid) : undefined }, true)
+          }
         >
           <option value="">None</option>
           {candidates.map((n) => (

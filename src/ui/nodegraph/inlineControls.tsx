@@ -15,41 +15,57 @@ import { NumberDrag } from "@/ui/widgets/NumberDrag";
  */
 
 export class InlineSelectControl extends ClassicPreset.Control {
+  value: string;
+  options: { value: string; label: string }[];
+  onPick: (v: string) => void;
+
   constructor(
-    public value: string,
-    public options: { value: string; label: string }[],
-    public onPick: (v: string) => void,
+    value: string,
+    options: { value: string; label: string }[],
+    onPick: (v: string) => void,
   ) {
     super();
+    this.value = value;
+    this.options = options;
+    this.onPick = onPick;
   }
 }
 
 export class InlineNumberControl extends ClassicPreset.Control {
-  constructor(
-    public value: number,
-    public step: number,
-    public onEdit: (v: number, committed: boolean) => void,
-  ) {
+  value: number;
+  step: number;
+  onEdit: (v: number, committed: boolean) => void;
+
+  constructor(value: number, step: number, onEdit: (v: number, committed: boolean) => void) {
     super();
+    this.value = value;
+    this.step = step;
+    this.onEdit = onEdit;
   }
 }
 
 export class InlineColorControl extends ClassicPreset.Control {
-  constructor(
-    public value: string,
-    public onEdit: (hex: string, committed: boolean) => void,
-  ) {
+  value: string;
+  onEdit: (hex: string, committed: boolean) => void;
+
+  constructor(value: string, onEdit: (hex: string, committed: boolean) => void) {
     super();
+    this.value = value;
+    this.onEdit = onEdit;
   }
 }
 
-/** Map a control instance to its React component (rete-react-plugin customize). */
+/**
+ * Map a control instance to its React component (rete-react-plugin customize).
+ * Components take the base `Control` and downcast inside — sound because this
+ * registry only returns a component for its own `instanceof` match.
+ */
 export function renderInlineControl(
   payload: ClassicPreset.Control,
-): ComponentType<{ data: never }> | null {
-  if (payload instanceof InlineSelectControl) return SelectComp as ComponentType<{ data: never }>;
-  if (payload instanceof InlineNumberControl) return NumberComp as ComponentType<{ data: never }>;
-  if (payload instanceof InlineColorControl) return ColorComp as ComponentType<{ data: never }>;
+): ComponentType<{ data: ClassicPreset.Control }> | null {
+  if (payload instanceof InlineSelectControl) return SelectComp;
+  if (payload instanceof InlineNumberControl) return NumberComp;
+  if (payload instanceof InlineColorControl) return ColorComp;
   return null;
 }
 
@@ -59,7 +75,8 @@ const stop = {
   onDoubleClick: (e: React.MouseEvent) => e.stopPropagation(),
 };
 
-function SelectComp({ data }: { data: InlineSelectControl }) {
+function SelectComp(props: { data: ClassicPreset.Control }) {
+  const data = props.data as InlineSelectControl;
   // local mirror — the canvas doesn't re-render on value edits, so the widget
   // owns its display value between rebuilds
   const [value, setValue] = useState(data.value);
@@ -82,7 +99,8 @@ function SelectComp({ data }: { data: InlineSelectControl }) {
   );
 }
 
-function NumberComp({ data }: { data: InlineNumberControl }) {
+function NumberComp(props: { data: ClassicPreset.Control }) {
+  const data = props.data as InlineNumberControl;
   const [value, setValue] = useState(data.value);
   return (
     <div className="w-full" {...stop}>
@@ -98,7 +116,8 @@ function NumberComp({ data }: { data: InlineNumberControl }) {
   );
 }
 
-function ColorComp({ data }: { data: InlineColorControl }) {
+function ColorComp(props: { data: ClassicPreset.Control }) {
+  const data = props.data as InlineColorControl;
   return (
     <input
       type="color"

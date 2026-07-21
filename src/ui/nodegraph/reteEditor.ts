@@ -3,7 +3,13 @@ import { AreaExtensions, AreaPlugin } from "rete-area-plugin";
 import { ConnectionPlugin, Presets as ConnectionPresets } from "rete-connection-plugin";
 import { Presets, ReactPlugin, type ReactArea2D } from "rete-react-plugin";
 import { createRoot } from "react-dom/client";
-import { GRAPH_NODE_DEFS, NOISE_SPACES, type GraphNode, type MaterialGraphDTO } from "@/types/core";
+import {
+  GRAPH_NODE_DEFS,
+  NOISE_SPACES,
+  type GraphNode,
+  type MaterialGraphDTO,
+  type Uuid,
+} from "@/types/core";
 import {
   InlineColorControl,
   InlineNumberControl,
@@ -41,9 +47,9 @@ export interface Transform {
 
 /** The structural read-back: node ids present, their positions, and the wiring. */
 export interface EditorStructure {
-  nodeIds: string[];
+  nodeIds: Uuid[];
   positions: Record<string, [number, number]>;
-  connections: { from: { node: string; socket: string }; to: { node: string; socket: string } }[];
+  connections: { from: { node: Uuid; socket: string }; to: { node: Uuid; socket: string } }[];
 }
 
 export interface EditorHandlers {
@@ -309,8 +315,10 @@ export async function mountNodeEditor(
       container.removeEventListener("contextmenu", onContext);
       area.destroy();
     },
+    // Rete types ids as plain strings; ours ARE the DTO Uuids (buildNode sets
+    // node.id = dto.id), so the read-back re-brands them at this one boundary.
     readStructure: () => ({
-      nodeIds: editor.getNodes().map((n) => n.id),
+      nodeIds: editor.getNodes().map((n) => n.id as Uuid),
       positions: Object.fromEntries(
         editor.getNodes().map((n) => {
           const v = area.nodeViews.get(n.id);
@@ -318,8 +326,8 @@ export async function mountNodeEditor(
         }),
       ),
       connections: editor.getConnections().map((c) => ({
-        from: { node: c.source, socket: c.sourceOutput },
-        to: { node: c.target, socket: c.targetInput },
+        from: { node: c.source as Uuid, socket: c.sourceOutput },
+        to: { node: c.target as Uuid, socket: c.targetInput },
       })),
     }),
     getTransform: () => ({ ...area.area.transform }),

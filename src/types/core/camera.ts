@@ -13,6 +13,8 @@
  * X/Y lens shift, so we keep the stock camera (DOF works unchanged).
  */
 
+import type { Uuid } from "./ids";
+
 /** Sensor width in mm — fixed full-frame. The height derives from the viewport
  *  aspect, so this single dimension is all a responsive app needs. */
 export const SENSOR_WIDTH = 36;
@@ -37,7 +39,7 @@ export interface CameraDataDTO {
   focus: number;
   /** Optional object the camera focuses on: its distance drives DOF focus,
    *  superseding the manual `focus` number. Aim (`data.target`) is separate. */
-  focusTarget?: string;
+  focusTarget?: Uuid;
 }
 
 export function defaultCameraData(): CameraDataDTO {

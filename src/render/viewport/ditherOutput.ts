@@ -875,7 +875,8 @@ export class DitherOutput {
 
   dispose(): void {
     this.discardOverlay();
-    this.overlayDepthQuad?.dispose();
+    // QuadMesh has dispose() at runtime; @types/three doesn't declare it yet
+    (this.overlayDepthQuad as { dispose?: () => void } | null)?.dispose?.();
     this.overlayDepthMat?.dispose();
     this.hdr.dispose();
     this.aoNode?.dispose?.();

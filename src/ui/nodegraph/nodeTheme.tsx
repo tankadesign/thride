@@ -18,24 +18,24 @@ import { Presets } from "rete-react-plugin";
 const { RefSocket, RefControl, useConnection } = Presets.classic;
 
 interface NodeProps {
-  data: ClassicPreset.Node & { selected?: boolean };
-  emit: (props: unknown) => void;
+  data: ClassicPreset.Node;
+  /** Passed at runtime by the classic preset; its declared prop type omits it. */
+  emit?: unknown;
 }
 
 export function ThrideNode(props: NodeProps) {
+  const emit = props.emit as (p: unknown) => void;
   const { id, label } = props.data;
   const inputs = Object.entries(props.data.inputs);
   const outputs = Object.entries(props.data.outputs);
   const controls = Object.entries(props.data.controls);
-  const selected = props.data.selected ?? false;
+  const selected = (props.data as { selected?: boolean }).selected ?? false;
 
   return (
     <div
       data-testid="node"
       className={`min-w-44 cursor-pointer select-none rounded-lg border bg-base-200/95 text-xs leading-none text-base-content shadow-lg shadow-black/30 ${
-        selected
-          ? "border-primary ring-2 ring-primary/25"
-          : "border-base-300 hover:border-base-content/25"
+        selected ? "border-base-content/60" : "border-base-content/15 hover:border-base-content/25"
       }`}
     >
       <div
@@ -63,7 +63,7 @@ export function ThrideNode(props: NodeProps) {
                     side="output"
                     socketKey={key}
                     nodeId={id}
-                    emit={props.emit}
+                    emit={emit}
                     payload={output.socket}
                     data-testid="output-socket"
                   />
@@ -74,7 +74,7 @@ export function ThrideNode(props: NodeProps) {
         {controls.map(([key, control]) =>
           control ? (
             <div key={key} data-testid={`control-${key}`} className="px-2.5 py-0.5">
-              <RefControl name="control" emit={props.emit} payload={control} />
+              <RefControl name="control" emit={emit} payload={control} />
             </div>
           ) : null,
         )}
@@ -92,7 +92,7 @@ export function ThrideNode(props: NodeProps) {
                     side="input"
                     socketKey={key}
                     nodeId={id}
-                    emit={props.emit}
+                    emit={emit}
                     payload={input.socket}
                     data-testid="input-socket"
                   />
@@ -102,7 +102,7 @@ export function ThrideNode(props: NodeProps) {
                 </span>
                 {input.control && input.showControl ? (
                   <span className="min-w-0 flex-1" data-testid="input-control">
-                    <RefControl name="input-control" emit={props.emit} payload={input.control} />
+                    <RefControl name="input-control" emit={emit} payload={input.control} />
                   </span>
                 ) : null}
               </div>
