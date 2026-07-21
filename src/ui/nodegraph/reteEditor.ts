@@ -16,7 +16,14 @@ import {
   InlineSelectControl,
   renderInlineControl,
 } from "./inlineControls";
-import { ThrideConnection, ThrideNode, ThrideSocket, ThrideSocketData } from "./nodeTheme";
+import { graphProblems } from "@/materials/graph";
+import {
+  ThrideConnection,
+  ThrideNode,
+  ThrideNodeData,
+  ThrideSocket,
+  ThrideSocketData,
+} from "./nodeTheme";
 
 /**
  * Rete v2 editor over a {@link MaterialGraphDTO} (E7). The canvas is for WIRING:
@@ -118,11 +125,19 @@ function fallbackControl(
 
 /** A wiring-first Rete node: title + sockets + inline fallbacks on unwired inputs.
  *  Each socket gets its own {@link ThrideSocketData} carrying its wiring state,
- *  so the themed socket can render connected = filled (see nodeTheme). */
-function buildNode(dto: GraphNode, graph: MaterialGraphDTO, h: EditorHandlers): ClassicPreset.Node {
+ *  so the themed socket can render connected = filled (see nodeTheme); the node
+ *  payload ({@link ThrideNodeData}) carries the error badge + preview flag. */
+function buildNode(
+  dto: GraphNode,
+  graph: MaterialGraphDTO,
+  problems: Map<string, string>,
+  h: EditorHandlers,
+): ClassicPreset.Node {
   const def = GRAPH_NODE_DEFS[dto.kind];
-  const node = new ClassicPreset.Node(def.label);
+  const node = new ThrideNodeData(def.label);
   node.id = dto.id; // bridge: Rete events + connections reference the DTO id
+  node.problem = problems.get(dto.id);
+  node.showPreview = dto.kind !== "output";
   for (const s of def.inputs) {
     const wired = graph.connections.some((c) => c.to.node === dto.id && c.to.socket === s.key);
     const input = new ClassicPreset.Input(new ThrideSocketData(wired), s.label);
@@ -183,8 +198,9 @@ export async function mountNodeEditor(
   // muted spans the programmatic build so its events don't echo back as edits
   let muted = true;
 
+  const problems = graphProblems(graph);
   for (const dto of graph.nodes) {
-    await editor.addNode(buildNode(dto, graph, handlers));
+    await editor.addNode(buildNode(dto, graph, problems, handlers));
     await area.translate(dto.id, { x: dto.position?.[0] ?? 0, y: dto.position?.[1] ?? 0 });
   }
   for (const c of graph.connections) {
@@ -369,7 +385,16 @@ export async function mountNodeEditor(
     await area.area.zoom(initial.k);
     await area.area.translate(initial.x, initial.y);
   } else {
-    setTimeout(() => void AreaExtensions.zoomAt(area, editor.getNodes()), 0);
+    // initial framing — retry until the dock panel has laid out (a zero-size
+    // container makes zoomAt frame into a corner)
+    const frame = () => {
+      if (container.clientWidth < 50 || container.clientHeight < 50) {
+        setTimeout(frame, 60);
+        return;
+      }
+      void AreaExtensions.zoomAt(area, editor.getNodes());
+    };
+    setTimeout(frame, 0);
   }
 
   return {

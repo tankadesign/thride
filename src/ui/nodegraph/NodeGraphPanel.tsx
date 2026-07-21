@@ -9,6 +9,7 @@ import {
   type MaterialDTO,
   type MaterialGraphDTO,
 } from "@/types/core";
+import { GraphNodeThumbnails } from "@/render/thumbnails/graphNodeThumbnails";
 import { useDocument, useSliceVersion } from "@/ui/hooks/doc/document";
 import { selectedMaterialsAtom } from "@/ui/hooks/editor/materials";
 import { inspectedNodeAtom } from "@/ui/hooks/editor/inspector";
@@ -75,6 +76,66 @@ export function NodeGraphPanel() {
   const lastMat = useRef<string | undefined>(undefined);
   const pendingXform = useRef<Transform | undefined>(undefined);
   const scrub = useRef<{ before: MaterialDTO } | null>(null);
+
+  // ---- per-node preview thumbnails (Stage 6) -------------------------------
+  // One offscreen renderer per panel, alive across canvas rebuilds. Renders are
+  // serialized (busy/queued) and applied IMPERATIVELY to the node imgs — the
+  // canvas doesn't re-render on value edits, so src rides outside React.
+  const thumbs = useRef<GraphNodeThumbnails | null>(null);
+  const thumbMap = useRef<Map<string, string>>(new Map());
+  const thumbBusy = useRef(false);
+  const thumbQueued = useRef<MaterialGraphDTO | null>(null);
+  useEffect(
+    () => () => {
+      thumbs.current?.dispose();
+      thumbs.current = null;
+    },
+    [],
+  );
+
+  const applyThumbs = () => {
+    const host = hostRef.current;
+    if (!host) return;
+    for (const img of host.querySelectorAll<HTMLImageElement>("[data-node-thumb]")) {
+      const url = thumbMap.current.get(img.dataset.nodeThumb ?? "");
+      if (url && img.src !== url) {
+        img.src = url;
+        img.style.opacity = "1";
+      }
+    }
+  };
+
+  const renderThumbs = (g: MaterialGraphDTO) => {
+    if (thumbBusy.current) {
+      thumbQueued.current = g; // latest wins; re-render once the pass finishes
+      return;
+    }
+    thumbBusy.current = true;
+    thumbs.current ??= new GraphNodeThumbnails();
+    void thumbs.current
+      .render(g)
+      .then((map) => {
+        thumbMap.current = map;
+        applyThumbs();
+      })
+      .finally(() => {
+        thumbBusy.current = false;
+        const queued = thumbQueued.current;
+        thumbQueued.current = null;
+        if (queued) renderThumbs(queued);
+      });
+  };
+
+  // re-render thumbnails on ANY graph change (values included), debounced so a
+  // scrub costs one trailing pass
+  const fullSig = graph ? JSON.stringify(graph) : "";
+  useEffect(() => {
+    if (!graph) return;
+    const t = setTimeout(() => renderThumbs(graph), 120);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the serialized graph
+  }, [fullSig, matId]);
+  // --------------------------------------------------------------------------
 
   useEffect(() => {
     const host = hostRef.current;
@@ -215,7 +276,10 @@ export function NodeGraphPanel() {
     let disposed = false;
     void mountNodeEditor(host, graph, handlers, initial).then((h) => {
       if (disposed) h.destroy();
-      else editorRef.current = handle = h;
+      else {
+        editorRef.current = handle = h;
+        applyThumbs(); // a rebuild mounts fresh imgs — refill from the cache
+      }
     });
     return () => {
       disposed = true;

@@ -3,6 +3,8 @@ import type { GraphConnection, GraphNode, MaterialGraphDTO, Uuid } from "@/types
 import { defaultGraphNode, defaultMaterialGraph, graphStructureKey } from "@/types/core";
 import { NOISE_DEFS } from "@/materials/noises";
 import { compileGraph, getGraphCompileCount, resetGraphCompileCount } from "./compile";
+import { graphProblems } from "./diagnose";
+import { emitNodePreviews } from "./preview";
 
 /**
  * The E7 acceptance test, at the compiler layer: a graph compiles to per-channel
@@ -316,6 +318,38 @@ describe("graph compiler", () => {
       [wire("n", "out", "out", "color")],
     );
     expect(compileGraph(g).nodes.color).toBeTruthy();
+  });
+
+  it("graphProblems flags cycle members and unknown noises, nothing else", () => {
+    const g = graph(
+      [
+        node("out", "output"),
+        node("m", "mix"),
+        node("k", "math"),
+        node("n", "noise", { select: { noise: "noise-from-the-future" } }),
+        node("ok", "float"),
+      ],
+      [
+        wire("k", "out", "m", "a"),
+        wire("m", "out", "k", "a"), // m ⇄ k cycle
+        wire("m", "out", "out", "color"),
+        wire("ok", "out", "out", "roughness"),
+      ],
+    );
+    const problems = graphProblems(g);
+    expect(problems.has("m" as Uuid)).toBe(true);
+    expect(problems.has("k" as Uuid)).toBe(true);
+    expect(problems.get("n" as Uuid)).toContain("Unknown noise");
+    expect(problems.has("ok" as Uuid)).toBe(false);
+    expect(problems.has("out" as Uuid)).toBe(false);
+  });
+
+  it("emitNodePreviews yields a vec3 per non-Output node", () => {
+    const g = noiseToColor();
+    const p = emitNodePreviews(g);
+    expect(p.nodes.size).toBe(3); // n, c, m — not the Output sink
+    for (const [, v] of p.nodes) expect(typeof v.rgb).toBe("object");
+    p.dispose();
   });
 
   it("update on a pre-existing structure pokes every live path", () => {

@@ -17,6 +17,19 @@ import { Presets } from "rete-react-plugin";
 
 const { RefSocket, RefControl, useConnection } = Presets.classic;
 
+/**
+ * Node payload carrying build-time editor state (same pattern as
+ * {@link ThrideSocketData}): a structural `problem` for the error badge, and
+ * whether the node shows a preview thumbnail. Both are structural facts, so the
+ * canvas rebuild keeps them current.
+ */
+export class ThrideNodeData extends ClassicPreset.Node {
+  /** Why this node isn't contributing (cycle, unknown noise) — shows a badge. */
+  problem?: string;
+  /** Reserve a preview strip (every kind except the Output sink). */
+  showPreview = false;
+}
+
 interface NodeProps {
   data: ClassicPreset.Node;
   /** Passed at runtime by the classic preset; its declared prop type omits it. */
@@ -30,6 +43,8 @@ export function ThrideNode(props: NodeProps) {
   const outputs = Object.entries(props.data.outputs);
   const controls = Object.entries(props.data.controls);
   const selected = (props.data as { selected?: boolean }).selected ?? false;
+  const problem = props.data instanceof ThrideNodeData ? props.data.problem : undefined;
+  const showPreview = props.data instanceof ThrideNodeData && props.data.showPreview;
 
   return (
     <div
@@ -40,10 +55,25 @@ export function ThrideNode(props: NodeProps) {
     >
       <div
         data-testid="title"
-        className="rounded-t-lg border-b border-base-300 bg-base-300/60 px-2.5 py-1.5 text-[11px] font-semibold tracking-wide"
+        className="flex items-center justify-between gap-2 rounded-t-lg border-b border-base-300 bg-base-300/60 px-2.5 py-1.5 text-[11px] font-semibold tracking-wide"
       >
         {label}
+        {problem ? (
+          <span title={problem} className="size-2 shrink-0 rounded-full bg-error" />
+        ) : null}
       </div>
+      {showPreview ? (
+        <div className="px-1.5 pt-1.5">
+          {/* filled imperatively by the panel's thumbnail pass (data-node-thumb) —
+              the canvas never re-renders on value edits, so src rides outside React */}
+          <img
+            data-node-thumb={id}
+            alt=""
+            draggable={false}
+            className="h-12 w-full rounded bg-base-300/40 object-cover opacity-0 transition-opacity duration-150"
+          />
+        </div>
+      ) : null}
       <div className="flex flex-col gap-0.5 py-1.5">
         {outputs.map(
           ([key, output]) =>

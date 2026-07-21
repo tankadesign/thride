@@ -11,3 +11,5 @@ export {
   resetGraphCompileCount,
   type CompiledMaterial,
 } from "./compile";
+export { graphProblems } from "./diagnose";
+export { emitNodePreviews } from "./preview";
