@@ -122,12 +122,22 @@
 - **Verified live in Chrome** end-to-end (incl. socket-drag wiring with the canvas intact). +4
   compiler tests.
 
+### M4 — detached wires stay live for re-wiring (`cb9c359`)
+
+- Grabbing a wire off an occupied input is Rete's re-wire gesture (pseudo-connection follows the
+  pointer), but we committed the removal the instant `connectionremoved` fired — the rebuild killed
+  the drag and the wire vanished. Structure commits are now **deferred during a wire drag**
+  (`connectionpick`/`connectiondrop` bracket it) and flushed once on the drop: pick-up→re-drop is a
+  single rewire commit, drop-in-void is the deliberate disconnect, and a no-op guard skips the
+  commit when the wire lands back where it started. Verified live: no mid-drag rebuild, ghost stays
+  rendered, re-drop connects, one ⌘Z restores.
+
 ## Left mid-flight
 
 - **M4 is a milestone hard stop — awaiting user sign-off.** Remaining is **polish, not done-when:**
   **Stage 6** (per-node offscreen thumbnails, error badges, optional `compileAsync` warm-swap), plus
   theming the Rete nodes to daisyUI `sunset` (currently default Rete blue) and better initial framing.
-- Gates green through round 2: tsc clean, lint 0 errors, `vp test` **298 passing**.
+- Gates green: tsc clean, lint 0 errors, `vp test` **298 passing**.
 
 ## Decisions made (and why)
 
