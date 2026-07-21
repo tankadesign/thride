@@ -870,7 +870,12 @@ export class ViewportSystem {
     // (composeOutput is shared by both modes), and its continuous params are
     // live uniforms, so a steady frame costs a value compare and nothing else.
     // Wireframe has no lit image worth grading, so the stack is off there.
-    const fxOn = activeDisp.shading !== "wireframe";
+    // Single-pane only, like GTAO/SSR/DOF: the stack runs on the composite,
+    // which spans the WHOLE canvas — in 4-up the active pane's bloom would
+    // bleed over the other three, vignette would darken canvas corners
+    // instead of pane corners, and CA would fringe about the canvas center.
+    // Per-pane settings are honored the moment a pane is maximized.
+    const fxOn = activeDisp.shading !== "wireframe" && this.editor.layout === "single";
     output.setPostFx({
       bloom: fxOn && activeDisp.bloom,
       bloomThreshold: activeDisp.bloomThreshold,
