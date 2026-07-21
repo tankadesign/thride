@@ -79,12 +79,31 @@
   in the UI; viewport/thumbnail are live with zero recompile on param scrubs (Stage-3 gate + unit
   test); each structural edit is one undo step; the graph survives save/reload (autosave verified).
 
+### M4 — node-editor UX redesign (user-directed) (`ba9c83c`)
+
+- User feedback: the inline Rete value widgets were janky and a value edit could **blank the canvas**.
+  Reworked so the **Rete canvas is wiring-only** (nodes = title + sockets) and **all value editing
+  moves to the Attributes panel**, reached by **double-clicking a node**.
+- `inspectedNodeAtom` — the Attributes panel follows the **last-clicked** thing (scene object OR graph
+  node; selecting an object reverts to object attributes). `GraphNodeAttributes` renders the node's
+  dropdowns/params/colour/ramp with the **existing inspector widgets** (`Field`/`NumberDrag`/`select`/
+  `RampEditor`) + the same scrub-commit history pattern. `focusPanel` shell hook brings Attributes to
+  front on double-click. Deleted `graphControls.tsx`.
+- **Root-cause fix:** `NodeGraphPanel` now gates canvas rebuilds on a **topology signature** (node
+  ids+kinds + wiring) — value edits change the graph but not the topology, so the canvas is never
+  rebuilt underfoot. Rebuilds only on add/delete/undo/redo/material-switch (connect/disconnect stamp
+  the sig; transform preserved).
+- **Verified live:** wiring-only nodes; double-click Noise → Attributes focuses + shows Type/Scale/…
+  in app widgets; changing Type → Worley leaves the canvas intact (4 nodes) and recompiles the material.
+  _(Dev-server shows a stale Vite HMR error for the deleted `graphControls.tsx` — cosmetic; `tsc` is
+  clean, no source imports it. Clears on dev-server restart.)_
+
 ## Left mid-flight
 
 - **M4 is a milestone hard stop — awaiting user sign-off.** Remaining is **polish, not done-when:**
   **Stage 6** (per-node offscreen thumbnails, error badges, optional `compileAsync` warm-swap), plus
   theming the Rete nodes to daisyUI `sunset` (currently default Rete blue) and better initial framing.
-- Gates green through Stage 5: tsc clean, lint 0 errors, `vp test` **294 passing**.
+- Gates green through the redesign: tsc clean, lint 0 errors, `vp test` **294 passing**.
 
 ## Decisions made (and why)
 
