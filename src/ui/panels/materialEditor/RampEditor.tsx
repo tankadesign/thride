@@ -16,6 +16,15 @@ import { ColorPicker } from "@/ui/widgets/ColorPicker";
  * Ramp edits re-bake the compiled stack's DataTexture in place (E3), so
  * everything here is recompile-free.
  */
+/** Endpoint inset: t=0 / t=1 stops sit 7px in from the bar's rounded ends, so
+ *  the handles never hang off the caps. One mapping shared by the handle
+ *  positions, the gradient color-stops, and the pointer math — they can't drift. */
+const INSET = 7;
+
+/** CSS position of `t` on the inset track: 7px + t·(100% − 14px). */
+const insetPos = (t: number) =>
+  `calc(${(t * 100).toFixed(2)}% + ${(INSET - 2 * INSET * t).toFixed(2)}px)`;
+
 export function RampEditor({
   ramp,
   onChange,
@@ -33,10 +42,14 @@ export function RampEditor({
     onChange({ stops: next }, committed);
   };
 
+  /** Pointer x → t on the inset track (inverse of {@link insetPos}). */
+  const tAt = (clientX: number, rect: DOMRect) =>
+    Math.min(1, Math.max(0, (clientX - rect.left - INSET) / Math.max(1, rect.width - 2 * INSET)));
+
   const addStopAt = (clientX: number) => {
     const rect = barRef.current?.getBoundingClientRect();
     if (!rect) return;
-    const t = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+    const t = tAt(clientX, rect);
     onChange({ stops: [...stops, { t, color: colorAt(stops, t) }] }, true);
     setSel(stops.length);
   };
@@ -49,24 +62,21 @@ export function RampEditor({
     let moved = false;
     const move = (ev: PointerEvent) => {
       moved = true;
-      const t = Math.min(1, Math.max(0, (ev.clientX - rect.left) / rect.width));
-      setStop(index, { t }, false);
+      setStop(index, { t: tAt(ev.clientX, rect) }, false);
     };
     const up = (ev: PointerEvent) => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
-      if (moved) {
-        const t = Math.min(1, Math.max(0, (ev.clientX - rect.left) / rect.width));
-        setStop(index, { t }, true);
-      }
+      if (moved) setStop(index, { t: tAt(ev.clientX, rect) }, true);
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
   };
 
+  // color-stops ride the same inset track, so the end colors fill the 7px caps
   const gradient = [...stops]
     .sort((a, b) => a.t - b.t)
-    .map((s) => `${s.color} ${(s.t * 100).toFixed(1)}%`)
+    .map((s) => `${s.color} ${insetPos(s.t)}`)
     .join(", ");
 
   return (
@@ -74,7 +84,7 @@ export function RampEditor({
       {/* biome-ignore lint/a11y/noStaticElementInteractions lint/a11y/useKeyWithClickEvents: stop handles are the buttons; the bar click is an add shortcut */}
       <div
         ref={barRef}
-        className="relative h-4 cursor-copy rounded border border-base-300"
+        className="relative h-4 cursor-copy rounded-full border border-base-300"
         style={{ background: `linear-gradient(to right, ${gradient})` }}
         onPointerDown={(e) => addStopAt(e.clientX)}
         title="Click to add a stop"
@@ -83,10 +93,10 @@ export function RampEditor({
           <button
             key={`${i}-${stops.length}`}
             type="button"
-            className={`absolute top-[-2px] h-[calc(100%+4px)] w-2 -translate-x-1/2 cursor-ew-resize rounded-sm border ${
-              i === sel ? "border-primary bg-base-100" : "border-base-content/40 bg-base-100/70"
+            className={`absolute -top-0.5 h-[calc(100%+4px)] aspect-square -translate-x-1/2 cursor-ew-resize rounded-full border ${
+              i === sel ? "border-base-content bg-base-100/10" : "border-white/30 bg-base-100/30"
             }`}
-            style={{ left: `${s.t * 100}%` }}
+            style={{ left: insetPos(s.t) }}
             onPointerDown={(e) => dragStop(i, e)}
             // keyboard activation (Enter/Space) fires click, not pointerdown —
             // without this, stops can't be selected without a mouse
