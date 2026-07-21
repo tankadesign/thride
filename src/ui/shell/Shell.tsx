@@ -6,10 +6,11 @@ import {
   type IDockviewPanelProps,
 } from "dockview-react";
 import { useEffect, useMemo, useRef } from "react";
+import { useAtomValue } from "jotai";
 import type { Document } from "@/core";
 import { buildCommands, type ShellApi, type ShellPanelId } from "@/app/commands";
 import { CommandRegistry } from "@/ui/commands/CommandRegistry";
-import { setRegistry, usePalette } from "@/ui/hooks/editor/shell";
+import { focusPanelAtom, setRegistry, usePalette } from "@/ui/hooks/editor/shell";
 import { dispatchKeyEvent, keyCaptureActiveAtom } from "@/ui/hooks/editor/keymap";
 import { appStore } from "@/ui/hooks/doc/document";
 import { useSelectObjectMaterial } from "@/ui/hooks/editor/materials";
@@ -138,6 +139,13 @@ export function Shell({ doc }: { doc: Document }) {
   useEffect(() => {
     setRegistry(registry);
   }, [registry]);
+
+  // panel-focus requests (e.g. double-clicking a graph node focuses Attributes)
+  const focusReq = useAtomValue(focusPanelAtom);
+  useEffect(() => {
+    const api = apiRef.current;
+    if (focusReq && api) openRightPanel(api, focusReq.id as ShellPanelId);
+  }, [focusReq]);
 
   // global shortcuts (skip while typing — but only for BARE keys: modifier
   // combos like ⌘Z/⇧⌘Z must keep working from a focused field, except the

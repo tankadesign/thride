@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { useAtom } from "jotai";
 import type {
   ComponentMode,
   NodeKind,
@@ -19,7 +20,9 @@ import {
 import { TransformDragSession } from "@/core/session/TransformDragSession";
 import { useDocument, useSliceVersion } from "@/ui/hooks/doc/document";
 import { useSelectionInfo } from "@/ui/hooks/doc/selection";
+import { inspectedNodeAtom } from "@/ui/hooks/editor/inspector";
 import { Field, Section, VecField } from "@/ui/widgets/inspector";
+import { GraphNodeAttributes } from "./attributes/graphNode";
 import { ComponentSection, SplineComponentSection } from "./attributes/components";
 import { GeneratorParams } from "./attributes/generator";
 import {
@@ -50,13 +53,40 @@ const MATERIAL_CAPABLE = new Set<NodeKind>(["mesh", "generator"]);
 export function AttributesPanel({ panelApi }: { panelApi?: { setTitle(title: string): void } }) {
   const doc = useDocument();
   useSliceVersion("scene");
+  useSliceVersion("materials");
   const { active, editMode } = useSelectionInfo();
+  const [inspected, setInspected] = useAtom(inspectedNodeAtom);
+
+  // last-clicked wins: selecting a (different) scene object reverts the panel
+  // from a graph node back to object attributes
+  const prevActive = useRef(active);
+  useEffect(() => {
+    if (active !== prevActive.current) {
+      prevActive.current = active;
+      setInspected(null);
+    }
+  }, [active, setInspected]);
+
+  // a double-clicked graph node takes priority — the node editor is wiring-only,
+  // values are edited here
+  const inspectedNode =
+    inspected &&
+    doc.materials.get(inspected.materialId)?.graph?.nodes.some((n) => n.id === inspected.nodeId)
+      ? inspected
+      : null;
+
   const componentMode =
     editMode === "point" || editMode === "edge" || editMode === "polygon" ? editMode : null;
-  const title = componentMode ? MODE_TITLE[componentMode] : "Attributes";
+  const title = inspectedNode ? "Node" : componentMode ? MODE_TITLE[componentMode] : "Attributes";
   useEffect(() => {
     panelApi?.setTitle(title);
   }, [panelApi, title]);
+
+  if (inspectedNode) {
+    return (
+      <GraphNodeAttributes materialId={inspectedNode.materialId} nodeId={inspectedNode.nodeId} />
+    );
+  }
 
   if (componentMode) {
     const node = active && doc.scene.has(active) ? doc.scene.mustGet(active) : null;

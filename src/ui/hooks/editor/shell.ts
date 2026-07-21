@@ -63,3 +63,16 @@ export function useContextMenu() {
   const [menu, setMenu] = useAtom(contextMenuAtom);
   return { menu, close: () => setMenu(null) };
 }
+
+/**
+ * A request to bring a dockable panel to the front, by id. The `nonce` makes
+ * repeat requests for the same panel distinct so the Shell effect re-fires. The
+ * Shell watches this and calls its dock api.
+ */
+export const focusPanelAtom = atom<{ id: string; nonce: number } | null>(null);
+let focusNonce = 0;
+
+/** Bring the panel `id` to the front (e.g. focus Attributes after a node dbl-click). */
+export function focusPanel(id: string): void {
+  appStore.set(focusPanelAtom, { id, nonce: ++focusNonce });
+}

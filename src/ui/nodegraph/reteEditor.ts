@@ -4,18 +4,17 @@ import { ConnectionPlugin, Presets as ConnectionPresets } from "rete-connection-
 import { Presets, ReactPlugin, type ReactArea2D } from "rete-react-plugin";
 import { createRoot } from "react-dom/client";
 import { GRAPH_NODE_DEFS, type GraphNode, type MaterialGraphDTO } from "@/types/core";
-import { controlFor, renderControl, type ControlHandlers } from "./graphControls";
 
 /**
- * Rete v2 editor over a {@link MaterialGraphDTO} (E7 Stages 4–5). Structure
- * (which nodes exist, the wiring, positions) is edited in Rete and read back via
- * {@link EditorHandle.readStructure}; node CONTENT (kind/select/params) stays in
- * the panel's DTO and is passed in. Edits are Rete-first: the panel applies each
- * as a delta and commits — it never remounts on its own edits, so the view never
- * jumps (see NodeGraphPanel).
+ * Rete v2 editor over a {@link MaterialGraphDTO} (E7) — WIRING ONLY. Nodes show a
+ * title and their input/output sockets; there are no value widgets on the canvas.
+ * Double-clicking a node opens it in the Attributes panel, which is where every
+ * value is edited (see NodeGraphPanel + GraphNodeAttributes). This keeps the
+ * canvas about connections and sidesteps Rete's control system entirely.
  *
  * One shared socket type: the compiler coerces float↔vec3 at every wire, so
- * connections aren't gated on type. Each input takes at most one wire.
+ * connections aren't gated on type. Each input takes at most one wire (enforced
+ * by the panel on read-back).
  */
 
 type Schemes = GetSchemes<
@@ -38,9 +37,11 @@ export interface EditorStructure {
   connections: { from: { node: string; socket: string }; to: { node: string; socket: string } }[];
 }
 
-export interface EditorHandlers extends ControlHandlers {
-  /** A structural edit happened in Rete (connect/disconnect/delete/move-end). */
+export interface EditorHandlers {
+  /** A structural edit happened in Rete (connect/disconnect/move-end). */
   onStructureChanged: () => void;
+  /** A node was double-clicked — open it in the Attributes panel. */
+  onNodeInspect: (nodeId: string) => void;
   /** Right-click on empty canvas — `graph` is the click in graph coords. */
   onBackgroundMenu: (clientX: number, clientY: number, graph: [number, number]) => void;
   /** Right-click on a node. */
@@ -57,14 +58,13 @@ export interface EditorHandle {
 
 const SOCKET = new ClassicPreset.Socket("s");
 
-/** Build a Rete node for a DTO node — id bridged so events reference our ids. */
-function buildNode(dto: GraphNode, handlers: ControlHandlers): ClassicPreset.Node {
+/** A wiring-only Rete node: title + sockets, id bridged to the DTO id. */
+function buildNode(dto: GraphNode): ClassicPreset.Node {
   const def = GRAPH_NODE_DEFS[dto.kind];
   const node = new ClassicPreset.Node(def.label);
   node.id = dto.id; // bridge: Rete events + connections reference the DTO id
   for (const s of def.inputs) node.addInput(s.key, new ClassicPreset.Input(SOCKET, s.label));
   if (def.output) node.addOutput("out", new ClassicPreset.Output(SOCKET, "Out"));
-  for (const [key, control] of controlFor(dto, handlers)) node.addControl(key, control);
   return node;
 }
 
@@ -82,11 +82,7 @@ export async function mountNodeEditor(
   AreaExtensions.selectableNodes(area, AreaExtensions.selector(), {
     accumulating: AreaExtensions.accumulateOnCtrl(),
   });
-  render.addPreset(
-    Presets.classic.setup({
-      customize: { control: (data) => renderControl(data.payload) },
-    }),
-  );
+  render.addPreset(Presets.classic.setup());
   connection.addPreset(ConnectionPresets.classic.setup());
 
   editor.use(area);
@@ -94,13 +90,11 @@ export async function mountNodeEditor(
   area.use(render);
   AreaExtensions.simpleNodesOrder(area);
 
-  // muted spans the programmatic build so its events don't echo back as user
-  // edits (the advisor's #1 trap). Structural edits remount from the DTO, so the
-  // panel enforces one-wire-per-input when it reads the structure back.
+  // muted spans the programmatic build so its events don't echo back as edits
   let muted = true;
 
   for (const dto of graph.nodes) {
-    await editor.addNode(buildNode(dto, handlers));
+    await editor.addNode(buildNode(dto));
     await area.translate(dto.id, { x: dto.position?.[0] ?? 0, y: dto.position?.[1] ?? 0 });
   }
   for (const c of graph.connections) {
@@ -111,8 +105,7 @@ export async function mountNodeEditor(
     }
   }
 
-  // structural events → notify the panel (debounced to one call per microtask so
-  // a multi-step gesture is a single commit).
+  // structural events → notify the panel (debounced to one call per microtask)
   let pending = false;
   const notify = () => {
     if (pending) return;
@@ -134,10 +127,9 @@ export async function mountNodeEditor(
     }
     return ctx;
   });
-  // node drag end (position is not structural, but persist it in one step)
   area.addPipe((ctx) => {
     if (muted) return ctx;
-    // drop double-click zoom (advisor #5): the area zooms on dblclick by default
+    // drop double-click zoom; a node double-click is handled by the DOM listener
     if (ctx.type === "zoom" && ctx.data.source === "dblclick") return undefined;
     if (ctx.type === "nodedragged") notify();
     return ctx;
@@ -145,11 +137,29 @@ export async function mountNodeEditor(
 
   muted = false;
 
+  const nodeIdAt = (el: Element): string | null => {
+    for (const [id, view] of area.nodeViews) {
+      if (view.element === el || view.element.contains(el)) return id;
+    }
+    return null;
+  };
+
+  // double-click a node → edit it in Attributes (background dbl-click is inert)
+  const onDblClick = (e: MouseEvent) => {
+    const nodeEl = (e.target as HTMLElement).closest("[data-testid='node']");
+    const id = nodeEl ? nodeIdAt(nodeEl) : null;
+    if (id) {
+      e.stopPropagation();
+      handlers.onNodeInspect(id);
+    }
+  };
+  container.addEventListener("dblclick", onDblClick);
+
   // right-click → app context menu (native menu suppressed)
   const onContext = (e: MouseEvent) => {
     e.preventDefault();
     const nodeEl = (e.target as HTMLElement).closest("[data-testid='node']");
-    const id = nodeEl ? editorNodeIdAt(area, nodeEl) : null;
+    const id = nodeEl ? nodeIdAt(nodeEl) : null;
     if (id) {
       handlers.onNodeMenu(id, e.clientX, e.clientY);
     } else {
@@ -171,6 +181,7 @@ export async function mountNodeEditor(
 
   return {
     destroy: () => {
+      container.removeEventListener("dblclick", onDblClick);
       container.removeEventListener("contextmenu", onContext);
       area.destroy();
     },
@@ -189,12 +200,4 @@ export async function mountNodeEditor(
     }),
     getTransform: () => ({ ...area.area.transform }),
   };
-}
-
-/** Resolve which node a right-clicked DOM element belongs to (by matching view roots). */
-function editorNodeIdAt(area: AreaPlugin<Schemes, AreaExtra>, el: Element): string | null {
-  for (const [id, view] of area.nodeViews) {
-    if (view.element === el || view.element.contains(el)) return id;
-  }
-  return null;
 }
