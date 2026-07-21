@@ -1,4 +1,4 @@
-import type { ClassicPreset } from "rete";
+import { ClassicPreset } from "rete";
 import { Presets } from "rete-react-plugin";
 
 /**
@@ -113,11 +113,32 @@ export function ThrideNode(props: NodeProps) {
   );
 }
 
-/** Wire endpoint: a primary-accent dot with a padded grab area. */
-export function ThrideSocket() {
+/**
+ * Socket payload carrying its wiring state. The socket component only ever
+ * receives its payload, so connectivity has to ride IN the payload — sound
+ * because the canvas rebuilds on every wiring change (`canvasSig`), making
+ * build-time connectivity always current. `buildNode` (which knows the graph)
+ * instantiates one per socket.
+ */
+export class ThrideSocketData extends ClassicPreset.Socket {
+  connected: boolean;
+
+  constructor(connected: boolean) {
+    super("s");
+    this.connected = connected;
+  }
+}
+
+/** Wire endpoint: hollow when free, filled `bg-primary` once a wire attaches. */
+export function ThrideSocket(props: { data: ClassicPreset.Socket }) {
+  const connected = props.data instanceof ThrideSocketData && props.data.connected;
   return (
     <div className="group cursor-pointer p-0.5">
-      <div className="size-3.5 rounded-full border-2 border-base-100 bg-primary transition-transform group-hover:scale-125" />
+      <div
+        className={`size-3.5 rounded-full border-2 border-base-100 ring-1 ring-primary transition-transform group-hover:scale-125 ${
+          connected ? "bg-primary" : ""
+        }`}
+      />
     </div>
   );
 }
@@ -134,8 +155,8 @@ export function ThrideConnection() {
       <path
         d={path}
         fill="none"
-        strokeWidth={2.5}
-        className="pointer-events-auto stroke-primary/60"
+        strokeWidth={1.25}
+        className="pointer-events-auto stroke-primary/40"
       />
     </svg>
   );

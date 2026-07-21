@@ -16,7 +16,7 @@ import {
   InlineSelectControl,
   renderInlineControl,
 } from "./inlineControls";
-import { ThrideConnection, ThrideNode, ThrideSocket } from "./nodeTheme";
+import { ThrideConnection, ThrideNode, ThrideSocket, ThrideSocketData } from "./nodeTheme";
 
 /**
  * Rete v2 editor over a {@link MaterialGraphDTO} (E7). The canvas is for WIRING:
@@ -77,8 +77,6 @@ export interface EditorHandle {
   getTransform: () => Transform;
 }
 
-const SOCKET = new ClassicPreset.Socket("s");
-
 /** The inline fallback widget for an unwired input socket, or null. */
 function fallbackControl(
   dto: GraphNode,
@@ -115,21 +113,26 @@ function fallbackControl(
   return null;
 }
 
-/** A wiring-first Rete node: title + sockets + inline fallbacks on unwired inputs. */
+/** A wiring-first Rete node: title + sockets + inline fallbacks on unwired inputs.
+ *  Each socket gets its own {@link ThrideSocketData} carrying its wiring state,
+ *  so the themed socket can render connected = filled (see nodeTheme). */
 function buildNode(dto: GraphNode, graph: MaterialGraphDTO, h: EditorHandlers): ClassicPreset.Node {
   const def = GRAPH_NODE_DEFS[dto.kind];
   const node = new ClassicPreset.Node(def.label);
   node.id = dto.id; // bridge: Rete events + connections reference the DTO id
   for (const s of def.inputs) {
-    const input = new ClassicPreset.Input(SOCKET, s.label);
     const wired = graph.connections.some((c) => c.to.node === dto.id && c.to.socket === s.key);
+    const input = new ClassicPreset.Input(new ThrideSocketData(wired), s.label);
     if (!wired) {
       const control = fallbackControl(dto, s.key, h);
       if (control) input.addControl(control);
     }
     node.addInput(s.key, input);
   }
-  if (def.output) node.addOutput("out", new ClassicPreset.Output(SOCKET, "Out"));
+  if (def.output) {
+    const wired = graph.connections.some((c) => c.from.node === dto.id && c.from.socket === "out");
+    node.addOutput("out", new ClassicPreset.Output(new ThrideSocketData(wired), "Out"));
+  }
   // the Coordinate Space node IS its select — show it on the canvas
   if (dto.kind === "coord") {
     const options = GRAPH_NODE_DEFS.coord.selects[0]!.options;

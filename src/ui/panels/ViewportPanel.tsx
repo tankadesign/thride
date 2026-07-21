@@ -23,7 +23,7 @@ import {
 } from "@/render/viewport/ViewportSystem";
 import { themeStyle, viewportTheme } from "@/render/theme/viewportTheme";
 import { ViewSettingsModal } from "./ViewSettingsModal";
-import { IconPivotPoint, IconSettings } from "@/icons";
+import { IconCamera, IconPivotPoint, IconSettings } from "@/icons";
 
 const OBJECT_CONTEXT_COMMANDS = [
   "edit.group",
@@ -98,6 +98,54 @@ function AxisIndicator({ axes }: { axes: PaneAxes }) {
   );
 }
 
+/** Camera-pane selector — a DaisyUI dropdown so option icons render without React warnings. */
+function CameraSelect({
+  options,
+  value,
+  onChange,
+}: {
+  options: { value: string; label: string; icon?: React.ElementType }[];
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const selected = options.find((o) => o.value === value) ?? options[0]!;
+  return (
+    <div className="dropdown">
+      <button
+        ref={triggerRef}
+        type="button"
+        tabIndex={0}
+        className="select select-sm w-32 border-base-300 bg-base-100/80 backdrop-blur flex items-center gap-1.5"
+      >
+        {selected.icon && <selected.icon size={12} className="shrink-0 opacity-60" />}
+        <span className="truncate flex-1 text-left">{selected.label}</span>
+      </button>
+      <ul
+        tabIndex={0}
+        className="dropdown-content menu menu-xs bg-base-100 border border-base-300 rounded-box z-50 w-40 p-1 shadow-lg"
+      >
+        {options.map((o) => (
+          <li key={o.value}>
+            <button
+              type="button"
+              className={o.value === value ? "active" : ""}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                onChange(o.value);
+                triggerRef.current?.blur();
+              }}
+            >
+              {o.icon && <o.icon size={12} className="shrink-0 opacity-60" />}
+              {o.label}
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 interface Props {
   /** The shell exposes the live system so commands (F/H, layout) can reach it. */
   onSystem: (vs: ViewportSystem | null) => void;
@@ -169,7 +217,7 @@ export function ViewportPanel({ onSystem }: Props) {
     };
   }, [doc, onSystem]);
 
-  const cameraOptions: { value: string; label: string }[] = [
+  const cameraOptions: { value: string; label: string; icon?: React.ElementType }[] = [
     { value: "persp", label: "Perspective" },
     { value: "ortho", label: "Orthogonal" },
     { value: "top", label: "Top" },
@@ -181,7 +229,7 @@ export function ViewportPanel({ onSystem }: Props) {
     ...doc.scene
       .toDTO()
       .filter((n) => n.kind === "camera")
-      .map((n) => ({ value: n.id, label: `🎥 ${n.name}` })),
+      .map((n) => ({ value: n.id, label: `${n.name}`, icon: IconCamera })),
   ];
 
   // logical pane per visible slot: single layout shows the maximized pane
@@ -225,17 +273,11 @@ export function ViewportPanel({ onSystem }: Props) {
       {bevelActive && system ? <BevelSettings vs={system} /> : null}
       {slots.map((pane, slot) => (
         <div key={pane} className="absolute flex items-center gap-1" style={slotStyle(slot)}>
-          <select
-            className="select select-sm w-32 border-base-300 bg-base-100/80 backdrop-blur"
+          <CameraSelect
+            options={cameraOptions}
             value={paneCameras[pane] as string}
-            onChange={(e) => setPaneCamera(pane, e.target.value as PaneCamera)}
-          >
-            {cameraOptions.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
+            onChange={(v) => setPaneCamera(pane, v as PaneCamera)}
+          />
           <button
             type="button"
             className="btn btn-square btn-xs border-base-300 bg-base-100/80 backdrop-blur"
