@@ -70,6 +70,23 @@ export type MathOp = (typeof MATH_OPS)[number];
 export const COORD_SPACES = ["object", "world", "uv"] as const;
 export type CoordSpace = (typeof COORD_SPACES)[number];
 
+/**
+ * Where an UNWIRED noise node samples from: the three plain coordinate spaces
+ * (same as the Coordinate Space node) plus the layer-system projections. The
+ * projections can only live here — triplanar & friends sample the noise several
+ * times through {@link projectedSample}, so they cannot ride a wired coordinate;
+ * wiring the `coord` input overrides this select entirely.
+ */
+export const NOISE_SPACES: { value: string; label: string }[] = [
+  { value: "object", label: "Object" },
+  { value: "world", label: "World" },
+  { value: "uv", label: "UV" },
+  { value: "flat", label: "Flat" },
+  { value: "triplanar", label: "Triplanar" },
+  { value: "cylindrical", label: "Cylindrical" },
+  { value: "spherical", label: "Spherical" },
+];
+
 /** The Output node's input sockets — one per procedural channel, same order. */
 export const OUTPUT_CHANNELS: ProceduralChannel[] = [
   "color",
@@ -137,7 +154,7 @@ export const GRAPH_NODE_DEFS: Record<GraphNodeKind, GraphNodeDef> = {
   },
   coord: {
     kind: "coord",
-    label: "Coordinate",
+    label: "Coordinate Space",
     inputs: [],
     output: "vec3",
     selects: [{ key: "space", label: "Space", options: opts(COORD_SPACES) }],
@@ -281,8 +298,9 @@ export function defaultGraphNode(
       break;
     case "noise":
       // params seed from the registry at compile time (materials/ owns that
-      // catalog; types stays pure), so the factory leaves them empty.
-      node.select = { noise: "perlin" };
+      // catalog; types stays pure), so the factory leaves them empty. Triplanar
+      // is the seamless default for an unwired coord (matches defaultLayer).
+      node.select = { noise: "perlin", space: "triplanar" };
       break;
     case "float":
       node.params = { value: 0 };

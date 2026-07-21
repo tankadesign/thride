@@ -3,14 +3,22 @@ import { AreaExtensions, AreaPlugin } from "rete-area-plugin";
 import { ConnectionPlugin, Presets as ConnectionPresets } from "rete-connection-plugin";
 import { Presets, ReactPlugin, type ReactArea2D } from "rete-react-plugin";
 import { createRoot } from "react-dom/client";
-import { GRAPH_NODE_DEFS, type GraphNode, type MaterialGraphDTO } from "@/types/core";
+import { GRAPH_NODE_DEFS, NOISE_SPACES, type GraphNode, type MaterialGraphDTO } from "@/types/core";
+import {
+  InlineColorControl,
+  InlineNumberControl,
+  InlineSelectControl,
+  renderInlineControl,
+} from "./inlineControls";
 
 /**
- * Rete v2 editor over a {@link MaterialGraphDTO} (E7) — WIRING ONLY. Nodes show a
- * title and their input/output sockets; there are no value widgets on the canvas.
- * Double-clicking a node opens it in the Attributes panel, which is where every
- * value is edited (see NodeGraphPanel + GraphNodeAttributes). This keeps the
- * canvas about connections and sidesteps Rete's control system entirely.
+ * Rete v2 editor over a {@link MaterialGraphDTO} (E7). The canvas is for WIRING:
+ * connect/disconnect/move, plus Blender-style inline fallback widgets on UNWIRED
+ * inputs (see {@link inlineControls}) so constants don't need their own nodes.
+ * Full value editing lives in the Attributes panel — a click on a node shows it
+ * there, a double-click also brings the panel to the front, and Delete/Backspace
+ * removes the selected nodes. No context menu over nodes; right-clicking the
+ * background offers Add Node.
  *
  * One shared socket type: the compiler coerces float↔vec3 at every wire, so
  * connections aren't gated on type. Each input takes at most one wire (enforced
@@ -40,12 +48,18 @@ export interface EditorStructure {
 export interface EditorHandlers {
   /** A structural edit happened in Rete (connect/disconnect/move-end). */
   onStructureChanged: () => void;
-  /** A node was double-clicked — open it in the Attributes panel. */
+  /** A node was clicked — show it in the Attributes panel (no focus steal). */
+  onNodeClicked: (nodeId: string) => void;
+  /** A node was double-clicked — show it AND bring Attributes to the front. */
   onNodeInspect: (nodeId: string) => void;
+  /** Delete/Backspace over the canvas with nodes selected. */
+  onDeleteNodes: (nodeIds: string[]) => void;
   /** Right-click on empty canvas — `graph` is the click in graph coords. */
   onBackgroundMenu: (clientX: number, clientY: number, graph: [number, number]) => void;
-  /** Right-click on a node. */
-  onNodeMenu: (nodeId: string, clientX: number, clientY: number) => void;
+  /** Inline widget edits (unwired-input fallbacks + the coord node's space). */
+  onNodeSelect: (nodeId: string, key: string, value: string) => void;
+  onNodeParam: (nodeId: string, key: string, value: number, committed: boolean) => void;
+  onNodeColor: (nodeId: string, key: string, hex: string, committed: boolean) => void;
 }
 
 export interface EditorHandle {
@@ -58,13 +72,67 @@ export interface EditorHandle {
 
 const SOCKET = new ClassicPreset.Socket("s");
 
-/** A wiring-only Rete node: title + sockets, id bridged to the DTO id. */
-function buildNode(dto: GraphNode): ClassicPreset.Node {
+/** The inline fallback widget for an unwired input socket, or null. */
+function fallbackControl(
+  dto: GraphNode,
+  socket: string,
+  h: EditorHandlers,
+): ClassicPreset.Control | null {
+  const kind = dto.kind;
+  if (kind === "noise" && socket === "coord") {
+    return new InlineSelectControl(dto.select?.space ?? "object", NOISE_SPACES, (v) =>
+      h.onNodeSelect(dto.id, "space", v),
+    );
+  }
+  if (kind === "math" && (socket === "a" || socket === "b")) {
+    return new InlineNumberControl(dto.params?.[socket] ?? 0, 0.01, (v, committed) =>
+      h.onNodeParam(dto.id, socket, v, committed),
+    );
+  }
+  if (kind === "mix" && (socket === "a" || socket === "b")) {
+    return new InlineColorControl(
+      dto.colors?.[socket] ?? (socket === "a" ? "#000000" : "#ffffff"),
+      (hex, committed) => h.onNodeColor(dto.id, socket, hex, committed),
+    );
+  }
+  if (kind === "ramp" && socket === "t") {
+    return new InlineNumberControl(dto.params?.t ?? 0, 0.01, (v, committed) =>
+      h.onNodeParam(dto.id, "t", v, committed),
+    );
+  }
+  if (kind === "bump" && socket === "height") {
+    return new InlineNumberControl(dto.params?.height ?? 0, 0.01, (v, committed) =>
+      h.onNodeParam(dto.id, "height", v, committed),
+    );
+  }
+  return null;
+}
+
+/** A wiring-first Rete node: title + sockets + inline fallbacks on unwired inputs. */
+function buildNode(dto: GraphNode, graph: MaterialGraphDTO, h: EditorHandlers): ClassicPreset.Node {
   const def = GRAPH_NODE_DEFS[dto.kind];
   const node = new ClassicPreset.Node(def.label);
   node.id = dto.id; // bridge: Rete events + connections reference the DTO id
-  for (const s of def.inputs) node.addInput(s.key, new ClassicPreset.Input(SOCKET, s.label));
+  for (const s of def.inputs) {
+    const input = new ClassicPreset.Input(SOCKET, s.label);
+    const wired = graph.connections.some((c) => c.to.node === dto.id && c.to.socket === s.key);
+    if (!wired) {
+      const control = fallbackControl(dto, s.key, h);
+      if (control) input.addControl(control);
+    }
+    node.addInput(s.key, input);
+  }
   if (def.output) node.addOutput("out", new ClassicPreset.Output(SOCKET, "Out"));
+  // the Coordinate Space node IS its select — show it on the canvas
+  if (dto.kind === "coord") {
+    const options = GRAPH_NODE_DEFS.coord.selects[0]!.options;
+    node.addControl(
+      "space",
+      new InlineSelectControl(dto.select?.space ?? "object", options, (v) =>
+        h.onNodeSelect(dto.id, "space", v),
+      ),
+    );
+  }
   return node;
 }
 
@@ -82,7 +150,11 @@ export async function mountNodeEditor(
   AreaExtensions.selectableNodes(area, AreaExtensions.selector(), {
     accumulating: AreaExtensions.accumulateOnCtrl(),
   });
-  render.addPreset(Presets.classic.setup());
+  render.addPreset(
+    Presets.classic.setup({
+      customize: { control: (data) => renderInlineControl(data.payload) },
+    }),
+  );
   connection.addPreset(ConnectionPresets.classic.setup());
 
   editor.use(area);
@@ -94,7 +166,7 @@ export async function mountNodeEditor(
   let muted = true;
 
   for (const dto of graph.nodes) {
-    await editor.addNode(buildNode(dto));
+    await editor.addNode(buildNode(dto, graph, handlers));
     await area.translate(dto.id, { x: dto.position?.[0] ?? 0, y: dto.position?.[1] ?? 0 });
   }
   for (const c of graph.connections) {
@@ -127,48 +199,68 @@ export async function mountNodeEditor(
     }
     return ctx;
   });
+  // double-click detection rides the pick events, not the DOM dblclick — the
+  // first click can re-render the node (selection styling), which breaks the
+  // browser's same-element dblclick synthesis
+  let lastPick = { id: "", t: 0 };
   area.addPipe((ctx) => {
     if (muted) return ctx;
-    // drop double-click zoom; a node double-click is handled by the DOM listener
+    // drop double-click zoom; a node double-click opens Attributes instead
     if (ctx.type === "zoom" && ctx.data.source === "dblclick") return undefined;
     if (ctx.type === "nodedragged") notify();
+    if (ctx.type === "nodepicked") {
+      const now = performance.now();
+      if (ctx.data.id === lastPick.id && now - lastPick.t < 400) {
+        // second click on the same node → edit it, bringing Attributes forward
+        handlers.onNodeInspect(ctx.data.id);
+      } else {
+        // "last clicked" → show it in Attributes (no focus steal)
+        handlers.onNodeClicked(ctx.data.id);
+      }
+      lastPick = { id: ctx.data.id, t: now };
+    }
     return ctx;
   });
 
   muted = false;
 
-  const nodeIdAt = (el: Element): string | null => {
-    for (const [id, view] of area.nodeViews) {
-      if (view.element === el || view.element.contains(el)) return id;
-    }
-    return null;
-  };
+  const isWidget = (el: EventTarget | null): boolean =>
+    el instanceof HTMLElement && !!el.closest("input,select,textarea");
 
-  // double-click a node → edit it in Attributes (background dbl-click is inert)
-  const onDblClick = (e: MouseEvent) => {
-    const nodeEl = (e.target as HTMLElement).closest("[data-testid='node']");
-    const id = nodeEl ? nodeIdAt(nodeEl) : null;
-    if (id) {
-      e.stopPropagation();
-      handlers.onNodeInspect(id);
-    }
+  // the canvas takes focus on click so Delete/Backspace can act on the selection
+  container.tabIndex = 0;
+  container.style.outline = "none";
+  const onPointerDown = (e: PointerEvent) => {
+    if (!isWidget(e.target)) container.focus({ preventScroll: true });
   };
-  container.addEventListener("dblclick", onDblClick);
+  container.addEventListener("pointerdown", onPointerDown);
 
-  // right-click → app context menu (native menu suppressed)
+  // Delete/Backspace → delete the selected nodes. Swallow the key inside the
+  // canvas either way, so the global scene-object delete never fires from here;
+  // every other key (⌘Z…) still bubbles to the app shortcuts.
+  const onKeyDown = (e: KeyboardEvent) => {
+    if (e.key !== "Delete" && e.key !== "Backspace") return;
+    if (isWidget(e.target)) return; // typing in an inline widget
+    e.preventDefault();
+    e.stopPropagation();
+    const ids = editor
+      .getNodes()
+      .filter((n) => n.selected)
+      .map((n) => n.id);
+    if (ids.length) handlers.onDeleteNodes(ids);
+  };
+  container.addEventListener("keydown", onKeyDown);
+
+  // right-click: background → Add Node menu; over a node → nothing (no menu)
   const onContext = (e: MouseEvent) => {
     e.preventDefault();
     const nodeEl = (e.target as HTMLElement).closest("[data-testid='node']");
-    const id = nodeEl ? nodeIdAt(nodeEl) : null;
-    if (id) {
-      handlers.onNodeMenu(id, e.clientX, e.clientY);
-    } else {
-      const rect = container.getBoundingClientRect();
-      const t = area.area.transform;
-      const gx = (e.clientX - rect.left - t.x) / t.k;
-      const gy = (e.clientY - rect.top - t.y) / t.k;
-      handlers.onBackgroundMenu(e.clientX, e.clientY, [gx, gy]);
-    }
+    if (nodeEl) return;
+    const rect = container.getBoundingClientRect();
+    const t = area.area.transform;
+    const gx = (e.clientX - rect.left - t.x) / t.k;
+    const gy = (e.clientY - rect.top - t.y) / t.k;
+    handlers.onBackgroundMenu(e.clientX, e.clientY, [gx, gy]);
   };
   container.addEventListener("contextmenu", onContext);
 
@@ -181,7 +273,8 @@ export async function mountNodeEditor(
 
   return {
     destroy: () => {
-      container.removeEventListener("dblclick", onDblClick);
+      container.removeEventListener("pointerdown", onPointerDown);
+      container.removeEventListener("keydown", onKeyDown);
       container.removeEventListener("contextmenu", onContext);
       area.destroy();
     },

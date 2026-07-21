@@ -50,6 +50,11 @@ const RIGHT_PANEL_TITLES: Record<ShellPanelId, string> = {
 };
 
 function openNodeEditor(api: DockviewApi) {
+  const existing = api.getPanel("nodeEditor");
+  if (existing) {
+    existing.focus();
+    return;
+  }
   api.addPanel({
     id: "nodeEditor",
     component: "nodeEditor",
@@ -140,11 +145,14 @@ export function Shell({ doc }: { doc: Document }) {
     setRegistry(registry);
   }, [registry]);
 
-  // panel-focus requests (e.g. double-clicking a graph node focuses Attributes)
+  // panel-focus requests (double-clicking a graph node focuses Attributes;
+  // double-clicking a material opens the Node Editor)
   const focusReq = useAtomValue(focusPanelAtom);
   useEffect(() => {
     const api = apiRef.current;
-    if (focusReq && api) openRightPanel(api, focusReq.id as ShellPanelId);
+    if (!focusReq || !api) return;
+    if (focusReq.id === "nodeEditor") openNodeEditor(api);
+    else openRightPanel(api, focusReq.id as ShellPanelId);
   }, [focusReq]);
 
   // global shortcuts (skip while typing — but only for BARE keys: modifier

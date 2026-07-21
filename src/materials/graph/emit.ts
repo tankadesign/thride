@@ -5,9 +5,10 @@ import type {
   GraphSocketType,
   MaterialGraphDTO,
   MathOp,
+  Projection,
   Uuid,
 } from "@/types/core";
-import { defaultRamp } from "@/types/core";
+import { defaultRamp, SHAPING_DEFAULTS as SD } from "@/types/core";
 import {
   max,
   min,
@@ -24,7 +25,9 @@ import {
 import { noiseDef } from "@/materials/noises";
 import { blendLayer } from "@/materials/procedural/blend";
 import { bumpNormal } from "@/materials/procedural/bump";
+import { projectedSample } from "@/materials/procedural/projections";
 import { RampTexture } from "@/materials/procedural/ramp";
+import { shapeValue } from "@/materials/procedural/shape";
 import type { UniformTable } from "@/materials/procedural/uniforms";
 
 /**
@@ -64,11 +67,26 @@ const P = {
   color: (id: Uuid) => `${id}/color`,
   factor: (id: Uuid) => `${id}/factor`,
   strength: (id: Uuid) => `${id}/strength`,
+  /** shaping knob (clipLow/clipHigh/contrast/bias) — mirrors the layer paths. */
+  shaping: (id: Uuid, k: string) => `${id}/${k}`,
   /** inline float fallback for an unconnected input socket. */
   in: (id: Uuid, s: string) => `${id}/in.${s}`,
   /** inline color fallback for an unconnected input socket. */
   inc: (id: Uuid, s: string) => `${id}/inc.${s}`,
 };
+
+/** The noise node's shaping knobs — same keys/defaults as a layer's shaping. */
+const SHAPING_KEYS = ["clipLow", "clipHigh", "contrast", "bias"] as const;
+const SHAPING_DEFAULT: Record<(typeof SHAPING_KEYS)[number], number> = {
+  clipLow: SD.clipLow,
+  clipHigh: SD.clipHigh,
+  contrast: SD.contrast,
+  bias: SD.bias,
+};
+
+/** Identity projector placement for an unwired noise's projection sampling —
+ *  wire a Coordinate Space (or any vec3) into `coord` for custom placement. */
+const IDENTITY = { offset: vec3(0, 0, 0), rotation: vec3(0, 0, 0), scale: vec3(1, 1, 1) };
 
 const MATH: Record<MathOp, (a: Float, b: Float) => Float> = {
   add: (a, b) => a.add(b),
@@ -142,7 +160,6 @@ export class GraphEmit {
       case "noise": {
         const def = noiseDef(node.select?.noise ?? "perlin");
         if (!def) return FALLBACK;
-        const coord = this.input(node, "coord", "vec3", () => positionLocal) as Vec3;
         const params: Record<string, Float> = {};
         for (const p of def.params) {
           params[p.key] = u.float(P.param(node.id, p.key), node.params?.[p.key] ?? p.default);
@@ -152,7 +169,30 @@ export class GraphEmit {
         const phase = u.float(P.phase(node.id), 0);
         const seed = u.float(P.seed(node.id), node.params?.seed ?? 0);
         const off = vec3(seed.mul(13.37), seed.mul(7.77), seed.mul(3.33));
-        return { value: def.sample(vec3(coord).add(off), params, phase), type: "vec3" };
+        const sampler = (c: Vec3) => def.sample(vec3(c).add(off), params, phase);
+
+        // Sample coordinate: a wired `coord` wins; otherwise `select.space` — a
+        // plain coordinate space, or a layer-system projection via
+        // projectedSample (triplanar & friends multi-sample the noise, so they
+        // only exist here, never on a wire).
+        const conn = this.incoming(node.id, "coord");
+        let value: Vec3;
+        if (conn) {
+          value = sampler(vec3(coerce(this.emit(conn.from.node), "vec3")));
+        } else {
+          const space = node.select?.space ?? "object";
+          if (space === "object") value = sampler(positionLocal);
+          else if (space === "world") value = sampler(positionWorld);
+          else if (space === "uv") value = sampler(vec3(uv(), 0));
+          else value = projectedSample(space as Projection, IDENTITY, sampler);
+        }
+
+        // value shaping — full layer-editor parity (contrast/bias/clip), every
+        // knob a live uniform; defaults are a visual no-op.
+        const [lo, hi, contrast, bias] = SHAPING_KEYS.map((k) =>
+          u.float(P.shaping(node.id, k), node.params?.[k] ?? SHAPING_DEFAULT[k]),
+        );
+        return { value: shapeValue(value, lo!, hi!, contrast!, bias!), type: "vec3" };
       }
       case "float":
         return { value: u.float(P.value(node.id), node.params?.value ?? 0), type: "float" };
@@ -229,6 +269,9 @@ export function updateGraphUniforms(uniforms: UniformTable, graph: MaterialGraph
           }
         }
         uniforms.setFloat(P.seed(node.id), node.params?.seed ?? 0);
+        for (const k of SHAPING_KEYS) {
+          uniforms.setFloat(P.shaping(node.id, k), node.params?.[k] ?? SHAPING_DEFAULT[k]);
+        }
         break;
       }
       case "float":

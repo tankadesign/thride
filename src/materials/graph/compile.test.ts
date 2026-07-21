@@ -242,6 +242,74 @@ describe("graph compiler", () => {
     expect(c.uniforms.getFloat("b/strength")).toBe(3);
   });
 
+  it("noise shaping knobs (contrast/bias/clip) scrub without recompiling", () => {
+    const g = graph(
+      [node("out", "output"), node("n", "noise", { select: { noise: "perlin" } })],
+      [wire("n", "out", "out", "color")],
+    );
+    const c = compileGraph(g);
+    expect(getGraphCompileCount()).toBe(1);
+    expect(c.uniforms.paths()).toEqual(
+      expect.arrayContaining(["n/clipLow", "n/clipHigh", "n/contrast", "n/bias", "n/seed"]),
+    );
+
+    const edited = clone(g);
+    edited.nodes.find((n) => n.id === "n")!.params = {
+      contrast: 2,
+      bias: -0.1,
+      clipLow: 0.2,
+      clipHigh: 0.8,
+      seed: 42,
+    };
+    expect(c.applies(edited)).toBe(true); // shaping is uniforms, not shape
+    c.update(edited);
+    expect(getGraphCompileCount()).toBe(1);
+    expect(c.uniforms.getFloat("n/contrast")).toBe(2);
+    expect(c.uniforms.getFloat("n/clipHigh")).toBe(0.8);
+    expect(c.uniforms.getFloat("n/seed")).toBe(42);
+  });
+
+  it("an unwired noise compiles in every sample space (incl. projections)", () => {
+    for (const space of [
+      "object",
+      "world",
+      "uv",
+      "flat",
+      "triplanar",
+      "cylindrical",
+      "spherical",
+    ]) {
+      const g = graph(
+        [node("out", "output"), node("n", "noise", { select: { noise: "perlin", space } })],
+        [wire("n", "out", "out", "color")],
+      );
+      expect(compileGraph(g).nodes.color, space).toBeTruthy();
+    }
+  });
+
+  it("changing the noise space is structural (recompiles)", () => {
+    const g = graph(
+      [node("out", "output"), node("n", "noise", { select: { noise: "perlin", space: "object" } })],
+      [wire("n", "out", "out", "color")],
+    );
+    const c = compileGraph(g);
+    const edited = clone(g);
+    edited.nodes.find((n) => n.id === "n")!.select!.space = "triplanar";
+    expect(c.applies(edited)).toBe(false);
+  });
+
+  it("a wired coord overrides the noise space (still compiles)", () => {
+    const g = graph(
+      [
+        node("out", "output"),
+        node("c", "coord"),
+        node("n", "noise", { select: { noise: "perlin", space: "triplanar" } }),
+      ],
+      [wire("c", "out", "n", "coord"), wire("n", "out", "out", "color")],
+    );
+    expect(compileGraph(g).nodes.color).toBeTruthy();
+  });
+
   it("an unknown noise id still compiles (forward-compat docs)", () => {
     const g = graph(
       [node("out", "output"), node("n", "noise", { select: { noise: "noise-from-the-future" } })],

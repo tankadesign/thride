@@ -59,6 +59,7 @@ export {
   COORD_SPACES,
   GRAPH_NODE_DEFS,
   MATH_OPS,
+  NOISE_SPACES,
   OUTPUT_CHANNELS,
   defaultGraphNode,
   defaultMaterialGraph,

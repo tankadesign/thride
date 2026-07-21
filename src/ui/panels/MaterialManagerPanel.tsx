@@ -15,6 +15,7 @@ import {
   selectedMaterialsAtom,
   useMaterialThumbnail,
 } from "@/ui/hooks/editor/materials";
+import { focusPanel } from "@/ui/hooks/editor/shell";
 import { MaterialEditor } from "./MaterialEditor";
 
 function uniqueMaterialName(doc: Document): string {
@@ -165,6 +166,12 @@ export function MaterialManagerPanel() {
             dto={m}
             selected={live.includes(m.id)}
             onSelect={(e) => onCardClick(e, m.id)}
+            onOpen={() => {
+              // double-click = edit as nodes: select + bring up the Node Editor
+              setSelected([m.id]);
+              anchor.current = m.id;
+              focusPanel("nodeEditor");
+            }}
             onRename={(name) => rename(m.id, name)}
           />
         ))}
@@ -195,11 +202,14 @@ function MaterialCard({
   dto,
   selected,
   onSelect,
+  onOpen,
   onRename,
 }: {
   dto: MaterialDTO;
   selected: boolean;
   onSelect: (e: React.MouseEvent) => void;
+  /** Double-click — open this material in the Node Editor. */
+  onOpen: () => void;
   onRename: (name: string) => void;
 }) {
   const url = useMaterialThumbnail(dto);
@@ -210,7 +220,8 @@ function MaterialCard({
     <button
       type="button"
       onClick={onSelect}
-      title={`${typeLabel} — drag onto an object to assign`}
+      onDoubleClick={onOpen}
+      title={`${typeLabel} — drag onto an object to assign; double-click to edit nodes`}
       draggable
       onDragStart={(e) => {
         e.dataTransfer.setData(MATERIAL_DND_MIME, dto.id);

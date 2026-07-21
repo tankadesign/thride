@@ -16,6 +16,7 @@ import { blendLayer } from "./blend";
 import { bumpNormal } from "./bump";
 import { projectedSample } from "./projections";
 import { RampTexture } from "./ramp";
+import { shapeValue } from "./shape";
 import { UniformTable } from "./uniforms";
 
 /**
@@ -141,19 +142,14 @@ export class CompiledStacks {
     return texture(ramp.texture, vec2(value.r.clamp(0, 1), 0.5)).rgb;
   }
 
-  /**
-   * Value shaping — levels window (clipLow→clipHigh remapped to 0→1), then
-   * contrast around mid-gray, then bias, clamped. Applied componentwise (curl
-   * is a vec3 field). Every knob is a uniform: shaping edits never recompile.
-   */
+  /** Value shaping — see {@link shapeValue}; every knob is a live uniform. */
   private shape(layer: ProceduralLayer, value: Vec3): Vec3 {
     const u = this.uniforms;
     const lo = u.float(uPath(layer.id, "clipLow"), layer.clipLow ?? SD.clipLow);
     const hi = u.float(uPath(layer.id, "clipHigh"), layer.clipHigh ?? SD.clipHigh);
     const contrast = u.float(uPath(layer.id, "contrast"), layer.contrast ?? SD.contrast);
     const bias = u.float(uPath(layer.id, "bias"), layer.bias ?? SD.bias);
-    const windowed = value.sub(lo).div(hi.sub(lo).max(1e-4)).clamp(0, 1);
-    return windowed.sub(0.5).mul(contrast).add(0.5).add(bias).clamp(0, 1);
+    return shapeValue(value, lo, hi, contrast, bias);
   }
 
   /** The layer's noise value (vec3), sampled through its projection. */

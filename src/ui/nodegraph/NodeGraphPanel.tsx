@@ -4,7 +4,9 @@ import { UpdateMaterialCommand, uuidv7 } from "@/core";
 import {
   defaultGraphNode,
   GRAPH_NODE_DEFS,
+  type GraphNode,
   type GraphNodeKind,
+  type MaterialDTO,
   type MaterialGraphDTO,
 } from "@/types/core";
 import { useDocument, useSliceVersion } from "@/ui/hooks/doc/document";
@@ -20,16 +22,17 @@ import {
 import { starterGraph } from "./starter";
 
 /**
- * Node material editor panel (E7). The canvas is WIRING ONLY — connect/add/delete
- * nodes and double-click a node to edit its values in the Attributes panel.
+ * Node material editor panel (E7). The canvas is for WIRING (connect/add/delete/
+ * move + inline fallbacks on unwired inputs); full value editing happens in the
+ * Attributes panel — click a node to show it there, double-click to also bring
+ * the panel forward, Delete/Backspace removes the selection.
  *
- * Remounts are gated on a TOPOLOGY signature (node ids+kinds + wiring), never on
- * values: editing a param/colour/dropdown in Attributes changes the graph but not
- * the topology, so the canvas is never rebuilt underfoot (which is what made the
- * old inline-editing version flicker/blank). The editor rebuilds only on add/
- * delete/undo/redo/material-switch; connect/disconnect stamp the signature so the
- * canvas — which already shows the edit — isn't rebuilt. The view transform is
- * preserved across rebuilds.
+ * The canvas rebuilds when its SIGNATURE — topology (node ids + kinds + wiring)
+ * plus the `select` values shown by inline widgets — changes, with the view
+ * transform preserved. Numeric/colour edits are NOT in the signature, so scrubs
+ * never rebuild. Crucially the mount effect has no early-out: React pairs every
+ * cleanup with a fresh mount, so a rebuild can never destroy the editor without
+ * remounting it (the old "canvas disappears after a wire edit" bug).
  */
 
 const ADDABLE: GraphNodeKind[] = [
@@ -43,11 +46,11 @@ const ADDABLE: GraphNodeKind[] = [
   "bump",
 ];
 
-/** Topology fingerprint — what a canvas rebuild actually depends on (not values). */
-function topoSig(g?: MaterialGraphDTO): string {
+/** What a canvas rebuild depends on: topology + the selects inline widgets show. */
+function canvasSig(g?: MaterialGraphDTO): string {
   if (!g) return "";
   const nodes = g.nodes
-    .map((n) => `${n.id}:${n.kind}`)
+    .map((n) => `${n.id}:${n.kind}:${JSON.stringify(n.select ?? {})}`)
     .sort()
     .join("|");
   const conns = g.connections
@@ -65,30 +68,49 @@ export function NodeGraphPanel() {
   const matId = selected[0];
   const dto = matId ? doc.materials.get(matId) : undefined;
   const graph = dto?.graph;
-  const sig = topoSig(graph);
+  const sig = canvasSig(graph);
 
   const hostRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<EditorHandle | null>(null);
-  const lastSig = useRef<string>("");
   const lastMat = useRef<string | undefined>(undefined);
   const pendingXform = useRef<Transform | undefined>(undefined);
+  const scrub = useRef<{ before: MaterialDTO } | null>(null);
 
   useEffect(() => {
     const host = hostRef.current;
     if (!host || !graph || !matId) return;
-    if (sig === lastSig.current) return; // canvas already reflects this topology
-    lastSig.current = sig;
+    // preserve the view across a rebuild of the SAME material; reframe on switch
     const initial = lastMat.current === matId ? pendingXform.current : undefined;
     lastMat.current = matId;
 
-    /** Commit `next` as the material's graph. `stamp` suppresses the rebuild
-     *  (the canvas already shows the change, e.g. a Rete connect/move). */
-    const setGraph = (next: MaterialGraphDTO, stamp: boolean) => {
+    /** Commit a whole-graph replacement as one undo step. */
+    const setGraph = (next: MaterialGraphDTO) => {
       const cur = doc.materials.get(matId);
       if (!cur) return;
-      if (stamp) lastSig.current = topoSig(next);
       doc.history.run(new UpdateMaterialCommand(cur, { ...cur, graph: next }, "Edit Node Graph"));
     };
+
+    /** Patch one node with the scrub pattern (live during drag, one step on release). */
+    const patchNode = (id: string, patch: (n: GraphNode) => void, committed: boolean) => {
+      const cur = doc.materials.get(matId);
+      if (!cur?.graph) return;
+      scrub.current ??= { before: structuredClone(cur) };
+      const nodes = cur.graph.nodes.map((n) => {
+        if (n.id !== id) return n;
+        const copy = structuredClone(n);
+        patch(copy);
+        return copy;
+      });
+      const after = { ...cur, graph: { ...cur.graph, nodes } };
+      doc.updateMaterial(after, !committed);
+      if (committed) {
+        const before = scrub.current.before;
+        scrub.current = null;
+        doc.history.pushWithoutExecute(new UpdateMaterialCommand(before, after, "Edit Node"));
+      }
+    };
+
+    const inspect = (nodeId: string) => setInspected({ materialId: matId, nodeId });
 
     const handlers: EditorHandlers = {
       onStructureChanged: () => {
@@ -112,43 +134,59 @@ export function NodeGraphPanel() {
           seen.add(key);
           connections.unshift(c);
         }
-        setGraph({ nodes, connections, output: cur.output }, true); // canvas already shows it
+        setGraph({ nodes, connections, output: cur.output });
       },
+      onNodeClicked: inspect,
       onNodeInspect: (nodeId) => {
-        setInspected({ materialId: matId, nodeId });
+        inspect(nodeId);
         focusPanel("attributes");
+      },
+      onDeleteNodes: (ids) => {
+        const cur = doc.materials.get(matId)?.graph;
+        if (!cur) return;
+        const drop = new Set(ids.filter((id) => id !== cur.output)); // Output stays
+        if (drop.size === 0) return;
+        const nodes = cur.nodes.filter((n) => !drop.has(n.id));
+        const connections = cur.connections.filter(
+          (c) => !drop.has(c.from.node) && !drop.has(c.to.node),
+        );
+        setInspected(null);
+        setGraph({ ...cur, nodes, connections });
       },
       onBackgroundMenu: (clientX, clientY, pos) => {
         openContextMenu({ x: clientX, y: clientY, entries: addNodeMenu(pos, addNode) });
       },
-      onNodeMenu: (id, clientX, clientY) => {
-        const cur = doc.materials.get(matId)?.graph;
-        if (!cur || id === cur.output) return; // the Output sink isn't deletable
-        openContextMenu({
-          x: clientX,
-          y: clientY,
-          entries: [
-            { label: "Edit Node", run: () => handlers.onNodeInspect(id) },
-            { label: "Delete Node", run: () => deleteNode(id) },
-          ],
-        });
-      },
+      onNodeSelect: (id, key, value) =>
+        patchNode(
+          id,
+          (n) => {
+            n.select = { ...n.select, [key]: value };
+          },
+          true,
+        ),
+      onNodeParam: (id, key, value, committed) =>
+        patchNode(
+          id,
+          (n) => {
+            n.params = { ...n.params, [key]: value };
+          },
+          committed,
+        ),
+      onNodeColor: (id, key, hex, committed) =>
+        patchNode(
+          id,
+          (n) => {
+            n.colors = { ...n.colors, [key]: hex };
+          },
+          committed,
+        ),
     };
 
     const addNode = (kind: GraphNodeKind, pos: [number, number]) => {
       const cur = doc.materials.get(matId)?.graph;
       if (!cur) return;
       const node = defaultGraphNode(uuidv7(), kind, pos);
-      setGraph({ ...cur, nodes: [...cur.nodes, node] }, false); // rebuild to show it
-    };
-
-    const deleteNode = (id: string) => {
-      const cur = doc.materials.get(matId)?.graph;
-      if (!cur) return;
-      const nodes = cur.nodes.filter((n) => n.id !== id);
-      const connections = cur.connections.filter((c) => c.from.node !== id && c.to.node !== id);
-      setInspected(null);
-      setGraph({ ...cur, nodes, connections }, false);
+      setGraph({ ...cur, nodes: [...cur.nodes, node] });
     };
 
     let handle: EditorHandle | null = null;
@@ -163,7 +201,7 @@ export function NodeGraphPanel() {
       handle?.destroy();
       if (editorRef.current === handle) editorRef.current = null;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- topology sig gates rebuilds (see header)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the canvas signature gates rebuilds (see header)
   }, [matId, sig]);
 
   if (!dto) return <Empty>Select a material to edit its node graph.</Empty>;
