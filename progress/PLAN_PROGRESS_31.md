@@ -98,12 +98,36 @@
   _(Dev-server shows a stale Vite HMR error for the deleted `graphControls.tsx` — cosmetic; `tsc` is
   clean, no source imports it. Clears on dev-server restart.)_
 
+### M4 — node-editor UX round 2 (user-directed) (`5ecb230`)
+
+- **BUG fixed at the root — canvas disappeared on any wire/value edit:** the stamped-signature
+  guard let React run the old effect's CLEANUP (destroying the Rete editor) and then early-return
+  without remounting. Removed the stamp/guard machinery — the mount effect always pairs
+  mount/cleanup on `[matId, canvasSig]`, where `canvasSig` = topology + selects. Value scrubs stay
+  out of the sig (no rebuild); wiring/select edits rebuild with the view transform preserved.
+- **Double-click a material card** → selects it and opens/focuses the **Node Editor below the
+  viewport** (exists→focus guard added to `openNodeEditor`; focus requests route through it).
+- **Noise node = NoiseEditor parity:** Type (param carry-over on swap), **Space** (object/world/uv
+  - flat/triplanar/cylindrical/spherical via `projectedSample` when `coord` is unwired; disabled
+    with a hint when wired), Seed, per-type params, Contrast/Bias/Clip Low/High. Shaping extracted to
+    `procedural/shape.ts` (`shapeValue`) and shared with the layer compiler; all live uniforms.
+- **Interactions:** single-click a node → its attributes show (last-clicked wins, no focus steal);
+  double-click → Attributes comes forward (detected from `nodepicked` timestamps — DOM `dblclick`
+  breaks when the first click re-renders the node); **Delete/Backspace** deletes the selection (one
+  undo step, Output excluded, swallowed inside the canvas so scene-delete never fires; ⌘Z bubbles).
+  Node context menu removed; background right-click keeps Add Node.
+- **"Coordinate" → "Coordinate Space"**, and Blender-style **inline fallbacks on unwired inputs**
+  (`ui/nodegraph/inlineControls.tsx`): noise coord → space select, math a/b → number drags, mix a/b
+  → colours, ramp t / bump height → numbers; the Coordinate Space node shows its select on-canvas.
+- **Verified live in Chrome** end-to-end (incl. socket-drag wiring with the canvas intact). +4
+  compiler tests.
+
 ## Left mid-flight
 
 - **M4 is a milestone hard stop — awaiting user sign-off.** Remaining is **polish, not done-when:**
   **Stage 6** (per-node offscreen thumbnails, error badges, optional `compileAsync` warm-swap), plus
   theming the Rete nodes to daisyUI `sunset` (currently default Rete blue) and better initial framing.
-- Gates green through the redesign: tsc clean, lint 0 errors, `vp test` **294 passing**.
+- Gates green through round 2: tsc clean, lint 0 errors, `vp test` **298 passing**.
 
 ## Decisions made (and why)
 
