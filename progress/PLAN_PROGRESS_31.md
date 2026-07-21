@@ -57,14 +57,34 @@
   panel + View → Node Editor. **Verified live in Chrome:** create graph → nodes render with
   sockets/wires/params → the material thumbnail shows the fractal pattern (full E7 loop end-to-end).
 
+### M4 — E7 Stage 5 shipped → **done-when MET**
+
+- **Stage 5** (`675046e`) — the node graph is fully editable in the panel.
+  - **Sync model** (per advisor): edits are Rete-first; a JSON signature gates the remount effect —
+    panel-originated edits stamp the sig so the editor never remounts (no view jump, scrubs at frame
+    rate), external changes (undo/redo, material switch) have a stale sig so it rebuilds. Structural
+    edits Rete can't self-reflect (add/delete node, dropdown) rebuild with the transform preserved.
+  - `reteEditor.ts`: `node.id = DTO id`; debounced structural-event pipe (one commit per gesture);
+    `readStructure()` reads wiring/positions back; custom control preset. `graphControls.tsx`:
+    editable widgets — select dropdowns (noise type/op/blend/space, structural), `NumberDrag` params
+    (live-uniform scrub), colour swatch; each stops pointer events from panning the canvas.
+  - `NodeGraphPanel.tsx`: applies each edit as a DTO delta, commits via `UpdateMaterialCommand`
+    (scrub pattern — live during drag, one merged command on release); one-wire-per-input on read-back.
+  - **User requests done:** double-click background zoom disabled (area-plugin `onzoom(...,'dblclick')`
+    dropped via a pipe); right-click → the app's `ContextMenu` with an **Add Node** submenu; right-click
+    a node → **Delete Node**.
+  - **Verified live in Chrome:** add node (5) → undo (4) = one step; dropdown/colour/number widgets
+    edit; right-click adds at the cursor; double-click no longer zooms; zero console errors.
+- **M4 done-when MET:** a `noise→ramp→color` (and `fractal→bump→normal`) graph can be built entirely
+  in the UI; viewport/thumbnail are live with zero recompile on param scrubs (Stage-3 gate + unit
+  test); each structural edit is one undo step; the graph survives save/reload (autosave verified).
+
 ## Left mid-flight
 
-- **E7 Stages 5–6 remain.** **Stage 5** — full in-panel editing (add-node menu, connect/disconnect/
-  delete, param widgets writing back through `UpdateMaterialCommand`, each structural action = one
-  undo step). **Stage 6** — per-node offscreen thumbnails, error badges, optional `compileAsync`
-  warm-swap. Polish carried forward: theme the Rete nodes to daisyUI `sunset` (currently default
-  Rete blue); improve the initial `zoomAt` framing (nodes cluster at the panel bottom).
-- Gates green through Stage 4: tsc clean, lint 0 errors, `vp test` **294 passing**.
+- **M4 is a milestone hard stop — awaiting user sign-off.** Remaining is **polish, not done-when:**
+  **Stage 6** (per-node offscreen thumbnails, error badges, optional `compileAsync` warm-swap), plus
+  theming the Rete nodes to daisyUI `sunset` (currently default Rete blue) and better initial framing.
+- Gates green through Stage 5: tsc clean, lint 0 errors, `vp test` **294 passing**.
 
 ## Decisions made (and why)
 
