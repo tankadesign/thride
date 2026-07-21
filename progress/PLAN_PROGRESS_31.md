@@ -132,11 +132,21 @@
   commit when the wire lands back where it started. Verified live: no mid-drag rebuild, ghost stays
   rendered, re-drop connects, one ⌘Z restores.
 
+### M4 — node canvas themed to the app UI (`10a5a0f`)
+
+- Custom Rete components in `ui/nodegraph/nodeTheme.tsx` (Tailwind/daisyUI only, no custom CSS):
+  nodes = `base-200` panels with `base-300` borders + title strip at inspector type scale;
+  selection = primary border + soft ring (matches material-card selection); sockets = primary dots
+  with padded grab area + hover scale; wires = the classic curve restroked in primary/60; canvas =
+  the app's `dot-bg` over `base-300`. The classic preset's DOM contract (data-testids, RefSocket/
+  RefControl registration) is preserved, so hit-testing/positions/interactions are untouched.
+  Inputs with inline fallbacks now show label AND widget. Verified live incl. rewire + undo.
+
 ## Left mid-flight
 
 - **M4 is a milestone hard stop — awaiting user sign-off.** Remaining is **polish, not done-when:**
-  **Stage 6** (per-node offscreen thumbnails, error badges, optional `compileAsync` warm-swap), plus
-  theming the Rete nodes to daisyUI `sunset` (currently default Rete blue) and better initial framing.
+  **Stage 6** (per-node offscreen thumbnails, error badges, optional `compileAsync` warm-swap) and
+  better initial framing.
 - Gates green: tsc clean, lint 0 errors, `vp test` **298 passing**.
 
 ## Decisions made (and why)
