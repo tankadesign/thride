@@ -134,7 +134,11 @@ export function NodeGraphPanel() {
           seen.add(key);
           connections.unshift(c);
         }
-        setGraph({ nodes, connections, output: cur.output });
+        const next: MaterialGraphDTO = { nodes, connections, output: cur.output };
+        // no-op guard: picking a wire off and re-dropping it on the same socket
+        // (or a drag that lands where it started) must not push an undo step
+        if (JSON.stringify(next) === JSON.stringify(cur)) return;
+        setGraph(next);
       },
       onNodeClicked: inspect,
       onNodeInspect: (nodeId) => {

@@ -177,9 +177,20 @@ export async function mountNodeEditor(
     }
   }
 
-  // structural events → notify the panel (debounced to one call per microtask)
+  // structural events → notify the panel (debounced to one call per microtask).
+  // While a wire DRAG is in flight the commit is deferred: grabbing a wire off an
+  // occupied input removes it in Rete (the pseudo-connection follows the pointer
+  // for re-wiring), and committing that removal immediately would rebuild the
+  // canvas and kill the drag — the "detached wire disappears" bug. The drop
+  // flushes once, so pick-up→re-drop reads back as a single rewire commit.
   let pending = false;
+  let wireDrag = false;
+  let dirtyDuringDrag = false;
   const notify = () => {
+    if (wireDrag) {
+      dirtyDuringDrag = true;
+      return;
+    }
     if (pending) return;
     pending = true;
     queueMicrotask(() => {
@@ -187,6 +198,20 @@ export async function mountNodeEditor(
       handlers.onStructureChanged();
     });
   };
+  connection.addPipe((ctx) => {
+    if (ctx.type === "connectionpick") wireDrag = true;
+    if (ctx.type === "connectiondrop") {
+      wireDrag = false;
+      // flush after Rete applies the drop result (re-wired, or removed in void)
+      queueMicrotask(() => {
+        if (dirtyDuringDrag) {
+          dirtyDuringDrag = false;
+          notify();
+        }
+      });
+    }
+    return ctx;
+  });
 
   editor.addPipe((ctx) => {
     if (muted) return ctx;
