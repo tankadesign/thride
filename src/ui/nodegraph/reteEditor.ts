@@ -10,6 +10,7 @@ import {
   InlineSelectControl,
   renderInlineControl,
 } from "./inlineControls";
+import { ThrideConnection, ThrideNode, ThrideSocket } from "./nodeTheme";
 
 /**
  * Rete v2 editor over a {@link MaterialGraphDTO} (E7). The canvas is for WIRING:
@@ -152,7 +153,12 @@ export async function mountNodeEditor(
   });
   render.addPreset(
     Presets.classic.setup({
-      customize: { control: (data) => renderInlineControl(data.payload) },
+      customize: {
+        node: () => ThrideNode,
+        socket: () => ThrideSocket,
+        connection: () => ThrideConnection,
+        control: (data) => renderInlineControl(data.payload),
+      },
     }),
   );
   connection.addPreset(ConnectionPresets.classic.setup());

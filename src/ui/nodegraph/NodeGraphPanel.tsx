@@ -229,7 +229,9 @@ export function NodeGraphPanel() {
       </Empty>
     );
   }
-  return <div ref={hostRef} className="bg-base-300 relative h-full w-full overflow-hidden" />;
+  return (
+    <div ref={hostRef} className="dot-bg bg-base-300 relative h-full w-full overflow-hidden" />
+  );
 }
 
 /** The Add-Node submenu — one entry per addable kind, placed at the cursor. */
