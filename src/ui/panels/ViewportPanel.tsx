@@ -23,7 +23,7 @@ import {
 } from "@/render/viewport/ViewportSystem";
 import { themeStyle, viewportTheme } from "@/render/theme/viewportTheme";
 import { ViewSettingsModal } from "./ViewSettingsModal";
-import { IconCamera, IconPivotPoint, IconSettings } from "@/icons";
+import { IconCamera, IconCheckmark, IconPivotPoint, IconSettings } from "@/icons";
 
 const OBJECT_CONTEXT_COMMANDS = [
   "edit.group",
@@ -116,10 +116,10 @@ function CameraSelect({
         ref={triggerRef}
         type="button"
         tabIndex={0}
-        className="select select-sm w-32 border-base-300 bg-base-100/80 backdrop-blur flex items-center gap-1.5"
+        className="select select-sm w-36 border-base-300 bg-base-100/80 backdrop-blur flex items-center gap-1.5"
       >
+        <span className="truncate text-left">{selected.label}</span>
         {selected.icon && <selected.icon size={12} className="shrink-0 opacity-60" />}
-        <span className="truncate flex-1 text-left">{selected.label}</span>
       </button>
       <ul
         tabIndex={0}
@@ -129,15 +129,22 @@ function CameraSelect({
           <li key={o.value}>
             <button
               type="button"
-              className={o.value === value ? "active" : ""}
+              className={o.value === value ? "active text-primary" : ""}
               onMouseDown={(e) => {
                 e.preventDefault();
                 onChange(o.value);
                 triggerRef.current?.blur();
               }}
             >
-              {o.icon && <o.icon size={12} className="shrink-0 opacity-60" />}
-              {o.label}
+              <IconCheckmark
+                size={16}
+                className={`shrink-0 ${o.value === value ? "visible" : "invisible"}`}
+              />
+              <span className="flex items-center gap-2">
+                {o.label}
+
+                {o.icon && <o.icon size={16} className="opacity-60" />}
+              </span>
             </button>
           </li>
         ))}

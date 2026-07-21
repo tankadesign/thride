@@ -8,6 +8,7 @@ import {
   Cancel01Icon,
   CenterFocusIcon,
   ChartSplineIcon,
+  CheckIcon,
   CircleIcon,
   Cone01Icon,
   CubeIcon,
@@ -33,8 +34,8 @@ import {
   OctagonIcon,
   PathfinderMergeIcon,
   PathfinderUniteIcon,
-  PenTool03Icon,
   PentagonIcon,
+  PenTool03Icon,
   PillIcon,
   PipelineIcon,
   PlusSignSquareIcon,
@@ -141,6 +142,7 @@ export const IconCaretRight = makeIcon(ArrowRight01Icon);
 /** Dropdown / expanded-state caret. */
 export const IconCaretDown = makeIcon(ArrowDown01Icon);
 export const IconClose = makeIcon(Cancel01Icon);
+export const IconCheckmark = makeIcon(CheckIcon);
 export const IconCollapse = makeIcon(MinusSignSquareIcon);
 export const IconDelete = makeIcon(Delete02Icon);
 export const IconExpand = makeIcon(PlusSignSquareIcon);

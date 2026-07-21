@@ -135,8 +135,8 @@ export function ThrideSocket(props: { data: ClassicPreset.Socket }) {
   return (
     <div className="group cursor-pointer p-0.5">
       <div
-        className={`size-3.5 rounded-full border-2 border-base-100 ring-1 ring-primary transition-transform group-hover:scale-125 ${
-          connected ? "bg-primary" : ""
+        className={`size-3.5 rounded-full border-2 border-base-100 ring-1 transition-transform group-hover:scale-125 ${
+          connected ? "bg-primary ring-primary" : "bg-base-100 ring-base-content"
         }`}
       />
     </div>
