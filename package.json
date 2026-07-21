@@ -8,7 +8,7 @@
     "build": "tsc -b && vp build",
     "lint": "eslint src",
     "lint:fix": "eslint src --fix",
-    "check": "tsc --noEmit",
+    "check": "tsc -b",
     "check:watch": "tsc --noEmit --watch",
     "preview": "vp preview",
     "prepare": "vp config"
