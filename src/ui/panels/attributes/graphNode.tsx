@@ -14,6 +14,7 @@ import { useDocument, useSliceVersion } from "@/ui/hooks/doc/document";
 import { Field, Section } from "@/ui/widgets/inspector";
 import { NumberDrag } from "@/ui/widgets/NumberDrag";
 import { RampEditor } from "@/ui/panels/materialEditor/RampEditor";
+import { ColorPicker } from "@/ui/widgets/ColorPicker";
 
 /**
  * Attributes editor for a material graph node (E7). The node canvas handles
@@ -121,10 +122,8 @@ export function GraphNodeAttributes({ materialId, nodeId }: { materialId: Uuid; 
 
         {def.colors.map((c) => (
           <Field key={c.key} label={c.label}>
-            <input
-              type="color"
-              className="h-7 w-full cursor-pointer rounded border border-base-300 bg-transparent"
-              value={node.colors?.[c.key] ?? "#808080"}
+            <ColorPicker
+              color={node.colors?.[c.key] ?? "#808080"}
               onChange={(e) =>
                 setNode((n) => {
                   n.colors = { ...n.colors, [c.key]: e.target.value };

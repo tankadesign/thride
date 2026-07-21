@@ -1,6 +1,7 @@
 import { useState, type ComponentType } from "react";
 import { ClassicPreset } from "rete";
 import { NumberDrag } from "@/ui/widgets/NumberDrag";
+import { ColorPicker } from "../widgets/ColorPicker";
 
 /**
  * Inline fallback widgets on the node canvas (E7). An UNWIRED input shows its
@@ -119,10 +120,8 @@ function NumberComp(props: { data: ClassicPreset.Control }) {
 function ColorComp(props: { data: ClassicPreset.Control }) {
   const data = props.data as InlineColorControl;
   return (
-    <input
-      type="color"
-      className="h-6 w-full cursor-pointer rounded border border-neutral bg-transparent"
-      defaultValue={data.value}
+    <ColorPicker
+      color={data.value}
       onChange={(e) => data.onEdit(e.target.value, false)}
       onBlur={(e) => data.onEdit(e.target.value, true)}
       {...stop}

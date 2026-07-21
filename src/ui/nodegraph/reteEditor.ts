@@ -61,6 +61,9 @@ export interface EditorHandlers {
   onNodeInspect: (nodeId: string) => void;
   /** Delete/Backspace over the canvas with nodes selected. */
   onDeleteNodes: (nodeIds: string[]) => void;
+  /** Option-drag finished: leave a copy — original returns to `originalPos`
+   *  (wires intact), an unwired clone lands where the drag dropped it. */
+  onCopyNode: (nodeId: Uuid, originalPos: [number, number]) => void;
   /** Right-click on empty canvas — `graph` is the click in graph coords. */
   onBackgroundMenu: (clientX: number, clientY: number, graph: [number, number]) => void;
   /** Inline widget edits (unwired-input fallbacks + the coord node's space). */
@@ -239,6 +242,11 @@ export async function mountNodeEditor(
     }
     return ctx;
   });
+  // Option-drag copy: armed on alt+pointerdown over a node (see onPointerDown),
+  // resolved when that node's drag ends. The commit happens at DROP — a
+  // mid-gesture commit would rebuild the canvas and kill the drag.
+  let copyArm: { id: string; x: number; y: number } | null = null;
+
   // double-click detection rides the pick events, not the DOM dblclick — the
   // first click can re-render the node (selection styling), which breaks the
   // browser's same-element dblclick synthesis
@@ -247,7 +255,23 @@ export async function mountNodeEditor(
     if (muted) return ctx;
     // drop double-click zoom; a node double-click opens Attributes instead
     if (ctx.type === "zoom" && ctx.data.source === "dblclick") return undefined;
-    if (ctx.type === "nodedragged") notify();
+    if (ctx.type === "nodedragged") {
+      const arm = copyArm;
+      copyArm = null;
+      const draggedId = ctx.data.id;
+      // resolve on a macrotask: node translations are async promise chains that
+      // keep re-enqueuing microtasks, so the final position can land well after
+      // the synchronous drag-end moment — a timeout lets them fully drain
+      setTimeout(() => {
+        const view = arm && arm.id === draggedId ? area.nodeViews.get(arm.id) : null;
+        // only a real move copies — an alt+click stays a plain (no-op) commit
+        if (arm && view && Math.hypot(view.position.x - arm.x, view.position.y - arm.y) > 4) {
+          handlers.onCopyNode(arm.id as Uuid, [arm.x, arm.y]);
+        } else {
+          notify();
+        }
+      }, 0);
+    }
     if (ctx.type === "nodepicked") {
       const now = performance.now();
       if (ctx.data.id === lastPick.id && now - lastPick.t < 400) {
@@ -267,13 +291,50 @@ export async function mountNodeEditor(
   const isWidget = (el: EventTarget | null): boolean =>
     el instanceof HTMLElement && !!el.closest("input,select,textarea");
 
+  const nodeIdAt = (el: EventTarget | null): string | null => {
+    const nodeEl = el instanceof HTMLElement ? el.closest("[data-testid='node']") : null;
+    if (!nodeEl) return null;
+    for (const [id, view] of area.nodeViews) {
+      if (view.element === nodeEl || view.element.contains(nodeEl)) return id;
+    }
+    return null;
+  };
+
+  // Option over a node reads as "drag to copy" — show the copy cursor while
+  // held (set imperatively; the node's own cursor-pointer class would win a
+  // stylesheet fight, and the theme owns no custom CSS)
+  const setNodeCursors = (cursor: string) => {
+    for (const [, view] of area.nodeViews) {
+      const el = view.element.querySelector<HTMLElement>("[data-testid='node']");
+      if (el) el.style.cursor = cursor;
+    }
+  };
+  const onAltKey = (e: KeyboardEvent) => {
+    if (e.key === "Alt") setNodeCursors(e.type === "keydown" ? "copy" : "");
+  };
+  const onWinBlur = () => setNodeCursors("");
+  window.addEventListener("keydown", onAltKey);
+  window.addEventListener("keyup", onAltKey);
+  window.addEventListener("blur", onWinBlur);
+
   // the canvas takes focus on click so Delete/Backspace can act on the selection
   container.tabIndex = 0;
   container.style.outline = "none";
   const onPointerDown = (e: PointerEvent) => {
     if (!isWidget(e.target)) container.focus({ preventScroll: true });
+    // arm option-drag copy (the Output sink is the one node that can't be copied)
+    copyArm = null;
+    if (e.altKey) {
+      const id = nodeIdAt(e.target);
+      const view = id ? area.nodeViews.get(id) : null;
+      if (id && view && id !== graph.output) {
+        copyArm = { id, x: view.position.x, y: view.position.y };
+      }
+    }
   };
-  container.addEventListener("pointerdown", onPointerDown);
+  // capture phase: Rete's node drag stops propagation on pointerdown, so a
+  // bubble-phase listener never hears clicks that land on a node
+  container.addEventListener("pointerdown", onPointerDown, true);
 
   // Delete/Backspace → delete the selected nodes. Swallow the key inside the
   // canvas either way, so the global scene-object delete never fires from here;
@@ -313,9 +374,12 @@ export async function mountNodeEditor(
 
   return {
     destroy: () => {
-      container.removeEventListener("pointerdown", onPointerDown);
+      container.removeEventListener("pointerdown", onPointerDown, true);
       container.removeEventListener("keydown", onKeyDown);
       container.removeEventListener("contextmenu", onContext);
+      window.removeEventListener("keydown", onAltKey);
+      window.removeEventListener("keyup", onAltKey);
+      window.removeEventListener("blur", onWinBlur);
       area.destroy();
     },
     // Rete types ids as plain strings; ours ARE the DTO Uuids (buildNode sets

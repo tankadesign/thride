@@ -157,6 +157,24 @@ export function NodeGraphPanel() {
         setInspected(null);
         setGraph({ ...cur, nodes, connections });
       },
+      onCopyNode: (id, originalPos) => {
+        const cur = doc.materials.get(matId)?.graph;
+        const h = editorRef.current;
+        if (!cur || !h) return;
+        const s = h.readStructure();
+        const src = cur.nodes.find((n) => n.id === id);
+        if (!src) return;
+        const dropPos = s.positions[id] ?? src.position ?? originalPos;
+        // the original keeps its id + wires and snaps back to where the drag
+        // started; the copy (fresh id, same values, no wires) takes the drop
+        // spot — one commit, one undo step. Other nodes keep any moved positions.
+        const nodes = cur.nodes.map((n) => {
+          const position = n.id === id ? originalPos : (s.positions[n.id] ?? n.position);
+          return { ...n, position };
+        });
+        const clone: GraphNode = { ...structuredClone(src), id: uuidv7(), position: dropPos };
+        setGraph({ ...cur, nodes: [...nodes, clone] });
+      },
       onBackgroundMenu: (clientX, clientY, pos) => {
         openContextMenu({ x: clientX, y: clientY, entries: addNodeMenu(pos, addNode) });
       },

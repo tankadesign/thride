@@ -3,6 +3,7 @@ import { IconClose } from "@/icons";
 import type { GradientRamp, GradientStop } from "@/types/core";
 import { NumberDrag } from "@/ui/widgets/NumberDrag";
 import { Row } from "./controls";
+import { ColorPicker } from "@/ui/widgets/ColorPicker";
 
 /**
  * Multi-stop gradient ramp editor (the Color/Emissive noise mapping).
@@ -100,19 +101,20 @@ export function RampEditor({
       {selected ? (
         <Row label="Stop">
           <div className="flex items-center gap-1">
-            <input
-              type="color"
-              className="h-6 w-9 cursor-pointer rounded border border-base-300 bg-base-100"
-              value={selected.color}
-              onChange={(e) => setStop(sel, { color: e.target.value }, true)}
-            />
-            <NumberDrag
-              value={selected.t}
-              step={0.01}
-              min={0}
-              max={1}
-              onChange={(v, committed) => setStop(sel, { t: v }, committed)}
-            />
+            <div className="flex flex-1 items-center gap-3">
+              <ColorPicker
+                color={selected.color}
+                onChange={(e) => setStop(sel, { color: e.target.value }, true)}
+              />
+
+              <NumberDrag
+                value={selected.t}
+                step={0.01}
+                min={0}
+                max={1}
+                onChange={(v, committed) => setStop(sel, { t: v }, committed)}
+              />
+            </div>
             <button
               type="button"
               className="btn btn-ghost btn-xs px-1 opacity-60"
