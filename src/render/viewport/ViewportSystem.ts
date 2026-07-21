@@ -143,6 +143,12 @@ export class ViewportSystem {
   /** Tone mapping of the last focused PBR pane — inherited by non-shaded
    *  (wireframe/flat) panes so focusing one doesn't shift the whole canvas. */
   private lastPbrToneMapping: OutputToneMapping | null = null;
+  /** True when a settle frame is already queued (or done) for the current
+   *  helper-overlay content — any EXTERNAL invalidate clears it so the next
+   *  frame arms a new settle (see the post-composite block). */
+  private overlaySettled = false;
+  /** Marks the settle-frame self-invalidate so it doesn't clear its own flag. */
+  private settleKick = false;
   /** `performance.now()` deadline for the post-geometry render burst (see {@link invalidate}). */
   private burstUntil = 0;
   /** Canvas-relative 2D position of the active nav pivot marker (the "+"). */
@@ -309,6 +315,8 @@ export class ViewportSystem {
   invalidate(burst = false): void {
     this.needsRender = true;
     this.accumFrame = 0; // any change restarts temporal convergence
+    // real changes re-arm the helper-overlay settle (its own kick doesn't)
+    if (!this.settleKick) this.overlaySettled = false;
     // Secondary safeguard for async generator geometry (a boolean's Manifold
     // worker result on load). SceneSynchronizer already forces the stale
     // pipeline to rebuild (material.needsUpdate) when the real geometry swaps in
@@ -628,6 +636,11 @@ export class ViewportSystem {
       this.editor.layout === "single" &&
       this.sceneCameraNode(this.editor.activePane) !== null;
     output.setSceneMSAA(!ssrActive && !aoWillRun && !dofWillRun);
+    // GTAO/DOF active (no SSR): helpers leave the hdr buffer for the dedicated
+    // overlay target, so the effect stack never touches them — mirrors the
+    // helper-source pick in DitherOutput.rebuild, and both gates imply
+    // single-pane + single-sample hdr (the depth copy below needs the latter).
+    const helpersSeparate = !ssrActive && (aoWillRun || dofWillRun);
     if (!ssrActive) {
       renderer.setRenderTarget(output.hdr);
       renderer.setScissorTest(true);
@@ -708,22 +721,29 @@ export class ViewportSystem {
       if (!ssrActive) {
         await renderer.renderAsync(this.scene, rig.camera);
         // helpers live on HELPER_LAYER (excluded from scene renders so
-        // reflections never show them) — draw them into the same hdr region
-        // on top, preserving color AND depth so they occlude exactly as before
-        const bg = this.scene.background;
-        this.scene.background = null; // a background would force-clear the pane
-        renderer.autoClear = false;
-        // looking THROUGH a scene camera: hide its own frustum helper for this
-        // pane only — it sits at the eye and its edges show at the frame border
-        const throughCam = this.sceneCameraNode(i);
-        const camHelper = throughCam ? this.cameraHelperOf(throughCam) : null;
-        const camHelperVisible = camHelper?.visible ?? false;
-        if (camHelper) camHelper.visible = false;
-        rig.camera.layers.set(HELPER_LAYER);
-        await renderer.renderAsync(this.scene, rig.camera);
-        rig.camera.layers.set(0);
-        if (camHelper) camHelper.visible = camHelperVisible;
-        this.scene.background = bg;
+        // reflections never show them). In the plain path, draw them into the
+        // same hdr region on top, preserving color AND depth so they occlude
+        // exactly as before. With GTAO/DOF (helpersSeparate) they render into
+        // the dedicated overlay target instead — AFTER the composite (see the
+        // post-render block below): an extra scene render between the hdr blit
+        // and output.render() starves the FRAME-deduped GTAO/DOF passes and
+        // blacks the composite.
+        if (!helpersSeparate) {
+          const bg = this.scene.background;
+          this.scene.background = null; // a background would force-clear the pane
+          renderer.autoClear = false;
+          // looking THROUGH a scene camera: hide its own frustum helper for
+          // this pane only — it sits at the eye and shows at the frame border
+          const throughCam = this.sceneCameraNode(i);
+          const camHelper = throughCam ? this.cameraHelperOf(throughCam) : null;
+          const camHelperVisible = camHelper?.visible ?? false;
+          if (camHelper) camHelper.visible = false;
+          rig.camera.layers.set(HELPER_LAYER);
+          await renderer.renderAsync(this.scene, rig.camera);
+          rig.camera.layers.set(0);
+          if (camHelper) camHelper.visible = camHelperVisible;
+          this.scene.background = bg;
+        }
       }
     }
     renderer.autoClear = true; // restore for the composite pass / next frame
@@ -850,7 +870,12 @@ export class ViewportSystem {
     // (composeOutput is shared by both modes), and its continuous params are
     // live uniforms, so a steady frame costs a value compare and nothing else.
     // Wireframe has no lit image worth grading, so the stack is off there.
-    const fxOn = activeDisp.shading !== "wireframe";
+    // Single-pane only, like GTAO/SSR/DOF: the stack runs on the composite,
+    // which spans the WHOLE canvas — in 4-up the active pane's bloom would
+    // bleed over the other three, vignette would darken canvas corners
+    // instead of pane corners, and CA would fringe about the canvas center.
+    // Per-pane settings are honored the moment a pane is maximized.
+    const fxOn = activeDisp.shading !== "wireframe" && this.editor.layout === "single";
     output.setPostFx({
       bloom: fxOn && activeDisp.bloom,
       bloomThreshold: activeDisp.bloomThreshold,
@@ -863,6 +888,50 @@ export class ViewportSystem {
       vignetteRadius: activeDisp.vignetteRadius,
     });
     output.render();
+    if (helpersSeparate) {
+      // GTAO/DOF active: helpers render into the dedicated overlay target
+      // AFTER the composite — an extra scene render between the hdr blit and
+      // output.render() starves the FRAME-deduped GTAO/DOF passes and blacks
+      // the whole composite (bisected empirically; AO-only or DOF-only
+      // survive it, together they don't). The composite therefore blends
+      // LAST frame's overlay; the settle frame below closes the gap so an
+      // isolated on-demand render never shows a stale gizmo.
+      const activeCam = this.rigFor(this.editor.activePane).camera;
+      const overlay = output.overlayTarget;
+      const bg = this.scene.background;
+      this.scene.background = null;
+      const prevClearAlpha = renderer.getClearAlpha();
+      renderer.setClearAlpha(0);
+      overlay.viewport.set(0, 0, overlay.width, overlay.height);
+      overlay.scissor.set(0, 0, overlay.width, overlay.height);
+      renderer.setRenderTarget(overlay);
+      // occlusion: seed the overlay's depth with THIS frame's scene depth (a
+      // fullscreen depth-write quad — its pass also clears color to alpha 0)
+      await output.seedOverlayDepth(renderer);
+      renderer.autoClear = false; // helpers draw over the seeded depth
+      // hide the looked-through camera's own frustum helper (sits at the eye)
+      const throughCam = this.sceneCameraNode(this.editor.activePane);
+      const camHelper = throughCam ? this.cameraHelperOf(throughCam) : null;
+      const camHelperVisible = camHelper?.visible ?? false;
+      if (camHelper) camHelper.visible = false;
+      activeCam.layers.set(HELPER_LAYER);
+      await renderer.renderAsync(this.scene, activeCam);
+      activeCam.layers.set(0);
+      if (camHelper) camHelper.visible = camHelperVisible;
+      renderer.setRenderTarget(null);
+      renderer.autoClear = true;
+      renderer.setClearAlpha(prevClearAlpha);
+      this.scene.background = bg;
+      if (!this.overlaySettled) {
+        // one follow-up frame composites the freshly drawn overlay
+        this.overlaySettled = true;
+        this.settleKick = true;
+        this.invalidate();
+        this.settleKick = false;
+      }
+    } else {
+      this.overlaySettled = false;
+    }
     this.onAxes?.(axesPerSlot);
     this.frames++;
     // Temporal SSR converges over a burst of frames after each change, then
