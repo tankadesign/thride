@@ -48,6 +48,16 @@ const RIGHT_PANEL_TITLES: Record<ShellPanelId, string> = {
   objects: "Objects",
 };
 
+function openNodeEditor(api: DockviewApi) {
+  api.addPanel({
+    id: "nodeEditor",
+    component: "nodeEditor",
+    title: "Node Editor",
+    position: { referencePanel: "viewport", direction: "below" },
+    minimumWidth: MIN_PANEL_WIDTH,
+  });
+}
+
 function openRightPanel(api: DockviewApi, id: ShellPanelId) {
   const existing = api.getPanel(id);
   if (existing) {
@@ -106,7 +116,10 @@ export function Shell({ doc }: { doc: Document }) {
       getViewport: () => viewportRef.current,
       openPanel: (id) => {
         const api = apiRef.current;
-        if (api) openRightPanel(api, id);
+        if (api) {
+          if (id === "nodeEditor") openNodeEditor(api);
+          else openRightPanel(api, id);
+        }
       },
       resetLayout: () => {
         localStorage.removeItem(LAYOUT_KEY);
