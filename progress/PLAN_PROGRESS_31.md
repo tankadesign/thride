@@ -161,6 +161,20 @@
   wires stay live for re-wiring (`cb9c359`), RampEditor 7px endpoint inset (`ac4f693`),
   `erasableSyntaxOnly` + real-type-gate fixes (`4fff55d`, `4584ac4` — `pnpm check` now runs `tsc -b`).
 
+### M4 — node-editor UX round 3 (user-directed) (`4ba506e`)
+
+- **Ghost copy** — from the first move of an option-drag a 45%-opacity clone marks the original
+  spot, so both nodes are visible while copying. **Solo** (Monocle01Icon → new `IconSolo`) +
+  **Bypass** (`toggle-xs`) in every node title: bypass = first-wired-input passthrough (dims 55%,
+  per-node, structural); solo = material color previews only that node, other channels unbind
+  (graph-level `solo?: Uuid`, structural; `hasGraph` treats soloed graphs as live). Both in
+  `graphStructureKey` + `canvasSig`.
+- **Multi-select** — Shift or ⌘/Ctrl accumulates; picking an already-selected node keeps the
+  selection, so dragging any member moves the whole group without a modifier.
+- **Navigation** — middle-drag pans; C4D Option+right-drag zooms about the grab point (menu
+  suppressed for alt-right / after nav drags); left-drag background pan unchanged.
+- Verified live end-to-end; +1 compiler test. Gates: tsc -b clean, lint 0, `vp test` **301**.
+
 ## Left mid-flight
 
 - **Nothing — M4 (E7 stages 1–6 + all user-directed UX rounds) is complete.** Milestone hard stop:
