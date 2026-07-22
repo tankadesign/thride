@@ -327,7 +327,10 @@ export function NodeGraphPanel() {
     );
   }
   return (
-    <div ref={hostRef} className="dot-bg bg-base-300 relative h-full w-full overflow-hidden" />
+    <div
+      ref={hostRef}
+      className="node-editor dot-bg bg-base-300 relative h-full w-full overflow-hidden"
+    />
   );
 }
 

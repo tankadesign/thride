@@ -101,3 +101,11 @@ body,
   background-position: top;
   background-repeat: no-repeat;
 }
+
+@layer components {
+  .node-editor {
+    --color-node: color-mix(in oklab, var(--color-base-content) 60%, var(--color-base-300));
+    --color-problem: color-mix(in oklab, var(--color-secondary) 10%, var(--color-base-300));
+    --color-solo: color-mix(in oklab, var(--color-primary) 20%, var(--color-base-300));
+  }
+}

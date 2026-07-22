@@ -55,10 +55,12 @@ export function ThrideNode(props: NodeProps) {
   const showPreview = meta?.showPreview ?? false;
   let nodeColors = "text-base-content border-base-content/15 hover:border-base-content/25";
   if (selected) {
-    if (problem) nodeColors = "text-secondary border-secondary/60 bg-secondary/30";
-    else nodeColors = "text-base-content border-base-content/60";
+    if (problem) nodeColors = "text-secondary border-secondary/60 bg-[var(--color-problem)]";
+    else nodeColors = "text-base-content bg-[var(--color-node)]";
   } else if (problem) {
-    nodeColors = "text-secondary border-secondary/30 bg-secondary/20";
+    nodeColors = "text-secondary border-secondary/30 bg-[var(--color-problem)]";
+  } else if (meta?.solo) {
+    nodeColors = "text-primary border-primary/60 bg-[var(--color-solo)]";
   }
 
   // solo/bypass widgets must never start a drag / selection / inspect
@@ -70,46 +72,46 @@ export function ThrideNode(props: NodeProps) {
   return (
     <div
       data-testid="node"
-      className={`min-w-44 cursor-pointer select-none rounded-lg border bg-base-200/95 text-xs leading-none shadow-lg shadow-black/30 ${nodeColors} ${
-        meta?.bypass ? "opacity-55" : ""
-      }`}
+      className={`min-w-44 cursor-pointer select-none rounded-lg border bg-base-200/95 text-xs leading-none shadow-lg shadow-base-100/60 ${nodeColors}`}
     >
       <div
         data-testid="title"
         className="flex items-center gap-2 rounded-t-lg border-b border-base-300 bg-base-300/60 px-2.5 py-1.5 text-xs font-semibold tracking-wide"
       >
-        <span className="flex-1 truncate">{label}</span>
+        <span className={`flex-1 truncate ${meta?.bypass ? "opacity-25" : ""}`}>{label}</span>
         {meta?.showPreview ? (
           <span className="flex shrink-0 items-center gap-1.5" {...stop}>
             <button
               type="button"
               data-node-solo=""
+              disabled={meta.bypass}
               title={meta.solo ? "Un-solo" : "Solo — preview only this node's value"}
-              className={`flex size-4 cursor-pointer items-center justify-center transition-opacity ${
-                meta.solo ? "text-primary" : "opacity-40 hover:opacity-90"
+              className={`flex size-4 cursor-pointer items-center justify-center transition-opacity disabled:cursor-not-allowed ${
+                meta.solo ? "text-primary" : "opacity-70 not-disabled:hover:opacity-100"
               }`}
-              onClick={() => meta.onToggleSolo?.(!meta.solo)}
+              onClick={!meta.bypass ? () => meta.onToggleSolo?.(!meta.solo) : undefined}
             >
-              <IconSolo size={13} />
+              <IconSolo />
             </button>
             <input
               type="checkbox"
               data-node-bypass=""
+              disabled={meta.solo}
               title="Bypass — pass the first wired input straight through"
-              className="toggle toggle-xs"
-              checked={meta.bypass}
-              onChange={(e) => meta.onToggleBypass?.(e.target.checked)}
+              className={`toggle toggle-xs ${problem ? "toggle-secondary" : ""}`}
+              checked={!meta.bypass}
+              onChange={(e) => meta.onToggleBypass?.(!e.target.checked)}
             />
           </span>
         ) : null}
         {problem ? (
-          <span title={problem} className="shrink-0 text-xs">
+          <span title={problem} className="shrink-0">
             <IconError />
           </span>
         ) : null}
       </div>
       {showPreview ? (
-        <div className="px-1.5 pt-1.5">
+        <div className={`px-1.5 pt-1.5 ${meta?.bypass ? "opacity-25" : ""}`}>
           {/* filled imperatively by the panel's thumbnail pass (data-node-thumb) —
               the canvas never re-renders on value edits, so src rides outside React */}
           <img
@@ -129,7 +131,10 @@ export function ThrideNode(props: NodeProps) {
                 data-testid={`output-${key}`}
                 className="flex items-center justify-end gap-1.5 px-2.5 py-0.5"
               >
-                <span data-testid="output-title" className="opacity-70">
+                <span
+                  data-testid="output-title"
+                  className={`${meta?.bypass ? "opacity-25" : "opacity-70"}`}
+                >
                   {output.label}
                 </span>
                 {/* socket overhangs the node edge: padding (10px) + half socket */}
@@ -173,7 +178,10 @@ export function ThrideNode(props: NodeProps) {
                     data-testid="input-socket"
                   />
                 </span>
-                <span data-testid="input-title" className="opacity-70">
+                <span
+                  data-testid="input-title"
+                  className={`${meta?.bypass ? "opacity-25" : "opacity-70"}`}
+                >
                   {input.label}
                 </span>
                 {input.control && input.showControl ? (
