@@ -72,10 +72,12 @@ export function hasStacks(dto: MaterialDTO): boolean {
   return !!ch && PROCEDURAL_CHANNELS.some(({ channel }) => ch[channel]?.layers.length);
 }
 
-/** True when `dto`'s node graph actually drives at least one Output channel. */
+/** True when `dto`'s node graph actually drives at least one Output channel
+ *  (or a node is soloed — solo binds color regardless of the output wiring). */
 export function hasGraph(dto: MaterialDTO): boolean {
   const g = dto.graph;
   if (!g) return false;
+  if (g.solo) return true;
   return OUTPUT_CHANNELS.some((ch) =>
     g.connections.some((c) => c.to.node === g.output && c.to.socket === ch),
   );

@@ -8,7 +8,7 @@ import type {
   Projection,
   Uuid,
 } from "@/types/core";
-import { defaultRamp, SHAPING_DEFAULTS as SD } from "@/types/core";
+import { defaultRamp, GRAPH_NODE_DEFS, SHAPING_DEFAULTS as SD } from "@/types/core";
 import {
   max,
   min,
@@ -156,7 +156,20 @@ export class GraphEmit {
     return conn ? coerce(this.emit(conn.from.node), type) : fallback();
   }
 
+  /** Bypass: the first WIRED input passes straight through, coerced to the
+   *  node's output type; a bypassed source (nothing wired) reads as mid-gray. */
+  private bypassed(node: GraphNode): Emitted {
+    const def = GRAPH_NODE_DEFS[node.kind];
+    const out = def.output ?? "vec3";
+    for (const s of def.inputs) {
+      const conn = this.incoming(node.id, s.key);
+      if (conn) return { value: coerce(this.emit(conn.from.node), out), type: out };
+    }
+    return FALLBACK;
+  }
+
   private emitKind(node: GraphNode): Emitted {
+    if (node.bypass && node.kind !== "output") return this.bypassed(node);
     const u = this.uniforms;
     switch (node.kind) {
       case "coord": {

@@ -1,4 +1,4 @@
-import { IconError } from "@/icons";
+import { IconError, IconSolo } from "@/icons";
 import { ClassicPreset } from "rete";
 import { Presets } from "rete-react-plugin";
 
@@ -29,6 +29,12 @@ export class ThrideNodeData extends ClassicPreset.Node {
   problem?: string;
   /** Reserve a preview strip (every kind except the Output sink). */
   showPreview = false;
+  /** Bypassed: passthrough (dimmed, toggle-xs in the title). */
+  bypass = false;
+  /** Soloed: the material's color previews only this node (monocle button). */
+  solo = false;
+  onToggleBypass?: (on: boolean) => void;
+  onToggleSolo?: (on: boolean) => void;
 }
 
 interface NodeProps {
@@ -44,8 +50,9 @@ export function ThrideNode(props: NodeProps) {
   const outputs = Object.entries(props.data.outputs);
   const controls = Object.entries(props.data.controls);
   const selected = (props.data as { selected?: boolean }).selected ?? false;
-  const problem = props.data instanceof ThrideNodeData ? props.data.problem : undefined;
-  const showPreview = props.data instanceof ThrideNodeData && props.data.showPreview;
+  const meta = props.data instanceof ThrideNodeData ? props.data : undefined;
+  const problem = meta?.problem;
+  const showPreview = meta?.showPreview ?? false;
   let nodeColors = "text-base-content border-base-content/15 hover:border-base-content/25";
   if (selected) {
     if (problem) nodeColors = "text-secondary border-secondary/60 bg-secondary/30";
@@ -54,18 +61,49 @@ export function ThrideNode(props: NodeProps) {
     nodeColors = "text-secondary border-secondary/30 bg-secondary/20";
   }
 
+  // solo/bypass widgets must never start a drag / selection / inspect
+  const stop = {
+    onPointerDown: (e: React.PointerEvent) => e.stopPropagation(),
+    onDoubleClick: (e: React.MouseEvent) => e.stopPropagation(),
+  };
+
   return (
     <div
       data-testid="node"
-      className={`min-w-44 cursor-pointer select-none rounded-lg border bg-base-200/95 text-xs leading-none shadow-lg shadow-black/30 ${nodeColors}`}
+      className={`min-w-44 cursor-pointer select-none rounded-lg border bg-base-200/95 text-xs leading-none shadow-lg shadow-black/30 ${nodeColors} ${
+        meta?.bypass ? "opacity-55" : ""
+      }`}
     >
       <div
         data-testid="title"
-        className="flex items-center justify-between gap-2 rounded-t-lg border-b border-base-300 bg-base-300/60 px-2.5 py-1.5 text-xs font-semibold tracking-wide"
+        className="flex items-center gap-2 rounded-t-lg border-b border-base-300 bg-base-300/60 px-2.5 py-1.5 text-xs font-semibold tracking-wide"
       >
-        {label}
+        <span className="flex-1 truncate">{label}</span>
+        {meta?.showPreview ? (
+          <span className="flex shrink-0 items-center gap-1.5" {...stop}>
+            <button
+              type="button"
+              data-node-solo=""
+              title={meta.solo ? "Un-solo" : "Solo — preview only this node's value"}
+              className={`flex size-4 cursor-pointer items-center justify-center transition-opacity ${
+                meta.solo ? "text-primary" : "opacity-40 hover:opacity-90"
+              }`}
+              onClick={() => meta.onToggleSolo?.(!meta.solo)}
+            >
+              <IconSolo size={13} />
+            </button>
+            <input
+              type="checkbox"
+              data-node-bypass=""
+              title="Bypass — pass the first wired input straight through"
+              className="toggle toggle-xs"
+              checked={meta.bypass}
+              onChange={(e) => meta.onToggleBypass?.(e.target.checked)}
+            />
+          </span>
+        ) : null}
         {problem ? (
-          <span title={problem} className="text-xs">
+          <span title={problem} className="shrink-0 text-xs">
             <IconError />
           </span>
         ) : null}

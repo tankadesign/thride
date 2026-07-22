@@ -8,6 +8,7 @@ import {
   type GraphNodeKind,
   type MaterialDTO,
   type MaterialGraphDTO,
+  type Uuid,
 } from "@/types/core";
 import { GraphNodeThumbnails } from "@/render/thumbnails/graphNodeThumbnails";
 import { useDocument, useSliceVersion } from "@/ui/hooks/doc/document";
@@ -47,18 +48,19 @@ const ADDABLE: GraphNodeKind[] = [
   "bump",
 ];
 
-/** What a canvas rebuild depends on: topology + the selects inline widgets show. */
+/** What a canvas rebuild depends on: topology + the selects inline widgets show
+ *  + the bypass/solo states the title toggles show. */
 function canvasSig(g?: MaterialGraphDTO): string {
   if (!g) return "";
   const nodes = g.nodes
-    .map((n) => `${n.id}:${n.kind}:${JSON.stringify(n.select ?? {})}`)
+    .map((n) => `${n.id}:${n.kind}:${JSON.stringify(n.select ?? {})}:${n.bypass ? "b" : "-"}`)
     .sort()
     .join("|");
   const conns = g.connections
     .map((c) => `${c.from.node}.${c.from.socket}>${c.to.node}.${c.to.socket}`)
     .sort()
     .join("|");
-  return `${nodes}#${conns}#${g.output}`;
+  return `${nodes}#${conns}#${g.output}#${g.solo ?? "-"}`;
 }
 
 export function NodeGraphPanel() {
@@ -238,6 +240,19 @@ export function NodeGraphPanel() {
       },
       onBackgroundMenu: (clientX, clientY, pos) => {
         openContextMenu({ x: clientX, y: clientY, entries: addNodeMenu(pos, addNode) });
+      },
+      onToggleBypass: (id, on) =>
+        patchNode(
+          id,
+          (n) => {
+            n.bypass = on || undefined;
+          },
+          true,
+        ),
+      onToggleSolo: (id, on) => {
+        const cur = doc.materials.get(matId)?.graph;
+        if (!cur) return;
+        setGraph({ ...cur, solo: on ? (id as Uuid) : undefined });
       },
       onNodeSelect: (id, key, value) =>
         patchNode(

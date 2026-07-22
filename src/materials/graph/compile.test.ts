@@ -320,6 +320,36 @@ describe("graph compiler", () => {
     expect(compileGraph(g).nodes.color).toBeTruthy();
   });
 
+  it("bypass and solo compile and are structural", () => {
+    const g = noiseToColor();
+    const c = compileGraph(g);
+
+    // bypass: mix "m" passes input a (the noise) straight through — still compiles
+    const bypassed = clone(g);
+    bypassed.nodes.find((n) => n.id === "m")!.bypass = true;
+    expect(c.applies(bypassed)).toBe(false); // structural
+    expect(compileGraph(bypassed).nodes.color).toBeTruthy();
+
+    // bypassed source (no wired inputs) still compiles (mid-gray fallback)
+    const bypassedSrc = clone(g);
+    bypassedSrc.nodes.find((n) => n.id === "c")!.bypass = true;
+    expect(compileGraph(bypassedSrc).nodes.color).toBeTruthy();
+
+    // solo: only color binds, driven by the soloed node
+    const soloed = clone(g);
+    soloed.solo = "n" as Uuid;
+    expect(c.applies(soloed)).toBe(false); // structural
+    const cs = compileGraph(soloed);
+    expect(cs.nodes.color).toBeTruthy();
+    expect(cs.nodes.roughness).toBeUndefined();
+
+    // solo works even with NO output wiring (look-dev on a dangling node)
+    const dangling = clone(g);
+    dangling.connections = [];
+    dangling.solo = "n" as Uuid;
+    expect(compileGraph(dangling).nodes.color).toBeTruthy();
+  });
+
   it("graphProblems flags cycle members and unknown noises, nothing else", () => {
     const g = graph(
       [

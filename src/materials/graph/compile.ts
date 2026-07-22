@@ -51,7 +51,14 @@ export class CompiledGraph implements CompiledMaterial<MaterialGraphDTO> {
     this.key = graphStructureKey(graph);
     const out = graph.nodes.find((n) => n.id === graph.output && n.kind === "output");
     const emit = new GraphEmit(graph, this.uniforms);
-    if (out) {
+    const solo = graph.solo
+      ? graph.nodes.find((n) => n.id === graph.solo && n.kind !== "output")
+      : undefined;
+    if (solo) {
+      // look-dev solo: the material's color shows ONLY this node's value; every
+      // other channel unbinds (falls back to the material scalars)
+      this.nodes.color = toVec3(emit.emit(solo.id));
+    } else if (out) {
       for (const channel of OUTPUT_CHANNELS) {
         const conn = graph.connections.find((c) => c.to.node === out.id && c.to.socket === channel);
         if (!conn) continue; // undriven channel → falls back to the material scalar

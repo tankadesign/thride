@@ -249,6 +249,9 @@ export interface GraphNode {
   select?: Record<string, string>;
   /** Numeric params → live uniforms. Scrubbing these never recompiles. */
   params?: Record<string, number>;
+  /** Bypassed: the node passes its first wired input straight through (or
+   *  contributes mid-gray if it has none). Structural — toggling recompiles. */
+  bypass?: boolean;
   /** Color params (hex) → live color uniforms. */
   colors?: Record<string, string>;
   /** Gradient stops for a `ramp` node (Stage 2) → re-baked DataTexture in place. */
@@ -274,6 +277,9 @@ export interface MaterialGraphDTO {
   connections: GraphConnection[];
   /** Id of the single `output` node. */
   output: Uuid;
+  /** Soloed node: the material's color shows ONLY this node's value (look-dev
+   *  preview); other channels unbind. Structural — toggling recompiles. */
+  solo?: Uuid;
 }
 
 /** A new, empty graph: just an Output node with nothing wired in. */
@@ -357,12 +363,13 @@ export function graphStructureKey(graph: MaterialGraphDTO | undefined): string {
       }
       // `ramp ? "r" : "-"` mirrors the stack: whether a ramp EXISTS is
       // structural (it changes the emitted lookup), its stop values are not.
-      return `${n.id}:${n.kind}:${sel}:${n.ramp ? "r" : "-"}`;
+      // `bypass` switches the node to a passthrough — also structural.
+      return `${n.id}:${n.kind}:${sel}:${n.ramp ? "r" : "-"}${n.bypass ? ":b" : ""}`;
     })
     .join("|");
   const conns = [...graph.connections]
     .map((c) => `${c.from.node}.${c.from.socket}>${c.to.node}.${c.to.socket}`)
     .sort()
     .join("|");
-  return `N{${nodes}}C{${conns}}O{${graph.output}}`;
+  return `N{${nodes}}C{${conns}}O{${graph.output}}S{${graph.solo ?? "-"}}`;
 }

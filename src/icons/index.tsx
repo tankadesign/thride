@@ -32,6 +32,7 @@ import {
   MaterialAndTextureIcon,
   MatrixIcon,
   MinusSignSquareIcon,
+  Monocle01Icon,
   OctagonIcon,
   PathfinderMergeIcon,
   PathfinderUniteIcon,
@@ -141,6 +142,8 @@ export const IconWeld = makeIcon(GitMergeIcon);
 /** Collapsed-section caret. Rotate 90° with CSS when the section opens. */
 export const IconCaretRight = makeIcon(ArrowRight01Icon);
 export const IconError = makeIcon(Alert02Icon);
+/** Solo a material-graph node (look-dev: color shows only its value). */
+export const IconSolo = makeIcon(Monocle01Icon);
 /** Dropdown / expanded-state caret. */
 export const IconCaretDown = makeIcon(ArrowDown01Icon);
 export const IconClose = makeIcon(Cancel01Icon);
