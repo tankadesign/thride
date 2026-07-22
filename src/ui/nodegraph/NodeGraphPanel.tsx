@@ -197,7 +197,9 @@ export function NodeGraphPanel() {
           seen.add(key);
           connections.unshift(c);
         }
-        const next: MaterialGraphDTO = { nodes, connections, output: cur.output };
+        // spread cur so graph-LEVEL fields the canvas doesn't know about (solo,
+        // output) survive — rebuilding from scratch here silently wiped solo
+        const next: MaterialGraphDTO = { ...cur, nodes, connections };
         // no-op guard: picking a wire off and re-dropping it on the same socket
         // (or a drag that lands where it started) must not push an undo step
         if (JSON.stringify(next) === JSON.stringify(cur)) return;
