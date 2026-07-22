@@ -1,5 +1,6 @@
 import { iconSizeAtom } from "@/ui/hooks/editor/settings";
 import {
+  Alert02Icon,
   ArrowDown01Icon,
   ArrowReloadHorizontalIcon,
   ArrowRight01Icon,
@@ -139,6 +140,7 @@ export const IconWeld = makeIcon(GitMergeIcon);
 // UI
 /** Collapsed-section caret. Rotate 90° with CSS when the section opens. */
 export const IconCaretRight = makeIcon(ArrowRight01Icon);
+export const IconError = makeIcon(Alert02Icon);
 /** Dropdown / expanded-state caret. */
 export const IconCaretDown = makeIcon(ArrowDown01Icon);
 export const IconClose = makeIcon(Cancel01Icon);

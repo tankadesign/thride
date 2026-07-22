@@ -1,3 +1,4 @@
+import { IconError } from "@/icons";
 import { ClassicPreset } from "rete";
 import { Presets } from "rete-react-plugin";
 
@@ -45,21 +46,28 @@ export function ThrideNode(props: NodeProps) {
   const selected = (props.data as { selected?: boolean }).selected ?? false;
   const problem = props.data instanceof ThrideNodeData ? props.data.problem : undefined;
   const showPreview = props.data instanceof ThrideNodeData && props.data.showPreview;
+  let nodeColors = "text-base-content border-base-content/15 hover:border-base-content/25";
+  if (selected) {
+    if (problem) nodeColors = "text-secondary border-secondary/60 bg-secondary/30";
+    else nodeColors = "text-base-content border-base-content/60";
+  } else if (problem) {
+    nodeColors = "text-secondary border-secondary/30 bg-secondary/20";
+  }
 
   return (
     <div
       data-testid="node"
-      className={`min-w-44 cursor-pointer select-none rounded-lg border bg-base-200/95 text-xs leading-none text-base-content shadow-lg shadow-black/30 ${
-        selected ? "border-base-content/60" : "border-base-content/15 hover:border-base-content/25"
-      }`}
+      className={`min-w-44 cursor-pointer select-none rounded-lg border bg-base-200/95 text-xs leading-none shadow-lg shadow-black/30 ${nodeColors}`}
     >
       <div
         data-testid="title"
-        className="flex items-center justify-between gap-2 rounded-t-lg border-b border-base-300 bg-base-300/60 px-2.5 py-1.5 text-[11px] font-semibold tracking-wide"
+        className="flex items-center justify-between gap-2 rounded-t-lg border-b border-base-300 bg-base-300/60 px-2.5 py-1.5 text-xs font-semibold tracking-wide"
       >
         {label}
         {problem ? (
-          <span title={problem} className="size-2 shrink-0 rounded-full bg-error" />
+          <span title={problem} className="text-xs">
+            <IconError />
+          </span>
         ) : null}
       </div>
       {showPreview ? (
